@@ -101,3 +101,13 @@ Sunnify (Spotify Downloader) is developed and maintained by Sunny Jayendra Patel
 This project is licensed under the [Custom License](LICENSE). See the [LICENSE](LICENSE) file for details.
 
 ---
+
+## Contributing
+
+If you encounter any bugs, have feature requests, or would like to contribute enhancements, feel free to submit a pull request on GitHub.
+
+### Reporting Issues
+
+If you encounter any issues while using Sunnify, please [open an issue](https://github.com/sunnypatell/sunnify-spotify-downloader/issues) on GitHub. Be sure to include detailed information about the problem, including steps to reproduce it and any error messages you may have encountered. Your feedback helps me improve the application for everyone else.
+
+---
