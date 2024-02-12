@@ -10,6 +10,15 @@ Sunnify is a Spotify downloader application that allows you to download entire p
 
 ![Sunnify Logo](./app.ico)
 
+---
+
+## Program Demonstration
+
+Below are screenshots demonstrating the Sunnify application in action, downloading my personal Spotify playlist.
+
+![Download in Progress](readmeassets/demonstration%201.png)
+![and](readmeassets/demonstration%202.png)
+
 ## Installation
 
 ### Prerequisites
@@ -52,7 +61,7 @@ python Spotify_Downloader.py
 1. Launch the Sunnify application.
 2. Enter your Spotify playlist URL in the provided input field.
 3. Check show preview box to see progress
-4. Check metadata box if you want to download cover art, author, album, etc...
+4. Check metadata box if you want to download cover art, author, album, release-date etc...
 5. Press enter in the URL field to start downloading.
 4. The downloaded songs will be saved in the media directory (wherever your source or executable is located).
 
