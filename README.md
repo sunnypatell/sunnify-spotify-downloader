@@ -82,6 +82,12 @@ If you encounter any issues while running Sunnify, try the following steps:
 2. Verify that you have entered the correct Spotify playlist URL.
 3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git fetch`
 
+## Coming Soon
+
+I'm currently working on integrating Sunnify with iTunes for seamless transfer of downloaded music to iOS devices, specifically adding them to the Apple Music library. Additionally, I'm also working on adding support for Android filesystems to enable direct transfer of downloaded music to Android devices.
+
+Stay tuned for these exciting updates, which will enhance the functionality of Sunnify and provide a more seamless experience for users across different platforms.
+
 ## Legal and Ethical Notice
 
 Sunnify (Spotify Downloader) is intended for educational purposes only. It is your responsibility to ensure that you comply with copyright laws and regulations in your country or region. Downloading copyrighted music without proper authorization may be illegal in certain jurisdictions.
