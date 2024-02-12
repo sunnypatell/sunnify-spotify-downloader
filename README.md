@@ -16,8 +16,8 @@ Sunnify is a Spotify downloader application that allows you to download entire p
 
 Below are screenshots demonstrating the Sunnify application in action, downloading my personal Spotify playlist.
 
-![Download in Progress](readmeAssets/demonstration 1.png)
-![and](readmeAssets/demonstration 2.png)
+![Download in Progress](/readmeAssets/demonstration%201.jpg)
+![and](/readmeAssets/demonstration%202.jpg)
 
 ## Installation
 
