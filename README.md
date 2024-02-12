@@ -1,5 +1,11 @@
 # Sunnify (Spotify Downloader)
 
+![GitHub Repo Stars](https://img.shields.io/github/stars/sunnypatell/sunnify-spotify-downloader?style=social)
+![GitHub Issues](https://img.shields.io/github/issues/sunnypatell/sunnify-spotify-downloader)
+![GitHub Pull Requests](https://img.shields.io/github/issues-pr/sunnypatell/sunnify-spotify-downloader)
+
+---
+
 Sunnify is a Spotify downloader application that allows you to download entire playlists locally onto your Mac/Linux/Windows PC.
 
 ![Sunnify Logo](./app.ico)
@@ -11,17 +17,9 @@ Sunnify is a Spotify downloader application that allows you to download entire p
 - Python 3.6 or above installed on your system. If not installed, download and install Python from [python.org](https://www.python.org/downloads/).
 - Ensure that pip, Python's package manager, is installed. It usually comes with Python. You can verify by running `pip --version` in your terminal.
 
-### Dependencies
-
-Install the required Python libraries using pip:
-
-```bash
-pip install -r requirements.txt
-```
-
 ### Executable (Windows)
 
-If you're using Windows, you can directly download the executable file from the [dist] folder.
+If you're using Windows, you can directly download the executable file from [here](/dist/Sunnify%20(Spotify%20Downloader).exe)
 
 ### Building from Source
 
@@ -40,7 +38,7 @@ cd sunnify
 Install the required dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip install -r req.txt
 ```
 
 Run the application:
@@ -53,15 +51,17 @@ python Spotify_Downloader.py
 
 1. Launch the Sunnify application.
 2. Enter your Spotify playlist URL in the provided input field.
-3. Click on the "Download" button to start downloading the playlist.
-4. The downloaded songs will be saved in the specified output directory.
+3. Check show preview box to see progress
+4. Check metadata box if you want to download cover art, author, album, etc...
+5. Press enter in the URL field to start downloading.
+4. The downloaded songs will be saved in the media directory (wherever your source or executable is located).
 
 ## Libraries Used
 
 Sunnify utilizes the following Python libraries:
 
 - [PyQt5](https://pypi.org/project/PyQt5/): Used for the GUI interface.
-- [beautifulsoup4](https://pypi.org/project/beautifulsoup4/): Used for web scraping.
+- [webbrowser](https://pypi.org/project/pycopy-webbrowser/): Used to bypass Spotify Network Traffic Detection.
 - [requests](https://pypi.org/project/requests/): Used for making HTTP requests.
 - [mutagen.id3](https://mutagen.readthedocs.io/en/latest/api/id3.html): Used for editing ID3 tags and scraping metadata.
 
@@ -86,8 +86,3 @@ Sunnify (Spotify Downloader) is developed and maintained by Sunny Jayendra Patel
 This project is licensed under the [Custom License](LICENSE). See the [LICENSE](LICENSE) file for details.
 
 ---
-
-![GitHub Repo Stars](https://img.shields.io/github/stars/yourusername/sunnify?style=social)
-![GitHub License](https://img.shields.io/github/license/yourusername/sunnify)
-![GitHub Issues](https://img.shields.io/github/issues/yourusername/sunnify)
-![GitHub Pull Requests](https://img.shields.io/github/issues-pr/yourusername/sunnify)
