@@ -1,0 +1,14 @@
+altgraph==0.17.3
+certifi==2023.7.22
+charset-normalizer==3.2.0
+idna==3.4
+mutagen==1.46.0
+pefile==2023.2.7
+pyinstaller==5.13.0
+pyinstaller-hooks-contrib==2023.6
+PyQt5==5.15.9
+PyQt5-Qt5==5.15.2
+PyQt5-sip==12.11.1
+pywin32-ctypes==0.2.2
+requests==2.31.0
+urllib3==2.0.4
