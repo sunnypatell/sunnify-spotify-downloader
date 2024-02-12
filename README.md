@@ -17,7 +17,7 @@ Sunnify is a Spotify downloader application that allows you to download entire p
 - Python 3.6 or above installed on your system. If not installed, download and install Python from [python.org](https://www.python.org/downloads/).
 - Ensure that pip, Python's package manager, is installed. It usually comes with Python. You can verify by running `pip --version` in your terminal.
 
-### Executable (Windows)
+### Sunnify Executable (Windows)
 
 If you're using Windows, you can directly download the executable file from [here](/dist/Sunnify%20(Spotify%20Downloader).exe)
 
@@ -32,7 +32,7 @@ git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git
 Navigate to the project directory:
 
 ```bash
-cd sunnify
+cd sunnify-spotify-downloader
 ```
 
 Install the required dependencies:
@@ -71,7 +71,7 @@ If you encounter any issues while running Sunnify, try the following steps:
 
 1. Ensure that you have a stable internet connection.
 2. Verify that you have entered the correct Spotify playlist URL.
-3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies.
+3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git fetch`
 
 ## Legal and Ethical Notice
 
