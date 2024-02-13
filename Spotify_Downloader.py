@@ -1,5 +1,5 @@
-# 
-'''
+#
+"""
 Copyright (C) Feb 2024 {Sunny Patel} <{sunnypatel124555@gmail.com}>
 
 This file is part of the {Sunnify (Spotify Downloader)} project.
@@ -10,7 +10,7 @@ permission of {Sunny Patel} <{sunnypatel124555@gmail.com}>.
 For the program to work, the playlist URL pattern must be following the format of /playlist/abcdefghijklmnopqrstuvwxyz... (special chars)
 will not be registered in the URL as the regex does not specify that in the URL pattern. If the program stops working, email
 <{sunnypatel124555@gmail.com}> or open a fork req. in the repository. 
-'''
+"""
 
 __version__ = "1.0.0"
 
@@ -18,8 +18,16 @@ __version__ = "1.0.0"
 # if __name__ == '__main__':from PyQt5.uic import loadUi
 
 from PyQt5.QtWidgets import QMainWindow, QApplication, QGraphicsDropShadowEffect
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QSize, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import  QCursor, QImage, QPixmap
+from PyQt5.QtCore import (
+    Qt,
+    QThread,
+    pyqtSignal,
+    pyqtSlot,
+    QSize,
+    QPropertyAnimation,
+    QEasingCurve,
+)
+from PyQt5.QtGui import QCursor, QImage, QPixmap
 from Template import Ui_MainWindow
 
 import sys
@@ -42,8 +50,6 @@ class MusicScraper(QThread):
     dlprogress_signal = pyqtSignal(int)
     Resetprogress_signal = pyqtSignal(int)
 
-
-
     def __init__(self):
         super(MusicScraper, self).__init__()
         self.counter = 0  # Initialize counter to zero
@@ -51,16 +57,16 @@ class MusicScraper(QThread):
 
     def get_ID(self, yt_id):
         # The 'get_ID' function from your scraper code
-        LINK = f'https://api.spotifydown.com/getId/{yt_id}'
+        LINK = f"https://api.spotifydown.com/getId/{yt_id}"
         headers = {
-            'authority': 'api.spotifydown.com',
-            'method': 'GET',
-            'path': f'/getId/{id}',
-            'origin': 'https://spotifydown.com',
-            'referer': 'https://spotifydown.com/',
-            'sec-ch-ua': '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            'sec-fetch-mode': 'cors',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'
+            "authority": "api.spotifydown.com",
+            "method": "GET",
+            "path": f"/getId/{id}",
+            "origin": "https://spotifydown.com",
+            "referer": "https://spotifydown.com/",
+            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
+            "sec-fetch-mode": "cors",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         }
         response = self.session.get(url=LINK, headers=headers)
         if response.status_code == 200:
@@ -70,22 +76,22 @@ class MusicScraper(QThread):
 
     def generate_Analyze_id(self, yt_id):
         # The 'generate_Analyze_id' function from scraper code
-        DL = 'https://corsproxy.io/?https://www.y2mate.com/mates/analyzeV2/ajax'
+        DL = "https://corsproxy.io/?https://www.y2mate.com/mates/analyzeV2/ajax"
         data = {
-            'k_query': f'https://www.youtube.com/watch?v={yt_id}',
-            'k_page': 'home',
-            'hl': 'en',
-            'q_auto': 0,
+            "k_query": f"https://www.youtube.com/watch?v={yt_id}",
+            "k_page": "home",
+            "hl": "en",
+            "q_auto": 0,
         }
         headers = {
-            'authority': 'corsproxy.io',
-            'method': 'POST',
-            'path': '/?https://www.y2mate.com/mates/analyzeV2/ajax',
-            'origin': 'https://spotifydown.com',
-            'referer': 'https://spotifydown.com/',
-            'sec-ch-ua': '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            'sec-fetch-mode': 'cors',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'
+            "authority": "corsproxy.io",
+            "method": "POST",
+            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
+            "origin": "https://spotifydown.com",
+            "referer": "https://spotifydown.com/",
+            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
+            "sec-fetch-mode": "cors",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         }
         RES = self.session.post(url=DL, data=data, headers=headers)
         if RES.status_code == 200:
@@ -94,20 +100,20 @@ class MusicScraper(QThread):
 
     def generate_Conversion_id(self, analyze_yt_id, analyze_id):
         # The 'generate_Conversion_id' function from scraper code
-        DL = 'https://corsproxy.io/?https://www.y2mate.com/mates/convertV2/index'
+        DL = "https://corsproxy.io/?https://www.y2mate.com/mates/convertV2/index"
         data = {
-            'vid'   : analyze_yt_id,
-            'k'     : analyze_id,
+            "vid": analyze_yt_id,
+            "k": analyze_id,
         }
         headers = {
-            'authority': 'corsproxy.io',
-            'method': 'POST',
-            'path': '/?https://www.y2mate.com/mates/analyzeV2/ajax',
-            'origin': 'https://spotifydown.com',
-            'referer': 'https://spotifydown.com/',
-            'sec-ch-ua': '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            'sec-fetch-mode': 'cors',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'
+            "authority": "corsproxy.io",
+            "method": "POST",
+            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
+            "origin": "https://spotifydown.com",
+            "referer": "https://spotifydown.com/",
+            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
+            "sec-fetch-mode": "cors",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         }
         RES = self.session.post(url=DL, data=data, headers=headers)
         if RES.status_code == 200:
@@ -116,61 +122,62 @@ class MusicScraper(QThread):
 
     def get_PlaylistMetadata(self, Playlist_ID):
         # The 'get_PlaylistMetadata' function from scraper code
-        URL = f'https://api.spotifydown.com/metadata/playlist/{Playlist_ID}'
+        URL = f"https://api.spotifydown.com/metadata/playlist/{Playlist_ID}"
         headers = {
-            'authority': 'api.spotifydown.com',
-            'method': 'GET',
-            'path': f'/metadata/playlist/{Playlist_ID}',
-            'scheme': 'https',
-            'origin': 'https://spotifydown.com',
-            'referer': 'https://spotifydown.com/',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+            "authority": "api.spotifydown.com",
+            "method": "GET",
+            "path": f"/metadata/playlist/{Playlist_ID}",
+            "scheme": "https",
+            "origin": "https://spotifydown.com",
+            "referer": "https://spotifydown.com/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
         }
         meta_data = self.session.get(headers=headers, url=URL)
         if meta_data.status_code == 200:
-            return meta_data.json()['title'] + ' - ' + meta_data.json()['artists']
+            return meta_data.json()["title"] + " - " + meta_data.json()["artists"]
         return None
 
     def errorcatch(self, SONG_ID):
         # The 'errorcatch' function from scraper
-        print('[*] Trying to download...')
+        print("[*] Trying to download...")
         headers = {
-            'authority': 'api.spotifydown.com',
-            'method': 'GET',
-            'path': f'/download/{SONG_ID}',
-            'scheme': 'https',
-            'origin': 'https://spotifydown.com',
-            'referer': 'https://spotifydown.com/',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+            "authority": "api.spotifydown.com",
+            "method": "GET",
+            "path": f"/download/{SONG_ID}",
+            "scheme": "https",
+            "origin": "https://spotifydown.com",
+            "referer": "https://spotifydown.com/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
         }
-        x = self.session.get(headers=headers, url='https://api.spotifydown.com/download/' + SONG_ID)
+        x = self.session.get(
+            headers=headers, url="https://api.spotifydown.com/download/" + SONG_ID
+        )
         if x.status_code == 200:
-            return x.json()['link']
+            return x.json()["link"]
         return None
-
-
 
     def V2catch(self, SONG_ID):
         headers = {
             "authority": "api.spotifydown.com",
             "method": "POST",
-            "path": '/download/68GdZAAowWDac3SkdNWOwo',
+            "path": "/download/68GdZAAowWDac3SkdNWOwo",
             "scheme": "https",
             "Accept": "*/*",
-
-            'Sec-Ch-Ua':'"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
-            "Dnt": '1',
+            "Sec-Ch-Ua": '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
+            "Dnt": "1",
             "Origin": "https://spotifydown.com",
             "Referer": "https://spotifydown.com/",
             "Sec-Ch-Ua-Mobile": "?0",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "cross-site",
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36'
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         }
 
         ## Updated .. .29TH OCTOBER 2023
-        x = self.session.get(url = f'https://api.spotifydown.com/download/{SONG_ID}', headers=headers)
+        x = self.session.get(
+            url=f"https://api.spotifydown.com/download/{SONG_ID}", headers=headers
+        )
 
         # if x.status_code == 200 (depricated as of Feb 2024):
 
@@ -188,19 +195,11 @@ class MusicScraper(QThread):
         if x.status_code == 200:
 
             try:
-                return {
-                    'link' : x.json()['link'],
-                    'metadata' : None
-                }
+                return {"link": x.json()["link"], "metadata": None}
             except:
-                return {
-                    'link' : None,
-                    'metadata' : None
-                }
+                return {"link": None, "metadata": None}
 
         return None
-
-
 
     def scrape_playlist(self, spotify_playlist_link, music_folder):
         ID = self.returnSPOT_ID(spotify_playlist_link)
@@ -211,7 +210,9 @@ class MusicScraper(QThread):
         if not os.path.exists(music_folder):
             os.makedirs(music_folder)
         try:
-            FolderPath = ''.join(e for e in PlaylistName if e.isalnum() or e in [' ', '_'])
+            FolderPath = "".join(
+                e for e in PlaylistName if e.isalnum() or e in [" ", "_"]
+            )
             playlist_folder_path = os.path.join(music_folder, FolderPath)
         except:
             playlist_folder_path = music_folder
@@ -220,64 +221,77 @@ class MusicScraper(QThread):
             os.makedirs(playlist_folder_path)
 
         headers = {
-            'authority': 'api.spotifydown.com',
-            'method': 'GET',
-            'path': f'/trackList/playlist/{ID}',
-            'scheme': 'https',
-            'accept': '*/*',
-            'dnt': '1',
-            'origin': 'https://spotifydown.com',
-            'referer': 'https://spotifydown.com/',
-            'sec-ch-ua': '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+            "authority": "api.spotifydown.com",
+            "method": "GET",
+            "path": f"/trackList/playlist/{ID}",
+            "scheme": "https",
+            "accept": "*/*",
+            "dnt": "1",
+            "origin": "https://spotifydown.com",
+            "referer": "https://spotifydown.com/",
+            "sec-ch-ua": '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         }
 
-        Playlist_Link = f'https://api.spotifydown.com/trackList/playlist/{ID}'
+        Playlist_Link = f"https://api.spotifydown.com/trackList/playlist/{ID}"
         offset_data = {}
         offset = 0
-        offset_data['offset'] = offset
+        offset_data["offset"] = offset
 
         while offset is not None:
-            response = self.session.get(url=Playlist_Link, params=offset_data, headers=headers)
+            response = self.session.get(
+                url=Playlist_Link, params=offset_data, headers=headers
+            )
             if response.status_code == 200:
-                Tdata = response.json()['trackList']
-                page = response.json()['nextOffset']
+                Tdata = response.json()["trackList"]
+                page = response.json()["nextOffset"]
                 for count, song in enumerate(Tdata):
                     self.Resetprogress_signal.emit(0)
-                    filename = song['title'].translate(str.maketrans('', '', string.punctuation)) + ' - ' + song['artists'].translate(str.maketrans('', '', string.punctuation)) + '.mp3'
+                    filename = (
+                        song["title"].translate(
+                            str.maketrans("", "", string.punctuation)
+                        )
+                        + " - "
+                        + song["artists"].translate(
+                            str.maketrans("", "", string.punctuation)
+                        )
+                        + ".mp3"
+                    )
                     filepath = os.path.join(playlist_folder_path, filename)
                     try:
                         try:
-                            V2METHOD    = self.V2catch(song['id'])
-                            DL_LINK     = V2METHOD['link']
-                            SONG_META   = song
-                            SONG_META['file'] = filepath
+                            V2METHOD = self.V2catch(song["id"])
+                            DL_LINK = V2METHOD["link"]
+                            SONG_META = song
+                            SONG_META["file"] = filepath
                             self.song_meta.emit(SONG_META)
                         except IndentationError:
-                            yt_id = self.get_ID(song['id'])
+                            yt_id = self.get_ID(song["id"])
 
                             if yt_id is not None:
-                                data = self.generate_Analyze_id(yt_id['id'])
+                                data = self.generate_Analyze_id(yt_id["id"])
                                 try:
-                                    DL_ID = data['links']['mp3']['mp3128']['k']
-                                    DL_DATA = self.generate_Conversion_id(data['vid'], DL_ID)
-                                    DL_LINK = DL_DATA['dlink']
+                                    DL_ID = data["links"]["mp3"]["mp3128"]["k"]
+                                    DL_DATA = self.generate_Conversion_id(
+                                        data["vid"], DL_ID
+                                    )
+                                    DL_LINK = DL_DATA["dlink"]
                                 except Exception as NoLinkError:
-                                    CatchMe = self.errorcatch(song['id'])
+                                    CatchMe = self.errorcatch(song["id"])
                                     if CatchMe is not None:
                                         DL_LINK = CatchMe
                             else:
-                                print('[*] No data found for : ', song)
+                                print("[*] No data found for : ", song)
 
                         download_complete = False
                         if DL_LINK is not None:
                             ## DOWNLOAD
                             link = self.session.get(DL_LINK, stream=True)
-                            total_size = int(link.headers.get('content-length', 0))
+                            total_size = int(link.headers.get("content-length", 0))
                             block_size = 1024  # 1 Kilobyte
                             downloaded = 0
                             ## Save
@@ -287,21 +301,22 @@ class MusicScraper(QThread):
                                     downloaded += len(data)
                                     # self.dlprogress_signal.emit(int(100 * downloaded / total_size))
 
-
-                            #Increment the counter
+                            # Increment the counter
                             self.increment_counter()
 
                             # # Emit the signal with the downloaded song name
                             self.add_song_meta.emit(SONG_META)
                         else:
-                            print('[*] No Download Link Found.')
+                            print("[*] No Download Link Found.")
                     except Exception as error_status:
-                        print('[*] Error Status Code : ', error_status)
+                        print("[*] Error Status Code : ", error_status)
             if page is not None:
-                offset_data['offset'] = page
-                response = self.session.get(url=Playlist_Link, params=offset_data, headers=headers)
+                offset_data["offset"] = page
+                response = self.session.get(
+                    url=Playlist_Link, params=offset_data, headers=headers
+                )
             else:
-                self.PlaylistCompleted.emit('Download Complete!')
+                self.PlaylistCompleted.emit("Download Complete!")
                 break
 
     def returnSPOT_ID(self, link):
@@ -322,8 +337,9 @@ class MusicScraper(QThread):
         return extracted_id
 
     def increment_counter(self):
-            self.counter += 1
-            self.count_updated.emit(self.counter)  # Emit the signal with the updated count
+        self.counter += 1
+        self.count_updated.emit(self.counter)  # Emit the signal with the updated count
+
 
 # Scraper Thread
 class ScraperThread(QThread):
@@ -335,7 +351,9 @@ class ScraperThread(QThread):
         self.scraper = MusicScraper()  # Create an instance of MusicScraper
 
     def run(self):
-        music_folder = os.path.join(os.getcwd(), "music")  # Change this path to your desired music folder
+        music_folder = os.path.join(
+            os.getcwd(), "music"
+        )  # Change this path to your desired music folder
         self.progress_update.emit("Scraping started...")
         try:
             self.scraper.returnSPOT_ID(self.playlist_link)
@@ -344,18 +362,20 @@ class ScraperThread(QThread):
         except Exception as e:
             self.progress_update.emit(f"{e}")
 
+
 # Download Song Cover Thread
 class DownloadCover(QThread):
     albumCover = pyqtSignal(object)
+
     def __init__(self, url):
         super().__init__()
         self.url = url
 
-
     def run(self):
         response = requests.get(self.url, stream=True)
-        if response.status_code == 200 :
+        if response.status_code == 200:
             self.albumCover.emit(response.content)
+
 
 # Scraper Thread
 class WritingMetaTagsThread(QThread):
@@ -370,16 +390,16 @@ class WritingMetaTagsThread(QThread):
     def run(self):
         # self.tags_success.emit("Writing Metatags")
         try:
-            print('[*] FileName : ', self.filename)
+            print("[*] FileName : ", self.filename)
             audio = EasyID3(self.filename)
-            audio['title'] = self.tags['title']
-            audio['artist'] = self.tags['artists']
-            audio['album'] = self.tags['album']
-            audio['date'] = self.tags['releaseDate']
+            audio["title"] = self.tags["title"]
+            audio["artist"] = self.tags["artists"]
+            audio["album"] = self.tags["album"]
+            audio["date"] = self.tags["releaseDate"]
             audio.save()
             # self.tags_success.emit("Meta added!")
             # self.tags_success.emit("Adding Cover")
-            self.CoverPic = DownloadCover(self.tags['cover']+"?size=1")
+            self.CoverPic = DownloadCover(self.tags["cover"] + "?size=1")
             self.CoverPic.albumCover.connect(self.setPIC)
             self.CoverPic.start()
         except Exception as e:
@@ -393,12 +413,8 @@ class WritingMetaTagsThread(QThread):
         else:
             try:
                 audio = ID3(self.filename)
-                audio['APIC'] = APIC(
-                    encoding=3,
-                    mime='image/jpeg',
-                    type=3,
-                    desc=u'Cover',
-                    data=data
+                audio["APIC"] = APIC(
+                    encoding=3, mime="image/jpeg", type=3, desc="Cover", data=data
                 )
                 audio.save()
                 # self.tags_success.emit("Cover Added..!")
@@ -415,15 +431,16 @@ class DownloadThumbnail(QThread):
 
     def run(self):
         response = requests.get(self.url, stream=True)
-        if response.status_code == 200 :
+        if response.status_code == 200:
             pic = QImage()
             pic.loadFromData(response.content)
             self.main_UI.CoverImg.setPixmap(QPixmap(pic))
             self.main_UI.CoverImg.show()
 
+
 # Main Window
 class MainWindow(QMainWindow, Ui_MainWindow):
-# class MainWindow(QMainWindow):
+    # class MainWindow(QMainWindow):
 
     def __init__(self):
         """MainWindow constructor"""
@@ -434,13 +451,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.setupUi(self)
 
-        self.SONGINFORMATION.setGraphicsEffect(QGraphicsDropShadowEffect(blurRadius=25,xOffset=2,yOffset=2))
+        self.SONGINFORMATION.setGraphicsEffect(
+            QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
+        )
         self.PlaylistLink.returnPressed.connect(self.on_returnButton)
 
         self.showPreviewCheck.stateChanged.connect(self.show_preview)
-
-
-
 
         self.Closed.clicked.connect(self.exitprogram)
         self.Select_Home.clicked.connect(self.Linkedin)
@@ -458,15 +474,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.scraper_thread = ScraperThread(playlist_id)
             # self.scraper_thread.scraper.PlaylistID.connect(lambda x:self.PlaylistMsg.setText("Playlist Code : {}".format(x)))  # Connect the signal
             self.scraper_thread.progress_update.connect(self.update_progress)
-            self.scraper_thread.finished.connect(self.thread_finished)  # Connect the finished signal
-            self.scraper_thread.scraper.song_Album.connect(self.update_AlbumName)  # Connect the signal
-            self.scraper_thread.scraper.song_meta.connect(self.update_song_META)  # Connect the signal
-            self.scraper_thread.scraper.add_song_meta.connect(self.add_song_META)  # Connect the signal
+            self.scraper_thread.finished.connect(
+                self.thread_finished
+            )  # Connect the finished signal
+            self.scraper_thread.scraper.song_Album.connect(
+                self.update_AlbumName
+            )  # Connect the signal
+            self.scraper_thread.scraper.song_meta.connect(
+                self.update_song_META
+            )  # Connect the signal
+            self.scraper_thread.scraper.add_song_meta.connect(
+                self.add_song_META
+            )  # Connect the signal
 
-
-            self.scraper_thread.scraper.dlprogress_signal.connect(self.update_song_progress)  # Download Progress
-            self.scraper_thread.scraper.Resetprogress_signal.connect(self.Reset_song_progress)  # Download Progress
-            self.scraper_thread.scraper.PlaylistCompleted.connect(lambda x: self.statusMsg.setText(x))
+            self.scraper_thread.scraper.dlprogress_signal.connect(
+                self.update_song_progress
+            )  # Download Progress
+            self.scraper_thread.scraper.Resetprogress_signal.connect(
+                self.Reset_song_progress
+            )  # Download Progress
+            self.scraper_thread.scraper.PlaylistCompleted.connect(
+                lambda x: self.statusMsg.setText(x)
+            )
 
             # Connect the count_updated signal to the update_counter slot
             self.scraper_thread.scraper.count_updated.connect(self.update_counter)
@@ -485,33 +514,34 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     @pyqtSlot(dict)
     def update_song_META(self, song_meta):
 
-
-
         if self.showPreviewCheck.isChecked():
-            self.thumbnail_thread = DownloadThumbnail(song_meta['cover']+"?size=1", self)
+            self.thumbnail_thread = DownloadThumbnail(
+                song_meta["cover"] + "?size=1", self
+            )
             self.thumbnail_thread.start()
-            self.ArtistNameText.setText(song_meta['artists'])
-            self.AlbumText.setText(song_meta['album'])
-            self.SongName.setText(song_meta['title'])
-            self.YearText.setText(song_meta['releaseDate'])
+            self.ArtistNameText.setText(song_meta["artists"])
+            self.AlbumText.setText(song_meta["album"])
+            self.SongName.setText(song_meta["title"])
+            self.YearText.setText(song_meta["releaseDate"])
         else:
             pass
 
-        self.MainSongName.setText(song_meta['title'] + ' - ' + song_meta['artists'])
+        self.MainSongName.setText(song_meta["title"] + " - " + song_meta["artists"])
         if self.AddMetaDataCheck.isChecked():
-            self.meta_thread = WritingMetaTagsThread(song_meta, song_meta['file'])
-            self.meta_thread.tags_success.connect(lambda x:self.statusMsg.setText("{}".format(x)))
+            self.meta_thread = WritingMetaTagsThread(song_meta, song_meta["file"])
+            self.meta_thread.tags_success.connect(
+                lambda x: self.statusMsg.setText("{}".format(x))
+            )
             self.meta_thread.start()
-
-
 
     @pyqtSlot(dict)
     def add_song_META(self, song_meta):
         if self.AddMetaDataCheck.isChecked():
-            self.meta_thread = WritingMetaTagsThread(song_meta, song_meta['file'])
-            self.meta_thread.tags_success.connect(lambda x:self.statusMsg.setText("{}".format(x)))
+            self.meta_thread = WritingMetaTagsThread(song_meta, song_meta["file"])
+            self.meta_thread.tags_success.connect(
+                lambda x: self.statusMsg.setText("{}".format(x))
+            )
             self.meta_thread.start()
-
 
     @pyqtSlot(str)
     def update_AlbumName(self, AlbumName):
@@ -531,7 +561,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.SongDownloadprogressBar.setValue(0)
         self.SongDownloadprogress.setValue(0)
-
 
     # DRAGGLESS INTERFACE
     def mousePressEvent(self, event):
@@ -556,14 +585,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def CloseSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(250)
-        self.animation.setEndValue(QSize(0,330))
+        self.animation.setEndValue(QSize(0, 330))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.start()
 
     def OpenSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(1000)
-        self.animation.setEndValue(QSize(270,330))
+        self.animation.setEndValue(QSize(270, 330))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.start()
 
@@ -577,10 +606,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         sys.exit()
 
     def Linkedin(self):
-        webbrowser.open('https://www.linkedin.com/in/sunny-patel-30b460204/')
+        webbrowser.open("https://www.linkedin.com/in/sunny-patel-30b460204/")
+
 
 # Main
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = QApplication(sys.argv)
     Screen = MainWindow()
     Screen.setFixedHeight(390)
@@ -589,5 +619,3 @@ if __name__ == '__main__':
     Screen.setAttribute(Qt.WA_TranslucentBackground)
     Screen.show()
     sys.exit(app.exec())
-
-
