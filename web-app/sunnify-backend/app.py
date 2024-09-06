@@ -16,11 +16,12 @@ class MusicScraper:
         self.session = requests.Session()
 
     def get_ID(self, yt_id):
+        # The 'get_ID' function from your scraper code
         LINK = f"https://api.spotifydown.com/getId/{yt_id}"
         headers = {
             "authority": "api.spotifydown.com",
             "method": "GET",
-            "path": f"/getId/{yt_id}",
+            "path": f"/getId/{id}",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
             "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
@@ -34,6 +35,7 @@ class MusicScraper:
         return None
 
     def generate_Analyze_id(self, yt_id):
+        # The 'generate_Analyze_id' function from scraper code
         DL = "https://corsproxy.io/?https://www.y2mate.com/mates/analyzeV2/ajax"
         data = {
             "k_query": f"https://www.youtube.com/watch?v={yt_id}",
@@ -57,6 +59,7 @@ class MusicScraper:
         return None
 
     def generate_Conversion_id(self, analyze_yt_id, analyze_id):
+        # The 'generate_Conversion_id' function from scraper code
         DL = "https://corsproxy.io/?https://www.y2mate.com/mates/convertV2/index"
         data = {
             "vid": analyze_yt_id,
@@ -78,6 +81,7 @@ class MusicScraper:
         return None
 
     def get_PlaylistMetadata(self, Playlist_ID):
+        # The 'get_PlaylistMetadata' function from scraper code
         URL = f"https://api.spotifydown.com/metadata/playlist/{Playlist_ID}"
         headers = {
             "authority": "api.spotifydown.com",
@@ -94,6 +98,7 @@ class MusicScraper:
         return None
 
     def errorcatch(self, SONG_ID):
+        # The 'errorcatch' function from scraper
         print("[*] Trying to download...")
         headers = {
             "authority": "api.spotifydown.com",
@@ -114,8 +119,8 @@ class MusicScraper:
     def V2catch(self, SONG_ID):
         headers = {
             "authority": "api.spotifydown.com",
-            "method": "GET",
-            "path": f"/download/{SONG_ID}",
+            "method": "POST",
+            "path": "/download/68GdZAAowWDac3SkdNWOwo",
             "scheme": "https",
             "Accept": "*/*",
             "Sec-Ch-Ua": '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
@@ -129,11 +134,26 @@ class MusicScraper:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         }
 
+        ## Updated .. .29TH OCTOBER 2023
         x = self.session.get(
             url=f"https://api.spotifydown.com/download/{SONG_ID}", headers=headers
         )
 
+        # if x.status_code == 200 (depricated as of Feb 2024):
+
+        #     # par = {
+        #     #     'aFormat':'"mp3"',
+        #     #     'dubLang':'false',
+        #     #     'filenamePattern':'"classic"',
+        #     #     'isAudioOnly':'true',
+        #     #     'isNoTTWatermark':'true',
+        #     #     'url':f'"https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{yt_id}"'
+        #     # }
+
+        #     file_status = self.session.post(url=f"https://{target_domain}/api/json", json=par, headers=headers)
+        # print('[*] Data Gathered : ', str(x.content))
         if x.status_code == 200:
+
             try:
                 return {"link": x.json()["link"], "metadata": None}
             except:
