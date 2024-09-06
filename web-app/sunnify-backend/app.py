@@ -91,6 +91,7 @@ class MusicScraper:
         return None
 
     def errorcatch(self, SONG_ID):
+        print("[*] Trying to download...")
         headers = {
             "authority": "api.spotifydown.com",
             "method": "GET",
@@ -175,10 +176,13 @@ class MusicScraper:
                 for count, song in enumerate(Tdata):
                     try:
                         V2METHOD = self.V2catch(song["id"])
-                        DL_LINK = V2METHOD["link"]
-                        SONG_META = song
-                        SONG_META["downloadLink"] = DL_LINK
-                        all_tracks.append(SONG_META)
+                        if V2METHOD and V2METHOD["link"]:
+                            DL_LINK = V2METHOD["link"]
+                            SONG_META = song
+                            SONG_META["downloadLink"] = DL_LINK
+                            all_tracks.append(SONG_META)
+                        else:
+                            print(f"Error processing song {song['id']}: No download link available")
                     except Exception as e:
                         print(f"Error processing song {song['id']}: {str(e)}")
 
@@ -187,6 +191,7 @@ class MusicScraper:
                 else:
                     break
             else:
+                print(f"Error fetching playlist data: Status code {response.status_code}")
                 break
 
         return {"playlistName": PlaylistName, "tracks": all_tracks}
@@ -211,6 +216,7 @@ def scrape_playlist():
         playlist_data = scraper.scrape_playlist(playlist_link)
         return jsonify(playlist_data)
     except Exception as e:
+        print(f"Error scraping playlist: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

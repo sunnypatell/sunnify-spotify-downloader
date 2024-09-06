@@ -10,25 +10,29 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { toast, Toaster } from 'react-hot-toast'
 
+interface Track {
+  id: string;
+  title: string;
+  artists: string;
+  album: string;
+  cover: string;
+  releaseDate: string;
+  downloadLink: string;
+}
+
 export function SunnifyApp() {
   const [playlistLink, setPlaylistLink] = useState('')
   const [showPreview, setShowPreview] = useState(true)
   const [addMetadata, setAddMetadata] = useState(true)
-  const [currentSong, setCurrentSong] = useState({
-    title: '',
-    artists: '',
-    album: '',
-    cover: '',
-    releaseDate: ''
-  })
+  const [currentSong, setCurrentSong] = useState<Track | null>(null)
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [songsDownloaded, setSongsDownloaded] = useState(0)
   const [playlistName, setPlaylistName] = useState('')
   const [isDownloading, setIsDownloading] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
-  const [downloadedTracks, setDownloadedTracks] = useState([])
+  const [downloadedTracks, setDownloadedTracks] = useState<Track[]>([])
   const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     audioRef.current = new Audio()
@@ -63,7 +67,7 @@ export function SunnifyApp() {
       setPlaylistName(data.playlistName)
 
       for (let i = 0; i < data.tracks.length; i++) {
-        const track = data.tracks[i]
+        const track = data.tracks[i] as Track
         setCurrentSong(track)
         setDownloadedTracks(prev => [...prev, track])
         setSongsDownloaded(i + 1)
@@ -77,14 +81,14 @@ export function SunnifyApp() {
       setStatusMessage("Download completed!")
       toast.success("Playlist download completed!")
     } catch (error) {
-      toast.error(`Error: ${error.message}`)
-      setStatusMessage(`Error: ${error.message}`)
+      toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setStatusMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsDownloading(false)
     }
   }
 
-  const playPauseTrack = (track) => {
+  const playPauseTrack = (track: Track) => {
     if (audioRef.current) {
       if (isPlaying && audioRef.current.src === track.downloadLink) {
         audioRef.current.pause()
@@ -170,7 +174,7 @@ export function SunnifyApp() {
                         <p className="text-sm opacity-70">{track.artists}</p>
                       </div>
                       <Button variant="ghost" size="icon" onClick={() => playPauseTrack(track)}>
-                        {isPlaying && currentSong.id === track.id ? <Pause size={16} /> : <Play size={16} />}
+                        {isPlaying && currentSong?.id === track.id ? <Pause size={16} /> : <Play size={16} />}
                       </Button>
                     </div>
                   ))}
@@ -184,13 +188,13 @@ export function SunnifyApp() {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-              {currentSong.cover && (
+              {currentSong?.cover && (
                 <img src={currentSong.cover} alt="Album Cover" className="w-full h-64 object-cover rounded-lg mb-4" />
               )}
-              <h3 className="text-lg font-semibold mb-2">{currentSong.title}</h3>
-              <p className="opacity-70 mb-1">{currentSong.artists}</p>
-              <p className="opacity-70 mb-1">{currentSong.album}</p>
-              <p className="opacity-70">{currentSong.releaseDate}</p>
+              <h3 className="text-lg font-semibold mb-2">{currentSong?.title}</h3>
+              <p className="opacity-70 mb-1">{currentSong?.artists}</p>
+              <p className="opacity-70 mb-1">{currentSong?.album}</p>
+              <p className="opacity-70">{currentSong?.releaseDate}</p>
             </div>
           </div>
         </div>
@@ -244,7 +248,7 @@ export function SunnifyApp() {
             </Button>
           </div>
           <div className="text-sm opacity-70">
-            <p>© 2023 Sunny Jayendra Patel. All rights reserved.</p>
+            <p>© 2024 Sunny Jayendra Patel. All rights reserved.</p>
             <p className="mt-2">
               ⚠️ Legal and Ethical Notice: Sunnify Spotify Downloader is intended for educational purposes only. 
               Users are responsible for complying with copyright laws and regulations in their jurisdiction. 
