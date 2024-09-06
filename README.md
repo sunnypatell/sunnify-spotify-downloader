@@ -88,7 +88,7 @@ I'm currently working on integrating Sunnify with iTunes for seamless transfer o
 
 Stay tuned for these exciting updates, which will enhance the functionality of Sunnify and provide a more seamless experience for users across different platforms.
 
-## Legal and Ethical Notice
+## ⚖️Legal and Ethical Notice⚖️
 
 Sunnify (Spotify Downloader) is intended for educational purposes only. It is your responsibility to ensure that you comply with copyright laws and regulations in your country or region. Downloading copyrighted music without proper authorization may be illegal in certain jurisdictions.
 
