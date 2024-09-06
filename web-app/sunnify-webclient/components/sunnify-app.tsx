@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
-import { Sun, Music, Download, X, Linkedin, Play, Pause, Github, Globe } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Sun, Music, Download, Play, Pause, Folder, X } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -40,15 +40,16 @@ export default function SunnifyApp() {
   const [statusMessage, setStatusMessage] = useState('')
   const [downloadedTracks, setDownloadedTracks] = useState<Track[]>([])
   const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  useEffect(() => {
-    audioRef.current = new Audio()
-  }, [])
+  const [downloadPath, setDownloadPath] = useState('')
 
   const handleDownload = async () => {
     if (!playlistLink) {
       toast.error('Please enter a valid Spotify playlist URL')
+      return
+    }
+
+    if (!downloadPath) {
+      toast.error('Please enter a download location')
       return
     }
 
@@ -59,46 +60,51 @@ export default function SunnifyApp() {
     setDownloadedTracks([])
 
     try {
-      const response = await fetch('http://localhost:5000/scrape_playlist', { // Updated backend URL
+      const response = await fetch('http://localhost:5000/api/scrape-playlist', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ playlist_link: playlistLink }), // Updated payload key
+        body: JSON.stringify({ 
+          playlistUrl: playlistLink,
+          downloadPath: downloadPath
+        }),
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch playlist data')
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        
+        const events = decoder.decode(value).split('\n\n')
+        for (const event of events) {
+          if (event.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(event.slice(6))
+              switch (data.event) {
+                case 'progress':
+                  setDownloadProgress(data.data.progress)
+                  setSongsDownloaded(prev => prev + 1)
+                  setStatusMessage(`Processing: ${data.data.currentTrack.title} - ${data.data.currentTrack.artists}`)
+                  break
+                case 'error':
+                  toast.error(data.data.message)
+                  break
+                case 'complete':
+                  setPlaylistName(data.data.playlistName)
+                  setDownloadedTracks(data.data.tracks)
+                  setStatusMessage("Processing completed!")
+                  toast.success("Playlist processing completed!")
+                  break
+              }
+            } catch (parseError) {
+              console.error('Error parsing event:', parseError)
+            }
+          }
+        }
       }
-
-      const data = await response.json()
-      setPlaylistName(data.playlistName)
-
-      // Mock data for the tracks
-      const mockTracks = data.tracks.map((track: any, i: number) => ({
-        id: i.toString(),
-        title: track.title,
-        artists: track.artists,
-        album: track.album,
-        cover: track.cover,
-        releaseDate: track.releaseDate,
-        downloadLink: `http://localhost:5000/download/${track.id}` // Link to backend download route
-      }))
-
-      for (let i = 0; i < mockTracks.length; i++) {
-        const track = mockTracks[i] as Track
-        setCurrentSong(track)
-        setDownloadedTracks(prev => [...prev, track])
-        setSongsDownloaded(i + 1)
-        setDownloadProgress(((i + 1) / mockTracks.length) * 100)
-        setStatusMessage(`Processing: ${track.title} - ${track.artists}`)
-
-        // Simulate download process
-        await new Promise(resolve => setTimeout(resolve, 500))
-      }
-
-      setStatusMessage("Processing completed!")
-      toast.success("Playlist processing completed!")
     } catch (error) {
       console.error('Error:', error)
       toast.error('An error occurred while processing the playlist')
@@ -108,14 +114,9 @@ export default function SunnifyApp() {
   }
 
   const playPauseTrack = (track: Track) => {
-    if (!audioRef.current) return
-
-    if (isPlaying && audioRef.current.src === track.downloadLink) {
-      audioRef.current.pause()
+    if (isPlaying && currentSong.id === track.id) {
       setIsPlaying(false)
     } else {
-      audioRef.current.src = track.downloadLink
-      audioRef.current.play()
       setIsPlaying(true)
       setCurrentSong(track)
     }
@@ -143,10 +144,17 @@ export default function SunnifyApp() {
                 onChange={(e) => setPlaylistLink(e.target.value)}
                 className="mb-4 bg-white/20 text-white placeholder-white/60"
               />
+              <Input
+                type="text"
+                placeholder="Enter download path (e.g., C:\Users\YourName\Desktop\Music)"
+                value={downloadPath}
+                onChange={(e) => setDownloadPath(e.target.value)}
+                className="mb-4 bg-white/20 text-white placeholder-white/60"
+              />
               <Button 
                 onClick={handleDownload} 
                 className="w-full mb-4 bg-green-500 hover:bg-green-600 text-white"
-                disabled={isDownloading || !playlistLink}
+                disabled={isDownloading || !downloadPath}
               >
                 {isDownloading ? (
                   <>
@@ -243,29 +251,6 @@ export default function SunnifyApp() {
         </div>
 
         <footer className="mt-12 text-center">
-          <div className="flex justify-center space-x-4 mb-4">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => window.open("https://github.com/sunnypatell", "_blank")}
-            >
-              <Github className="h-6 w-6" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => window.open("https://www.linkedin.com/in/sunny-patel-30b460204/", "_blank")}
-            >
-              <Linkedin className="h-6 w-6" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => window.open("https://www.sunnypatel.net/", "_blank")}
-            >
-              <Globe className="h-6 w-6" />
-            </Button>
-          </div>
           <div className="text-sm opacity-70">
             <p>© 2023 Sunny Jayendra Patel. All rights reserved.</p>
             <p className="mt-2">
