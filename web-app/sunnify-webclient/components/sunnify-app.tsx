@@ -307,26 +307,26 @@ export default function SunnifyApp() {
             <AccordionItem value="item-1">
               <AccordionTrigger className="hover:text-yellow-400 transition-colors duration-200">What is Sunnify Spotify Downloader?</AccordionTrigger>
               <AccordionContent>
-                Sunnify Spotify Downloader is a web application that allows you to process and preview your favorite Spotify playlists. It's important to note that this tool is for educational and demonstration purposes only, showcasing API integration, web scraping, proxy masking, UI design, and full-stack development skills.
+                Sunnify Spotify Downloader is a web application that allows you to process and preview your favorite Spotify playlists. It&#39;s important to note that this tool is for educational and demonstration purposes only, showcasing API integration, web scraping, proxy masking, UI design, and full-stack development skills.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-2">
               <AccordionTrigger className="hover:text-yellow-400 transition-colors duration-200">How does Sunnify Spotify Downloader work?</AccordionTrigger>
               <AccordionContent>
-                Sunnify Spotify Downloader uses third-party services and APIs to process Spotify playlists. It doesn't host any services to download music directly. Instead,
+                Sunnify Spotify Downloader uses third-party services and APIs to process Spotify playlists. It doesn&#39;t host any services to download music directly. Instead,
                 it demonstrates the integration of various technologies in a full-stack project, including a backend relational database.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-3">
               <AccordionTrigger className="hover:text-yellow-400 transition-colors duration-200">Is it legal to use Sunnify Spotify Downloader?</AccordionTrigger>
               <AccordionContent>
-                Sunnify Spotify Downloader is intended for use with non-copyrighted music only. We do not condone or support any illegal activities. Users are responsible for ensuring they have the right to access and use any music they process through this application. Always respect copyright laws and artists' rights.
+                Sunnify Spotify Downloader is intended for use with non-copyrighted music only. We do not condone or support any illegal activities. Users are responsible for ensuring they have the right to access and use any music they process through this application. Always respect copyright laws and artists&#39; rights.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-4">
               <AccordionTrigger className="hover:text-yellow-400 transition-colors duration-200">Does it work on private playlists?</AccordionTrigger>
               <AccordionContent>
-                Sunnify Spotify Downloader DOES support private playlists. Although Private playlists are not accessible through the Spotify API, I'm just that guy... so feel free to scrape private playlists as well, as long as you have the URL.
+                Sunnify Spotify Downloader DOES support private playlists. Although Private playlists are not accessible through the Spotify API, I&#39;m just that guy... so feel free to scrape private playlists as well, as long as you have the URL.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-5">
@@ -338,7 +338,7 @@ export default function SunnifyApp() {
             <AccordionItem value="item-6">
               <AccordionTrigger className="hover:text-yellow-400 transition-colors duration-200">Can I contribute to this project?</AccordionTrigger>
               <AccordionContent>
-                While this is primarily a personal portfolio project, we welcome feedback and suggestions. If you're interested in contributing or have ideas for improvement, please reach out through the provided contact information or the GitHub repository.
+                While this is primarily a personal portfolio project, we welcome feedback and suggestions. If you&#39;re interested in contributing or have ideas for improvement, please reach out through the provided contact information or the GitHub repository.
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -354,11 +354,11 @@ export default function SunnifyApp() {
           </Button>
           {showDeveloperInfo && (
             <div className="mt-4 space-y-4 animate-fadeIn">
-              <p>👨‍💻 I'm a Software Engineer with over 4 years of experience in software development and cloud technologies.</p>
-              <p>🎓 Currently working toward my Honours Bachelor of Science in Computer Science at Ontario Tech University, I'm all about building reliable, scalable software that makes a difference. 💪</p>
-              <p>🛠 From full-stack development to cloud-based solutions, I've led enterprise-level projects that streamline operations and deliver real impact.</p>
+              <p>👨‍💻 I&#39;m a Software Engineer with over 4 years of experience in software development and cloud technologies.</p>
+              <p>🎓 Currently working toward my Honours Bachelor of Science in Computer Science at Ontario Tech University, I&#39;m all about building reliable, scalable software that makes a difference. 💪</p>
+              <p>🛠 From full-stack development to cloud-based solutions, I&#39;ve led enterprise-level projects that streamline operations and deliver real impact.</p>
               <p>🔧 I enjoy automating workflows, optimizing systems, and turning complex challenges into real results. 📈</p>
-              <p>💡 I'm always curious and constantly learning.</p>
+              <p>💡 I&#39;m always curious and constantly learning.</p>
             </div>
           )}
         </div>
