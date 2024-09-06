@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
-import { Sun, Music, Download, X, Linkedin, Play, Pause, Github, Globe, ChevronDown, ChevronUp } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Sun, Music, Download, X, Linkedin, Play, Pause, Github, Globe } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -28,7 +28,11 @@ export function SunnifyApp() {
   const [statusMessage, setStatusMessage] = useState('')
   const [downloadedTracks, setDownloadedTracks] = useState([])
   const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef(new Audio())
+  const audioRef = useRef(null)
+
+  useEffect(() => {
+    audioRef.current = new Audio()
+  }, [])
 
   const handleDownload = async () => {
     if (!playlistLink) {
@@ -42,39 +46,55 @@ export function SunnifyApp() {
     setStatusMessage("Starting download...")
     setDownloadedTracks([])
 
-    // Simulating download process
-    for (let i = 0; i < 5; i++) {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      const fakeSong = {
-        id: `song-${i}`,
-        title: `Song ${i + 1}`,
-        artists: 'Artist Name',
-        album: 'Album Name',
-        cover: 'https://picsum.photos/200',
-        releaseDate: '2023-01-01',
-        audioUrl: 'https://example.com/audio.mp3'
-      }
-      setCurrentSong(fakeSong)
-      setDownloadedTracks(prev => [...prev, fakeSong])
-      setSongsDownloaded(i + 1)
-      setDownloadProgress((i + 1) / 5 * 100)
-      setStatusMessage(`Downloading: ${fakeSong.title} - ${fakeSong.artists}`)
-    }
+    try {
+      const response = await fetch('http://localhost:5000/api/scrape-playlist', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ playlistUrl: playlistLink }),
+      })
 
-    setStatusMessage("Download completed!")
-    toast.success("Playlist download completed!")
-    setIsDownloading(false)
+      if (!response.ok) {
+        throw new Error('Failed to scrape playlist')
+      }
+
+      const data = await response.json()
+      setPlaylistName(data.playlistName)
+
+      for (let i = 0; i < data.tracks.length; i++) {
+        const track = data.tracks[i]
+        setCurrentSong(track)
+        setDownloadedTracks(prev => [...prev, track])
+        setSongsDownloaded(i + 1)
+        setDownloadProgress((i + 1) / data.tracks.length * 100)
+        setStatusMessage(`Downloading: ${track.title} - ${track.artists}`)
+        
+        // Simulate download (in a real scenario, you'd download the file here)
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+
+      setStatusMessage("Download completed!")
+      toast.success("Playlist download completed!")
+    } catch (error) {
+      toast.error(`Error: ${error.message}`)
+      setStatusMessage(`Error: ${error.message}`)
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   const playPauseTrack = (track) => {
-    if (isPlaying && audioRef.current.src === track.audioUrl) {
-      audioRef.current.pause()
-      setIsPlaying(false)
-    } else {
-      audioRef.current.src = track.audioUrl
-      audioRef.current.play()
-      setIsPlaying(true)
-      setCurrentSong(track)
+    if (audioRef.current) {
+      if (isPlaying && audioRef.current.src === track.downloadLink) {
+        audioRef.current.pause()
+        setIsPlaying(false)
+      } else {
+        audioRef.current.src = track.downloadLink
+        audioRef.current.play()
+        setIsPlaying(true)
+        setCurrentSong(track)
+      }
     }
   }
 
@@ -187,13 +207,13 @@ export function SunnifyApp() {
             <AccordionItem value="item-2">
               <AccordionTrigger>How do I use Sunnify Spotify Downloader?</AccordionTrigger>
               <AccordionContent>
-                Simply paste the URL of a Spotify playlist into the input field and click the "Download Playlist" button. The app will then process each track and download accordingly.
+                Simply paste the URL of a Spotify playlist into the input field and click the "Download Playlist" button. The app will then process each track and provide download links.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-3">
               <AccordionTrigger>Is it legal to download music from Spotify?</AccordionTrigger>
               <AccordionContent>
-                Downloading copyrighted music without permission may be illegal in many jurisdictions. Sunnify Spotify Downloader is intended for educational purposes only. Always ensure you have the right to download and use the music you're accessing (non-copyright).
+                Downloading copyrighted music without permission may be illegal in many jurisdictions. Sunnify Spotify Downloader is intended for educational purposes only. Always ensure you have the right to download and use the music you're accessing.
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -224,12 +244,11 @@ export function SunnifyApp() {
             </Button>
           </div>
           <div className="text-sm opacity-70">
-            <p>© 2024 Sunny Jayendra Patel. All rights reserved.</p>
+            <p>© 2023 Sunny Jayendra Patel. All rights reserved.</p>
             <p className="mt-2">
-              ⚖️ Legal and Ethical Notice⚖️: 
-              Sunnify (Spotify Downloader) is intended for educational purposes only.
-              It is your responsibility to ensure that you comply with copyright laws and regulations in your country or region.
-              Downloading copyrighted music without proper authorization may be illegal in certain jurisdictions.
+              ⚠️ Legal and Ethical Notice: Sunnify Spotify Downloader is intended for educational purposes only. 
+              Users are responsible for complying with copyright laws and regulations in their jurisdiction. 
+              Unauthorized downloading of copyrighted music may be illegal.
             </p>
           </div>
         </footer>
