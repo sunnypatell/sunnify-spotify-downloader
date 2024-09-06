@@ -59,12 +59,12 @@ export default function SunnifyApp() {
     setDownloadedTracks([])
 
     try {
-      const response = await fetch('http://localhost:5000/api/scrape-playlist', {
+      const response = await fetch('http://localhost:5000/scrape_playlist', { // Updated backend URL
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ playlistUrl: playlistLink }),
+        body: JSON.stringify({ playlist_link: playlistLink }), // Updated payload key
       })
 
       if (!response.ok) {
@@ -74,16 +74,26 @@ export default function SunnifyApp() {
       const data = await response.json()
       setPlaylistName(data.playlistName)
 
-      for (let i = 0; i < data.tracks.length; i++) {
-        const track = data.tracks[i] as Track
+      // Mock data for the tracks
+      const mockTracks = data.tracks.map((track: any, i: number) => ({
+        id: i.toString(),
+        title: track.title,
+        artists: track.artists,
+        album: track.album,
+        cover: track.cover,
+        releaseDate: track.releaseDate,
+        downloadLink: `http://localhost:5000/download/${track.id}` // Link to backend download route
+      }))
+
+      for (let i = 0; i < mockTracks.length; i++) {
+        const track = mockTracks[i] as Track
         setCurrentSong(track)
         setDownloadedTracks(prev => [...prev, track])
         setSongsDownloaded(i + 1)
-        setDownloadProgress(((i + 1) / data.tracks.length) * 100)
+        setDownloadProgress(((i + 1) / mockTracks.length) * 100)
         setStatusMessage(`Processing: ${track.title} - ${track.artists}`)
 
-        // Here you would typically download the file
-        // For this example, we'll just simulate a delay
+        // Simulate download process
         await new Promise(resolve => setTimeout(resolve, 500))
       }
 

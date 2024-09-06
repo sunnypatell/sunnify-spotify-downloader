@@ -1,9 +1,9 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+import os
+import string
 import requests
 import re
-import string
-import os
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, ID3
 
@@ -12,7 +12,7 @@ CORS(app)
 
 class MusicScraper:
     def __init__(self):
-        self.counter = 0
+        self.counter = 0  # Initialize counter to zero
         self.session = requests.Session()
 
     def get_ID(self, yt_id):
@@ -21,7 +21,7 @@ class MusicScraper:
         headers = {
             "authority": "api.spotifydown.com",
             "method": "GET",
-            "path": f"/getId/{id}",
+            "path": f"/getId/{yt_id}",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
             "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
@@ -134,26 +134,10 @@ class MusicScraper:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         }
 
-        ## Updated .. .29TH OCTOBER 2023
         x = self.session.get(
             url=f"https://api.spotifydown.com/download/{SONG_ID}", headers=headers
         )
-
-        # if x.status_code == 200 (depricated as of Feb 2024):
-
-        #     # par = {
-        #     #     'aFormat':'"mp3"',
-        #     #     'dubLang':'false',
-        #     #     'filenamePattern':'"classic"',
-        #     #     'isAudioOnly':'true',
-        #     #     'isNoTTWatermark':'true',
-        #     #     'url':f'"https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{yt_id}"'
-        #     # }
-
-        #     file_status = self.session.post(url=f"https://{target_domain}/api/json", json=par, headers=headers)
-        # print('[*] Data Gathered : ', str(x.content))
         if x.status_code == 200:
-
             try:
                 return {"link": x.json()["link"], "metadata": None}
             except:
@@ -161,9 +145,23 @@ class MusicScraper:
 
         return None
 
-    def scrape_playlist(self, spotify_playlist_link):
+    def scrape_playlist(self, spotify_playlist_link, music_folder):
         ID = self.returnSPOT_ID(spotify_playlist_link)
         PlaylistName = self.get_PlaylistMetadata(ID)
+
+        # Create Folder for Playlist
+        if not os.path.exists(music_folder):
+            os.makedirs(music_folder)
+        try:
+            FolderPath = "".join(
+                e for e in PlaylistName if e.isalnum() or e in [" ", "_"]
+            )
+            playlist_folder_path = os.path.join(music_folder, FolderPath)
+        except:
+            playlist_folder_path = music_folder
+
+        if not os.path.exists(playlist_folder_path):
+            os.makedirs(playlist_folder_path)
 
         headers = {
             "authority": "api.spotifydown.com",
@@ -187,8 +185,6 @@ class MusicScraper:
         offset = 0
         offset_data["offset"] = offset
 
-        all_tracks = []
-
         while offset is not None:
             response = self.session.get(
                 url=Playlist_Link, params=offset_data, headers=headers
@@ -197,15 +193,24 @@ class MusicScraper:
                 Tdata = response.json()["trackList"]
                 page = response.json()["nextOffset"]
                 for count, song in enumerate(Tdata):
+                    filename = (
+                        song["title"].translate(
+                            str.maketrans("", "", string.punctuation)
+                        )
+                        + " - "
+                        + song["artists"].translate(
+                            str.maketrans("", "", string.punctuation)
+                        )
+                        + ".mp3"
+                    )
+                    filepath = os.path.join(playlist_folder_path, filename)
                     try:
-                        V2METHOD = self.V2catch(song["id"])
-                        DL_LINK = V2METHOD["link"]
-                        SONG_META = song
-                        SONG_META["downloadLink"] = DL_LINK
-                        all_tracks.append(SONG_META)
-                    except Exception:
                         try:
+                            V2METHOD = self.V2catch(song["id"])
+                            DL_LINK = V2METHOD["link"]
+                        except IndentationError:
                             yt_id = self.get_ID(song["id"])
+
                             if yt_id is not None:
                                 data = self.generate_Analyze_id(yt_id["id"])
                                 try:
@@ -214,57 +219,57 @@ class MusicScraper:
                                         data["vid"], DL_ID
                                     )
                                     DL_LINK = DL_DATA["dlink"]
-                                    SONG_META = song
-                                    SONG_META["downloadLink"] = DL_LINK
-                                    all_tracks.append(SONG_META)
                                 except Exception as NoLinkError:
                                     CatchMe = self.errorcatch(song["id"])
                                     if CatchMe is not None:
                                         DL_LINK = CatchMe
-                                        SONG_META = song
-                                        SONG_META["downloadLink"] = DL_LINK
-                                        all_tracks.append(SONG_META)
-                                    else:
-                                        print(f"[*] No download link found for: {song['id']}")
                             else:
-                                print(f"[*] No data found for: {song['id']}")
-                        except Exception as error_status:
-                            print(f"[*] Error processing song {song['id']}: {error_status}")
+                                print("[*] No data found for : ", song)
 
-                    self.increment_counter()
-
+                        if DL_LINK is not None:
+                            ## DOWNLOAD
+                            link = self.session.get(DL_LINK, stream=True)
+                            with open(filepath, "wb") as f:
+                                for data in link.iter_content(1024):
+                                    f.write(data)
+                        else:
+                            print("[*] No Download Link Found.")
+                    except Exception as error_status:
+                        print("[*] Error Status Code : ", error_status)
             if page is not None:
                 offset_data["offset"] = page
+                response = self.session.get(
+                    url=Playlist_Link, params=offset_data, headers=headers
+                )
             else:
                 break
-
-        return {"playlistName": PlaylistName, "tracks": all_tracks}
 
     def returnSPOT_ID(self, link):
         pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
         match = re.match(pattern, link)
+
         if not match:
             raise ValueError("Invalid Spotify playlist URL.")
-        return match.group(1)
+        extracted_id = match.group(1)
 
-    def increment_counter(self):
-        self.counter += 1
+        return extracted_id
 
-@app.route('/api/scrape-playlist', methods=['POST'])
+@app.route('/scrape_playlist', methods=['POST'])
 def scrape_playlist():
-    data = request.json
-    playlist_link = data.get('playlistUrl')
-    
-    if not playlist_link:
-        return jsonify({'error': 'No playlist URL provided'}), 400
+    data = request.get_json()
+    spotify_playlist_link = data.get("playlist_link")
+    music_folder = os.path.join(os.getcwd(), "music")
 
     scraper = MusicScraper()
     try:
-        playlist_data = scraper.scrape_playlist(playlist_link)
-        return jsonify(playlist_data)
+        scraper.scrape_playlist(spotify_playlist_link, music_folder)
+        return jsonify({"status": "success", "message": "Scraping completed."})
     except Exception as e:
-        print(f"Error scraping playlist: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)})
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_from_directory(directory='music', filename=filename)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True)
