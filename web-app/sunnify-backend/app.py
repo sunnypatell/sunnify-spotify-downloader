@@ -4,14 +4,16 @@ import requests
 import re
 import string
 import os
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import APIC, ID3
 
 app = Flask(__name__)
 CORS(app)
 
 class MusicScraper:
     def __init__(self):
-        self.session = requests.Session()
         self.counter = 0
+        self.session = requests.Session()
 
     def get_ID(self, yt_id):
         LINK = f"https://api.spotifydown.com/getId/{yt_id}"
@@ -27,7 +29,8 @@ class MusicScraper:
         }
         response = self.session.get(url=LINK, headers=headers)
         if response.status_code == 200:
-            return response.json()
+            data = response.json()
+            return data
         return None
 
     def generate_Analyze_id(self, yt_id):
@@ -111,8 +114,8 @@ class MusicScraper:
     def V2catch(self, SONG_ID):
         headers = {
             "authority": "api.spotifydown.com",
-            "method": "POST",
-            "path": "/download/68GdZAAowWDac3SkdNWOwo",
+            "method": "GET",
+            "path": f"/download/{SONG_ID}",
             "scheme": "https",
             "Accept": "*/*",
             "Sec-Ch-Ua": '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
@@ -178,11 +181,29 @@ class MusicScraper:
                         V2METHOD = self.V2catch(song["id"])
                         if V2METHOD and V2METHOD["link"]:
                             DL_LINK = V2METHOD["link"]
-                            SONG_META = song
-                            SONG_META["downloadLink"] = DL_LINK
-                            all_tracks.append(SONG_META)
                         else:
-                            print(f"Error processing song {song['id']}: No download link available")
+                            yt_id = self.get_ID(song["id"])
+                            if yt_id is not None:
+                                data = self.generate_Analyze_id(yt_id["id"])
+                                try:
+                                    DL_ID = data["links"]["mp3"]["mp3128"]["k"]
+                                    DL_DATA = self.generate_Conversion_id(data["vid"], DL_ID)
+                                    DL_LINK = DL_DATA["dlink"]
+                                except Exception as NoLinkError:
+                                    CatchMe = self.errorcatch(song["id"])
+                                    if CatchMe is not None:
+                                        DL_LINK = CatchMe
+                                    else:
+                                        print(f"[*] No download link found for: {song['id']}")
+                                        continue
+                            else:
+                                print(f"[*] No data found for: {song['id']}")
+                                continue
+
+                        SONG_META = song
+                        SONG_META["downloadLink"] = DL_LINK
+                        all_tracks.append(SONG_META)
+                        self.counter += 1
                     except Exception as e:
                         print(f"Error processing song {song['id']}: {str(e)}")
 

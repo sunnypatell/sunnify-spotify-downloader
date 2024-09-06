@@ -72,14 +72,14 @@ export function SunnifyApp() {
         setDownloadedTracks(prev => [...prev, track])
         setSongsDownloaded(i + 1)
         setDownloadProgress((i + 1) / data.tracks.length * 100)
-        setStatusMessage(`Downloading: ${track.title} - ${track.artists}`)
+        setStatusMessage(`Processing: ${track.title} - ${track.artists}`)
         
         // Simulate download (in a real scenario, you'd download the file here)
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
 
-      setStatusMessage("Download completed!")
-      toast.success("Playlist download completed!")
+      setStatusMessage("Playlist processing completed.")
+      toast.success("Playlist processing completed!")
     } catch (error) {
       toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setStatusMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -132,12 +132,12 @@ export function SunnifyApp() {
                 {isDownloading ? (
                   <>
                     <Music className="mr-2 animate-spin" size={16} />
-                    Downloading...
+                    Processing...
                   </>
                 ) : (
                   <>
                     <Download className="mr-2" size={16} />
-                    Download Playlist
+                    Process Playlist
                   </>
                 )}
               </Button>
@@ -158,14 +158,14 @@ export function SunnifyApp() {
                 />
               </div>
               <div className="mt-8">
-                <h2 className="text-lg font-semibold mb-2">Download Progress</h2>
+                <h2 className="text-lg font-semibold mb-2">Processing Progress</h2>
                 <Progress value={downloadProgress} className="mb-2" />
-                <p className="text-sm">Songs downloaded: {songsDownloaded}</p>
+                <p className="text-sm">Songs processed: {songsDownloaded}</p>
                 <p className="text-sm">Playlist: {playlistName}</p>
                 <p className="text-sm mt-2">{statusMessage}</p>
               </div>
               <div className="mt-8">
-                <h2 className="text-lg font-semibold mb-2">Downloaded Tracks</h2>
+                <h2 className="text-lg font-semibold mb-2">Processed Tracks</h2>
                 <ScrollArea className="h-64 w-full rounded-md border border-white/20 p-4">
                   {downloadedTracks.map((track, index) => (
                     <div key={index} className="flex items-center justify-between py-2 border-b border-white/10 last:border-b-0">
@@ -205,13 +205,13 @@ export function SunnifyApp() {
             <AccordionItem value="item-1">
               <AccordionTrigger>What is Sunnify Spotify Downloader?</AccordionTrigger>
               <AccordionContent>
-                Sunnify Spotify Downloader is a web application that allows you to download your favorite Spotify playlists for offline listening. Please note that this tool is for educational purposes only and should be used in compliance with copyright laws.
+                Sunnify Spotify Downloader is a web application that allows you to process and download your favorite Spotify playlists. Please note that this tool is for educational purposes only and should be used in compliance with copyright laws.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-2">
               <AccordionTrigger>How do I use Sunnify Spotify Downloader?</AccordionTrigger>
               <AccordionContent>
-                Simply paste the URL of a Spotify playlist into the input field and click the "Download Playlist" button. The app will then process each track and provide download links.
+                Simply paste the URL of a Spotify playlist into the input field and click the "Process Playlist" button. The app will then process each track and provide download links.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-3">
