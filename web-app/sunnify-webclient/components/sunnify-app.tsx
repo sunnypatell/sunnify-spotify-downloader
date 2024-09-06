@@ -1,4 +1,6 @@
-import React, { useState, useRef } from 'react'
+'use client'
+
+import React, { useState, useRef, useEffect } from 'react'
 import { Sun, Music, Download, X, Linkedin, Play, Pause, Github, Globe } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,7 +20,7 @@ interface Track {
   downloadLink: string;
 }
 
-export default function SunnifySpotifyDownloader() {
+export default function SunnifyApp() {
   const [playlistLink, setPlaylistLink] = useState('')
   const [showPreview, setShowPreview] = useState(true)
   const [addMetadata, setAddMetadata] = useState(true)
@@ -38,7 +40,11 @@ export default function SunnifySpotifyDownloader() {
   const [statusMessage, setStatusMessage] = useState('')
   const [downloadedTracks, setDownloadedTracks] = useState<Track[]>([])
   const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement>(new Audio())
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    audioRef.current = new Audio()
+  }, [])
 
   const handleDownload = async () => {
     if (!playlistLink) {
@@ -92,6 +98,8 @@ export default function SunnifySpotifyDownloader() {
   }
 
   const playPauseTrack = (track: Track) => {
+    if (!audioRef.current) return
+
     if (isPlaying && audioRef.current.src === track.downloadLink) {
       audioRef.current.pause()
       setIsPlaying(false)
@@ -251,7 +259,7 @@ export default function SunnifySpotifyDownloader() {
           <div className="text-sm opacity-70">
             <p>© 2023 Sunny Jayendra Patel. All rights reserved.</p>
             <p className="mt-2">
-              ⚖️ Legal and Ethical Notice: Sunnify Spotify Downloader is intended for educational purposes only. 
+              ⚠️ Legal and Ethical Notice: Sunnify Spotify Downloader is intended for educational purposes only. 
               Users are responsible for complying with copyright laws and regulations in their jurisdiction. 
               This tool does not actually download music and is for demonstration purposes only.
             </p>

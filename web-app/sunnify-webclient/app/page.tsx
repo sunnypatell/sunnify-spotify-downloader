@@ -1,5 +1,9 @@
-import { SunnifyApp } from "@/components/sunnify-app"
+import SunnifyApp from '@/components/sunnify-app'
 
-export default function Page() {
-  return <SunnifyApp />
+export default function Home() {
+  return (
+    <main>
+      <SunnifyApp />
+    </main>
+  )
 }

@@ -4,6 +4,8 @@ import requests
 import re
 import string
 import os
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import APIC, ID3
 
 app = Flask(__name__)
 CORS(app)
@@ -176,15 +178,14 @@ class MusicScraper:
                 page = response.json()["nextOffset"]
                 for count, song in enumerate(Tdata):
                     try:
+                        V2METHOD = self.V2catch(song["id"])
+                        DL_LINK = V2METHOD["link"]
+                        SONG_META = song
+                        SONG_META["downloadLink"] = DL_LINK
+                        all_tracks.append(SONG_META)
+                    except Exception:
                         try:
-                            V2METHOD = self.V2catch(song["id"])
-                            DL_LINK = V2METHOD["link"]
-                            SONG_META = song
-                            SONG_META["downloadLink"] = DL_LINK
-                            all_tracks.append(SONG_META)
-                        except Exception:
                             yt_id = self.get_ID(song["id"])
-
                             if yt_id is not None:
                                 data = self.generate_Analyze_id(yt_id["id"])
                                 try:
@@ -203,12 +204,15 @@ class MusicScraper:
                                         SONG_META = song
                                         SONG_META["downloadLink"] = DL_LINK
                                         all_tracks.append(SONG_META)
+                                    else:
+                                        print(f"[*] No download link found for: {song['id']}")
                             else:
-                                print("[*] No data found for : ", song["id"])
+                                print(f"[*] No data found for: {song['id']}")
+                        except Exception as error_status:
+                            print(f"[*] Error processing song {song['id']}: {error_status}")
 
-                        self.increment_counter()
-                    except Exception as error_status:
-                        print("[*] Error Status Code : ", error_status)
+                    self.increment_counter()
+
             if page is not None:
                 offset_data["offset"] = page
             else:
