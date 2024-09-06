@@ -1,6 +1,4 @@
-'use client'
-
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import { Sun, Music, Download, X, Linkedin, Play, Pause, Github, Globe } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,11 +18,19 @@ interface Track {
   downloadLink: string;
 }
 
-export function SunnifyApp() {
+export default function SunnifySpotifyDownloader() {
   const [playlistLink, setPlaylistLink] = useState('')
   const [showPreview, setShowPreview] = useState(true)
   const [addMetadata, setAddMetadata] = useState(true)
-  const [currentSong, setCurrentSong] = useState<Track | null>(null)
+  const [currentSong, setCurrentSong] = useState<Track>({
+    id: '',
+    title: '',
+    artists: '',
+    album: '',
+    cover: '',
+    releaseDate: '',
+    downloadLink: ''
+  })
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [songsDownloaded, setSongsDownloaded] = useState(0)
   const [playlistName, setPlaylistName] = useState('')
@@ -32,11 +38,7 @@ export function SunnifyApp() {
   const [statusMessage, setStatusMessage] = useState('')
   const [downloadedTracks, setDownloadedTracks] = useState<Track[]>([])
   const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  useEffect(() => {
-    audioRef.current = new Audio()
-  }, [])
+  const audioRef = useRef<HTMLAudioElement>(new Audio())
 
   const handleDownload = async () => {
     if (!playlistLink) {
@@ -60,7 +62,7 @@ export function SunnifyApp() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to scrape playlist')
+        throw new Error('Failed to fetch playlist data')
       }
 
       const data = await response.json()
@@ -71,34 +73,33 @@ export function SunnifyApp() {
         setCurrentSong(track)
         setDownloadedTracks(prev => [...prev, track])
         setSongsDownloaded(i + 1)
-        setDownloadProgress((i + 1) / data.tracks.length * 100)
+        setDownloadProgress(((i + 1) / data.tracks.length) * 100)
         setStatusMessage(`Processing: ${track.title} - ${track.artists}`)
-        
-        // Simulate download (in a real scenario, you'd download the file here)
-        await new Promise(resolve => setTimeout(resolve, 1000))
+
+        // Here you would typically download the file
+        // For this example, we'll just simulate a delay
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
 
-      setStatusMessage("Playlist processing completed.")
+      setStatusMessage("Processing completed!")
       toast.success("Playlist processing completed!")
     } catch (error) {
-      toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      setStatusMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error('Error:', error)
+      toast.error('An error occurred while processing the playlist')
     } finally {
       setIsDownloading(false)
     }
   }
 
   const playPauseTrack = (track: Track) => {
-    if (audioRef.current) {
-      if (isPlaying && audioRef.current.src === track.downloadLink) {
-        audioRef.current.pause()
-        setIsPlaying(false)
-      } else {
-        audioRef.current.src = track.downloadLink
-        audioRef.current.play()
-        setIsPlaying(true)
-        setCurrentSong(track)
-      }
+    if (isPlaying && audioRef.current.src === track.downloadLink) {
+      audioRef.current.pause()
+      setIsPlaying(false)
+    } else {
+      audioRef.current.src = track.downloadLink
+      audioRef.current.play()
+      setIsPlaying(true)
+      setCurrentSong(track)
     }
   }
 
@@ -174,7 +175,7 @@ export function SunnifyApp() {
                         <p className="text-sm opacity-70">{track.artists}</p>
                       </div>
                       <Button variant="ghost" size="icon" onClick={() => playPauseTrack(track)}>
-                        {isPlaying && currentSong?.id === track.id ? <Pause size={16} /> : <Play size={16} />}
+                        {isPlaying && currentSong.id === track.id ? <Pause size={16} /> : <Play size={16} />}
                       </Button>
                     </div>
                   ))}
@@ -188,13 +189,13 @@ export function SunnifyApp() {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-              {currentSong?.cover && (
+              {currentSong.cover && (
                 <img src={currentSong.cover} alt="Album Cover" className="w-full h-64 object-cover rounded-lg mb-4" />
               )}
-              <h3 className="text-lg font-semibold mb-2">{currentSong?.title}</h3>
-              <p className="opacity-70 mb-1">{currentSong?.artists}</p>
-              <p className="opacity-70 mb-1">{currentSong?.album}</p>
-              <p className="opacity-70">{currentSong?.releaseDate}</p>
+              <h3 className="text-lg font-semibold mb-2">{currentSong.title}</h3>
+              <p className="opacity-70 mb-1">{currentSong.artists}</p>
+              <p className="opacity-70 mb-1">{currentSong.album}</p>
+              <p className="opacity-70">{currentSong.releaseDate}</p>
             </div>
           </div>
         </div>
@@ -205,19 +206,19 @@ export function SunnifyApp() {
             <AccordionItem value="item-1">
               <AccordionTrigger>What is Sunnify Spotify Downloader?</AccordionTrigger>
               <AccordionContent>
-                Sunnify Spotify Downloader is a web application that allows you to process and download your favorite Spotify playlists. Please note that this tool is for educational purposes only and should be used in compliance with copyright laws.
+                Sunnify Spotify Downloader is a web application that allows you to process and preview your favorite Spotify playlists. Please note that this tool is for educational purposes only and should be used in compliance with copyright laws.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-2">
               <AccordionTrigger>How do I use Sunnify Spotify Downloader?</AccordionTrigger>
               <AccordionContent>
-                Simply paste the URL of a Spotify playlist into the input field and click the "Process Playlist" button. The app will then process each track and provide download links.
+                Simply paste the URL of a Spotify playlist into the input field and click the "Process Playlist" button. The app will then process each track and provide preview links.
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="item-3">
               <AccordionTrigger>Is it legal to download music from Spotify?</AccordionTrigger>
               <AccordionContent>
-                Downloading copyrighted music without permission may be illegal in many jurisdictions. Sunnify Spotify Downloader is intended for educational purposes only. Always ensure you have the right to download and use the music you're accessing.
+                Downloading copyrighted music without permission may be illegal in many jurisdictions. Sunnify Spotify Downloader is intended for educational purposes only and does not actually download music. Always ensure you have the right to access and use the music you're processing.
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -248,11 +249,11 @@ export function SunnifyApp() {
             </Button>
           </div>
           <div className="text-sm opacity-70">
-            <p>© 2024 Sunny Jayendra Patel. All rights reserved.</p>
+            <p>© 2023 Sunny Jayendra Patel. All rights reserved.</p>
             <p className="mt-2">
-              ⚠️ Legal and Ethical Notice: Sunnify Spotify Downloader is intended for educational purposes only. 
+              ⚖️ Legal and Ethical Notice: Sunnify Spotify Downloader is intended for educational purposes only. 
               Users are responsible for complying with copyright laws and regulations in their jurisdiction. 
-              Unauthorized downloading of copyrighted music may be illegal.
+              This tool does not actually download music and is for demonstration purposes only.
             </p>
           </div>
         </footer>
