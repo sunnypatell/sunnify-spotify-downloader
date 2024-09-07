@@ -80,7 +80,69 @@ If you encounter any issues while running Sunnify, try the following steps:
 
 1. Ensure that you have a stable internet connection.
 2. Verify that you have entered the correct Spotify playlist URL.
-3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git fetch`
+3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git pull`
+
+
+## Running the Web App
+
+If you want to run the Sunnify web app locally, follow these steps to set up both the backend and frontend:
+
+### Backend Setup (Sunnify Backend)
+
+1. Navigate to the `web-app/sunnify-backend` directory in your terminal:
+
+    ```bash
+    cd web-app/sunnify-backend
+    ```
+
+2. Install the required dependencies if not done already:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3. Run the backend server:
+
+    ```bash
+    python app.py
+    ```
+
+   Alternatively, you can use:
+
+    ```bash
+    python -m app.py
+    ```
+
+   This will start the backend on `http://127.0.0.1:5000`.
+
+### Frontend Setup (Sunnify Web Client)
+
+1. Once the backend is running, navigate to the `web-app/sunnify-webclient` directory:
+
+    ```bash
+    cd ../sunnify-webclient
+    ```
+
+2. Install the required frontend dependencies:
+
+    ```bash
+    npm install
+    ```
+
+3. Start the frontend development server:
+
+    ```bash
+    npm run dev
+    ```
+
+   The frontend will now be running locally on `http://localhost:3000` and can communicate with the backend on `http://127.0.0.1:5000`.
+
+### Important Note
+
+The backend for Sunnify is hosted on Render under the free compute plan. If there hasn't been an API call to the Render-hosted backend for a while, it might "fall asleep" and take a moment to wake up when the frontend sends a request (e.g., downloading a playlist). Please be patient as it may take a few seconds for the backend to wake up and process the request.
+
+---
+
 
 ## Coming Soon
 
