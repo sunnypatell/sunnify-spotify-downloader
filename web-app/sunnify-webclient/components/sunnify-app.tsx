@@ -77,7 +77,7 @@ export default function SunnifyApp() {
     setDownloadedTracks([])
 
     try {
-      const response = await fetch('http://localhost:5000/api/scrape-playlist', {
+      const response = await fetch('https://sunnify-spotify-downloader.onrender.com/api/scrape-playlist', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
