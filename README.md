@@ -83,7 +83,7 @@ If you encounter any issues while running Sunnify, try the following steps:
 3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git pull`
 
 
-## Running the Web App
+# Running the Web App (If you choose not to use the Windows Desktop version)
 
 If you want to run the Sunnify web app locally, follow these steps to set up both the backend and frontend:
 
