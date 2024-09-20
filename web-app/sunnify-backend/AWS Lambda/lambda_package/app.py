@@ -6,12 +6,11 @@ import requests
 import re
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, APIC
-import time
 import json
-import awsgi  # For AWS Lambda compatibility
+from mangum import Mangum  # Import Mangum for AWS Lambda
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Enable CORS for cross-origin requests
 
 class MusicScraper:
     def __init__(self):
@@ -22,12 +21,9 @@ class MusicScraper:
         headers = {
             "authority": "api.spotifydown.com",
             "method": "GET",
-            "path": f"/getId/{yt_id}",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            "sec-fetch-mode": "cors",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
         response = self.session.get(url=LINK, headers=headers)
         if response.status_code == 200:
@@ -45,12 +41,9 @@ class MusicScraper:
         headers = {
             "authority": "corsproxy.io",
             "method": "POST",
-            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            "sec-fetch-mode": "cors",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
         RES = self.session.post(url=DL, data=data, headers=headers)
         if RES.status_code == 200:
@@ -66,12 +59,9 @@ class MusicScraper:
         headers = {
             "authority": "corsproxy.io",
             "method": "POST",
-            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            "sec-fetch-mode": "cors",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
         RES = self.session.post(url=DL, data=data, headers=headers)
         if RES.status_code == 200:
@@ -83,11 +73,9 @@ class MusicScraper:
         headers = {
             "authority": "api.spotifydown.com",
             "method": "GET",
-            "path": f"/metadata/playlist/{Playlist_ID}",
-            "scheme": "https",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
         meta_data = self.session.get(headers=headers, url=URL)
         if meta_data.status_code == 200:
@@ -99,17 +87,8 @@ class MusicScraper:
             "authority": "api.spotifydown.com",
             "method": "POST",
             "path": "/download/68GdZAAowWDac3SkdNWOwo",
-            "scheme": "https",
             "Accept": "*/*",
-            "Sec-Ch-Ua": '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
-            "Dnt": "1",
-            "Origin": "https://spotifydown.com",
-            "Referer": "https://spotifydown.com/",
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "cross-site",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
 
         x = self.session.get(
@@ -139,17 +118,9 @@ class MusicScraper:
                 "authority": "api.spotifydown.com",
                 "method": "GET",
                 "path": f"/trackList/playlist/{ID}",
-                "scheme": "https",
-                "accept": "*/*",
-                "dnt": "1",
                 "origin": "https://spotifydown.com",
                 "referer": "https://spotifydown.com/",
-                "sec-ch-ua": '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"',
-                "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-platform": '"Windows"',
-                "sec-fetch-dest": "empty",
-                "sec-fetch-mode": "cors",
-                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
             }
 
             Playlist_Link = f"https://api.spotifydown.com/trackList/playlist/{ID}"
@@ -224,9 +195,6 @@ class MusicScraper:
 
                 if page is not None:
                     offset_data["offset"] = page
-                    response = self.session.get(
-                        url=Playlist_Link, params=offset_data, headers=headers
-                    )
                 else:
                     break
 
@@ -311,9 +279,12 @@ def scrape_playlist():
 def download_file(filename):
     return send_from_directory(directory=request.args.get('path', ''), filename=filename, as_attachment=True)
 
+
 # Lambda handler for AWS
 def lambda_handler(event, context):
-    return awsgi.response(app, event, context)
+    handler = Mangum(app)
+    return handler(event, context)
+
 
 if __name__ == '__main__':
     app.run()
