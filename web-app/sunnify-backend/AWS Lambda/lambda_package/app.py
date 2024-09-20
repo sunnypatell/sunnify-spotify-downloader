@@ -1,22 +1,27 @@
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
 import os
 import string
 import requests
 import re
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3, APIC
 import time
 import json
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import ID3, APIC
 from mangum import Mangum
+from typing import AsyncGenerator
+
+from fastapi.responses import FileResponse
 
 app = FastAPI()
 
-# Enable CORS for all domains, or specify allowed origins.
+# CORS Configuration
+origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Modify this with specific origins if needed.
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -131,7 +136,7 @@ class MusicScraper:
                 return {"link": None, "metadata": None}
         return None
 
-    def scrape_playlist(self, spotify_playlist_link, music_folder):
+    async def scrape_playlist(self, spotify_playlist_link, music_folder) -> AsyncGenerator:
         try:
             ID = self.returnSPOT_ID(spotify_playlist_link)
             PlaylistName = self.get_PlaylistMetadata(ID)
@@ -174,8 +179,8 @@ class MusicScraper:
                     url=Playlist_Link, params=offset_data, headers=headers
                 )
                 if response.status_code == 200:
-                    Tdata = response.json()["trackList"]
-                    page = response.json()["nextOffset"]
+                    Tdata = response.json().get("trackList", [])
+                    page = response.json().get("nextOffset", None)
                     total_tracks += len(Tdata)
                     for count, song in enumerate(Tdata):
                         filename = (
@@ -191,8 +196,8 @@ class MusicScraper:
                         filepath = os.path.join(playlist_folder_path, filename)
                         try:
                             V2METHOD = self.V2catch(song["id"])
-                            DL_LINK = V2METHOD["link"]
-                            metadata = V2METHOD["metadata"]
+                            DL_LINK = V2METHOD.get("link", None)
+                            metadata = V2METHOD.get("metadata", None)
 
                             if DL_LINK is not None:
                                 link = self.session.get(DL_LINK, stream=True)
@@ -290,11 +295,16 @@ class MusicScraper:
 
         return extracted_id
 
-@app.post('/api/scrape-playlist')
-async def scrape_playlist(request: Request, background_tasks: BackgroundTasks):
-    data = await request.json()
-    spotify_playlist_link = data.get("playlistUrl")
-    download_path = data.get("downloadPath", "")
+
+class PlaylistRequest(BaseModel):
+    playlistUrl: str
+    downloadPath: str
+
+
+@app.post("/api/scrape-playlist")
+async def scrape_playlist(request: PlaylistRequest):
+    spotify_playlist_link = request.playlistUrl
+    download_path = request.downloadPath
 
     if not download_path:
         raise HTTPException(status_code=400, detail="Download path not specified")
@@ -309,7 +319,7 @@ async def scrape_playlist(request: Request, background_tasks: BackgroundTasks):
 
     async def generate():
         try:
-            for event in scraper.scrape_playlist(spotify_playlist_link, download_path):
+            async for event in scraper.scrape_playlist(spotify_playlist_link, download_path):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'event': 'error', 'data': {'message': str(e)}})}\n\n"
@@ -317,8 +327,11 @@ async def scrape_playlist(request: Request, background_tasks: BackgroundTasks):
     return StreamingResponse(generate(), media_type='text/event-stream')
 
 @app.get('/api/download/{filename:path}')
-def download_file(filename: str, path: str):
-    return FileResponse(path=path, filename=filename, media_type='application/octet-stream', as_attachment=True)
+async def download_file(filename: str, path: str):
+    file_path = os.path.join(path, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path, filename=filename, as_attachment=True)
 
 
 # AWS Lambda handler
