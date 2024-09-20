@@ -80,7 +80,110 @@ If you encounter any issues while running Sunnify, try the following steps:
 
 1. Ensure that you have a stable internet connection.
 2. Verify that you have entered the correct Spotify playlist URL.
-3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git fetch`
+3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git pull`
+
+
+# Running the Web App (If you choose not to use the Windows Desktop version)
+
+If you want to run the Sunnify web app locally, follow these steps to set up both the backend and frontend:
+
+### Backend Setup (Sunnify Backend)
+
+1. Navigate to the `web-app/sunnify-backend` directory in your terminal:
+
+    ```bash
+    cd web-app/sunnify-backend
+    ```
+
+2. Install the required dependencies if not done already:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3. Run the backend server:
+
+    ```bash
+    python app.py
+    ```
+
+   Alternatively, you can use:
+
+    ```bash
+    python -m app.py
+    ```
+
+   This will start the backend on `http://127.0.0.1:5000`.
+
+   The backend communicates with the frontend using **Flask** to create API endpoints and **Flask-CORS** to handle Cross-Origin Resource Sharing (CORS), allowing API requests between the frontend and backend across different domains.
+
+### Frontend Setup (Sunnify Web Client)
+
+1. Once the backend is running, navigate to the `web-app/sunnify-webclient` directory:
+
+    ```bash
+    cd ../sunnify-webclient
+    ```
+
+2. Install the required frontend dependencies:
+
+    ```bash
+    npm install
+    ```
+
+3. Start the frontend development server:
+
+    ```bash
+    npm run dev
+    ```
+
+   The frontend will now be running locally on `http://localhost:3000` and can communicate with the backend on `http://127.0.0.1:5000`.
+
+---
+## Technologies Used
+
+### Frontend Technologies:
+- ⚛️ **React**: Used for building the user interface components.
+- 🚀 **Next.js**: Provides the framework for server-side rendering and routing.
+- 🎨 **Tailwind CSS**: Used for styling and responsive design.
+- 🧩 **shadcn/ui**: Provides pre-built, customizable UI components.
+- 🔍 **Lucide React**: Used for icons throughout the application.
+- ⚙️ **React Hooks**: Utilized for state management and side effects.
+- 🌐 **Fetch API**: Used for making HTTP requests to the backend.
+- 🎧 **Web Audio API**: Implemented for audio playback functionality.
+
+### Backend Technologies:
+- 🐍 **Flask**: Python web framework for creating the API endpoints.
+- 🔓 **Flask-CORS**: Handles Cross-Origin Resource Sharing (CORS) for API requests.
+- 🔗 **Requests**: Used for making HTTP requests to fetch playlist data.
+- 🎵 **Mutagen**: Used for editing ID3 tags and scraping metadata.
+- 🕸️ **BeautifulSoup**: Used for web scraping and parsing HTML content.
+- 🆔 **UUID**: Generates unique IDs for tracks and analysis processes.
+- 🕵️‍♂️ **User-Agent**: Emulates real browser activity to bypass protection mechanisms.
+- 🤖 **Selenium**: Used for browser automation and emulating user interactions.
+- 🎥 **FFmpeg**: Handles audio conversion and processing.
+
+---
+
+## Key Features
+- 🔒 **CORS Handling**: Implemented to allow cross-origin requests securely.
+- 🆔 **ID Generation**: Unique IDs are generated for tracks and analysis processes.
+- 🛡️ **Browser Headers Emulation**: Mimics real browser headers to avoid detection.
+- 📊 **Playlist Metadata Retrieval**: Fetches and processes playlist information.
+- 🕸️ **Web Scraping**: Extracts necessary data from web pages.
+- 👨‍💻 **Real Browser Activity Emulation**: Simulates human-like browsing patterns.
+- 🔄 **User-Agent Rotation**: Regularly changes user-agent strings to avoid blocking.
+- 🛣️ **Flask Routing**: Handles various API endpoints for different functionalities.
+- ⚡ **Asynchronous Processing**: Manages concurrent downloads and processing tasks.
+- 🚨 **Error Handling**: Robust error management for various scenarios.
+
+---
+
+### Important Note
+
+The backend for Sunnify is hosted on Render under the free compute plan. If there hasn't been an API call to the Render-hosted backend for a while, it might "fall asleep" and take a moment to wake up when the frontend sends a request (e.g., downloading a playlist). Please be patient as it may take a few seconds for the backend to wake up and process the request.
+
+---
 
 ## Coming Soon
 
