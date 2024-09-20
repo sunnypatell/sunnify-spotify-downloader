@@ -1,0 +1,3 @@
+[console_scripts]
+eb = ebcli.core.ebcore:main
+ebp = ebcli.core.ebpcore:main

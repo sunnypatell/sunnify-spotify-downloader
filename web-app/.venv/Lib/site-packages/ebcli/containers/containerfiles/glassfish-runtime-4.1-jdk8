@@ -1,0 +1,2 @@
+FROM amazon/aws-eb-glassfish:4.1-jdk8-onbuild-3.5.1
+EXPOSE 8080
