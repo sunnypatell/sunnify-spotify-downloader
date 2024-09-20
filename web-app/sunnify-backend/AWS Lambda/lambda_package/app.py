@@ -1,16 +1,26 @@
-from flask import Flask, request, jsonify, send_from_directory, Response
-from flask_cors import CORS
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import string
 import requests
 import re
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, APIC
+import time
 import json
-from mangum import Mangum  # Import Mangum for AWS Lambda
+from mangum import Mangum
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for cross-origin requests
+app = FastAPI()
+
+# Enable CORS for all domains, or specify allowed origins.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Modify this with specific origins if needed.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class MusicScraper:
     def __init__(self):
@@ -21,9 +31,12 @@ class MusicScraper:
         headers = {
             "authority": "api.spotifydown.com",
             "method": "GET",
+            "path": f"/getId/{yt_id}",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
+            "sec-fetch-mode": "cors",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         }
         response = self.session.get(url=LINK, headers=headers)
         if response.status_code == 200:
@@ -41,9 +54,12 @@ class MusicScraper:
         headers = {
             "authority": "corsproxy.io",
             "method": "POST",
+            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
+            "sec-fetch-mode": "cors",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         }
         RES = self.session.post(url=DL, data=data, headers=headers)
         if RES.status_code == 200:
@@ -59,9 +75,12 @@ class MusicScraper:
         headers = {
             "authority": "corsproxy.io",
             "method": "POST",
+            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
+            "sec-fetch-mode": "cors",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
         }
         RES = self.session.post(url=DL, data=data, headers=headers)
         if RES.status_code == 200:
@@ -73,9 +92,11 @@ class MusicScraper:
         headers = {
             "authority": "api.spotifydown.com",
             "method": "GET",
+            "path": f"/metadata/playlist/{Playlist_ID}",
+            "scheme": "https",
             "origin": "https://spotifydown.com",
             "referer": "https://spotifydown.com/",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
         }
         meta_data = self.session.get(headers=headers, url=URL)
         if meta_data.status_code == 200:
@@ -87,8 +108,17 @@ class MusicScraper:
             "authority": "api.spotifydown.com",
             "method": "POST",
             "path": "/download/68GdZAAowWDac3SkdNWOwo",
+            "scheme": "https",
             "Accept": "*/*",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "Sec-Ch-Ua": '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
+            "Dnt": "1",
+            "Origin": "https://spotifydown.com",
+            "Referer": "https://spotifydown.com/",
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "cross-site",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         }
 
         x = self.session.get(
@@ -118,9 +148,17 @@ class MusicScraper:
                 "authority": "api.spotifydown.com",
                 "method": "GET",
                 "path": f"/trackList/playlist/{ID}",
+                "scheme": "https",
+                "accept": "*/*",
+                "dnt": "1",
                 "origin": "https://spotifydown.com",
                 "referer": "https://spotifydown.com/",
-                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                "sec-ch-ua": '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
             }
 
             Playlist_Link = f"https://api.spotifydown.com/trackList/playlist/{ID}"
@@ -195,6 +233,9 @@ class MusicScraper:
 
                 if page is not None:
                     offset_data["offset"] = page
+                    response = self.session.get(
+                        url=Playlist_Link, params=offset_data, headers=headers
+                    )
                 else:
                     break
 
@@ -249,42 +290,36 @@ class MusicScraper:
 
         return extracted_id
 
-@app.route('/api/scrape-playlist', methods=['POST'])
-def scrape_playlist():
-    data = request.get_json()
+@app.post('/api/scrape-playlist')
+async def scrape_playlist(request: Request, background_tasks: BackgroundTasks):
+    data = await request.json()
     spotify_playlist_link = data.get("playlistUrl")
     download_path = data.get("downloadPath", "")
 
     if not download_path:
-        return jsonify({"error": "Download path not specified"}), 400
+        raise HTTPException(status_code=400, detail="Download path not specified")
 
     if not os.path.exists(download_path):
-        return jsonify({"error": "Specified download path does not exist"}), 400
+        raise HTTPException(status_code=400, detail="Specified download path does not exist")
 
     if not os.access(download_path, os.W_OK):
-        return jsonify({"error": "No write permission for the specified download path"}), 400
+        raise HTTPException(status_code=400, detail="No write permission for the specified download path")
 
     scraper = MusicScraper()
 
-    def generate():
+    async def generate():
         try:
             for event in scraper.scrape_playlist(spotify_playlist_link, download_path):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'event': 'error', 'data': {'message': str(e)}})}\n\n"
 
-    return Response(generate(), mimetype='text/event-stream')
+    return StreamingResponse(generate(), media_type='text/event-stream')
 
-@app.route('/api/download/<path:filename>')
-def download_file(filename):
-    return send_from_directory(directory=request.args.get('path', ''), filename=filename, as_attachment=True)
-
-
-# Lambda handler for AWS
-def lambda_handler(event, context):
-    handler = Mangum(app)
-    return handler(event, context)
+@app.get('/api/download/{filename:path}')
+def download_file(filename: str, path: str):
+    return FileResponse(path=path, filename=filename, media_type='application/octet-stream', as_attachment=True)
 
 
-if __name__ == '__main__':
-    app.run()
+# AWS Lambda handler
+handler = Mangum(app)
