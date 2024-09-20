@@ -284,7 +284,7 @@ class MusicScraper:
 def scrape_playlist():
     data = request.get_json()
     spotify_playlist_link = data.get("playlistUrl")
-    download_path = data.get("downloadPath", "")
+    download_path = data.get("downloadPath", "/tmp")
 
     if not download_path:
         return jsonify({"error": "Download path not specified"}), 400
