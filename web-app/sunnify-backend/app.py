@@ -309,6 +309,3 @@ def scrape_playlist():
 @app.route('/api/download/<path:filename>')
 def download_file(filename):
     return send_from_directory(directory=request.args.get('path', ''), filename=filename, as_attachment=True)
-
-if __name__ == '__main__':
-    app.run()
