@@ -61,21 +61,21 @@ export default function SunnifyApp() {
 
   const handleDownload = async () => {
     if (!playlistLink) {
-      toast.error('Please enter a valid Spotify playlist URL')
-      return
+      toast.error('Please enter a valid Spotify playlist URL');
+      return;
     }
-
+  
     if (!downloadPath) {
-      toast.error('Please enter a download location')
-      return
+      toast.error('Please enter a download location');
+      return;
     }
-
-    setIsDownloading(true)
-    setDownloadProgress(0)
-    setSongsDownloaded(0)
-    setStatusMessage("Starting download...")
-    setDownloadedTracks([])
-
+  
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setSongsDownloaded(0);
+    setStatusMessage("Starting download...");
+    setDownloadedTracks([]);
+  
     try {
       const response = await fetch('https://coxpynrvnl46ro5bybq7aikbim0vmypk.lambda-url.us-east-2.on.aws/api/scrape-playlist', {
         method: 'POST',
@@ -86,50 +86,44 @@ export default function SunnifyApp() {
           playlistUrl: playlistLink,
           downloadPath: downloadPath
         }),
-      })
-
-      const reader = response.body!.getReader()
-      const decoder = new TextDecoder()
-
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        
-        const events = decoder.decode(value).split('\n\n')
-        for (const event of events) {
-          if (event.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(event.slice(6))
-              switch (data.event) {
-                case 'progress':
-                  setDownloadProgress(data.data.progress)
-                  setSongsDownloaded(prev => prev + 1)
-                  setStatusMessage(`Processing: ${data.data.currentTrack.title} - ${data.data.currentTrack.artists}`)
-                  break
-                case 'error':
-                  toast.error(data.data.message)
-                  break
-                case 'complete':
-                  setPlaylistName(data.data.playlistName)
-                  setDownloadedTracks(data.data.tracks)
-                  setStatusMessage("Processing completed!")
-                  toast.success("Playlist processing completed!")
-                  break
-              }
-            } catch (parseError) {
-              console.error('Error parsing event:', parseError)
-            }
-          }
-        }
+      });
+  
+      // Check if the response is OK
+      if (!response.ok) {
+        throw new Error('Error while fetching playlist data');
+      }
+  
+      // Parse the entire response after execution finishes (Lambda returns once completed)
+      const result = await response.json();
+      
+      // Process the response data (Lambda will return the completed playlist data)
+      switch (result.event) {
+        case 'progress':
+          setDownloadProgress(result.data.progress);
+          setSongsDownloaded(prev => prev + 1);
+          setStatusMessage(`Processing: ${result.data.currentTrack.title} - ${result.data.currentTrack.artists}`);
+          break;
+        case 'error':
+          toast.error(result.data.message);
+          break;
+        case 'complete':
+          setPlaylistName(result.data.playlistName);
+          setDownloadedTracks(result.data.tracks);
+          setStatusMessage("Processing completed!");
+          toast.success("Playlist processing completed!");
+          break;
+        default:
+          console.error('Unknown event type:', result.event);
+          break;
       }
     } catch (error) {
-      console.error('Error:', error)
-      toast.error('An error occurred while processing the playlist')
+      console.error('Error:', error);
+      toast.error('An error occurred while processing the playlist');
     } finally {
-      setIsDownloading(false)
+      setIsDownloading(false);
     }
-  }
-
+  };
+    
   const playPauseTrack = (track: Track) => {
     if (isPlaying && currentSong.id === track.id) {
       setIsPlaying(false)
