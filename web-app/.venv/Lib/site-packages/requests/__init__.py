@@ -83,11 +83,7 @@ def check_compatibility(urllib3_version, chardet_version, charset_normalizer_ver
         # charset_normalizer >= 2.0.0 < 4.0.0
         assert (2, 0, 0) <= (major, minor, patch) < (4, 0, 0)
     else:
-        warnings.warn(
-            "Unable to find acceptable character detection dependency "
-            "(chardet or charset_normalizer).",
-            RequestsDependencyWarning,
-        )
+        raise Exception("You need either charset_normalizer or chardet installed")
 
 
 def _check_cryptography(cryptography_version):

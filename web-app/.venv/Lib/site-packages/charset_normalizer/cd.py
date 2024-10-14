@@ -4,13 +4,8 @@ from collections import Counter
 from functools import lru_cache
 from typing import Counter as TypeCounter, Dict, List, Optional, Tuple
 
-from .constant import (
-    FREQUENCIES,
-    KO_NAMES,
-    LANGUAGE_SUPPORTED_COUNT,
-    TOO_SMALL_SEQUENCE,
-    ZH_NAMES,
-)
+from .assets import FREQUENCIES
+from .constant import KO_NAMES, LANGUAGE_SUPPORTED_COUNT, TOO_SMALL_SEQUENCE, ZH_NAMES
 from .md import is_suspiciously_successive_range
 from .models import CoherenceMatches
 from .utils import (
