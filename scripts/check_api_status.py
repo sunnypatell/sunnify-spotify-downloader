@@ -1,6 +1,4 @@
-"""Utility script to probe the external APIs used by the legacy PyQt desktop
-Spotify downloader. The goal is to quickly detect which endpoints are failing
-so that they can be replaced or patched in the GUI application."""
+"""Utility script that probes spotifydown-style endpoints and yt-dlp."""
 
 from __future__ import annotations
 
@@ -9,7 +7,9 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-import requests
+from yt_dlp import YoutubeDL
+
+from spotifydown_api import SpotifyDownAPI, SpotifyDownAPIError, TrackInfo
 
 
 @dataclass
@@ -32,35 +32,65 @@ class EndpointResult:
         }
 
 
-DEFAULT_HEADERS = {
-    "user-agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/118.0.0.0 Safari/537.36"
-    ),
-    "origin": "https://spotifydown.com",
-    "referer": "https://spotifydown.com/",
-}
-
-
-def safe_get(url: str, **kwargs: Any) -> EndpointResult:
-    name = kwargs.pop("name")
+def check_spotifydown_playlist(api: SpotifyDownAPI, playlist_id: str) -> tuple[EndpointResult, Optional[TrackInfo]]:
     try:
-        response = requests.get(url, timeout=15, **kwargs)
-        ok = response.ok
-        notes = response.text[:200] or "<empty response>"
-        return EndpointResult(
-            name=name,
-            url=url,
+        metadata = api.get_playlist_metadata(playlist_id)
+        sample_tracks: list[str] = []
+        first_track: Optional[TrackInfo] = None
+        for track in api.iter_playlist_tracks(playlist_id):
+            if first_track is None:
+                first_track = track
+            sample_tracks.append(track.title)
+            if len(sample_tracks) >= 3:
+                break
+        if not sample_tracks:
+            sample_tracks.append("<no tracks returned>")
+        notes = (
+            f"Playlist '{metadata.name}'"
+            + (f" by {metadata.owner}" if metadata.owner else "")
+            + f". Sample tracks: {', '.join(sample_tracks)}"
+        )
+        result = EndpointResult(
+            name="spotifydown_playlist_lookup",
+            url=f"trackList/playlist/{playlist_id}",
             method="GET",
-            ok=ok,
-            status_code=response.status_code,
+            ok=True,
+            status_code=200,
             notes=notes,
         )
-    except requests.RequestException as exc:  # pragma: no cover - diagnostic script
+        return result, first_track
+    except SpotifyDownAPIError as exc:
+        return (
+            EndpointResult(
+                name="spotifydown_playlist_lookup",
+                url=f"trackList/playlist/{playlist_id}",
+                method="GET",
+                ok=False,
+                status_code=None,
+                notes=str(exc),
+            ),
+            None,
+        )
+
+
+def check_spotifydown_download(api: SpotifyDownAPI, track: TrackInfo) -> EndpointResult:
+    try:
+        link = api.get_track_download_link(track.id)
+        if not link:
+            raise SpotifyDownAPIError("Download link missing from response")
+        notes = f"Resolved {track.title} to {link[:80]}..."
         return EndpointResult(
-            name=name,
-            url=url,
+            name="spotifydown_track_download",
+            url=f"download/{track.id}",
+            method="GET",
+            ok=True,
+            status_code=200,
+            notes=notes,
+        )
+    except SpotifyDownAPIError as exc:
+        return EndpointResult(
+            name="spotifydown_track_download",
+            url=f"download/{track.id}",
             method="GET",
             ok=False,
             status_code=None,
@@ -68,25 +98,29 @@ def safe_get(url: str, **kwargs: Any) -> EndpointResult:
         )
 
 
-def safe_post(url: str, **kwargs: Any) -> EndpointResult:
-    name = kwargs.pop("name")
+def check_youtube_search(query: str) -> EndpointResult:
+    search = f"ytsearch1:{query}"
     try:
-        response = requests.post(url, timeout=15, **kwargs)
-        ok = response.ok
-        snippet = response.text[:200] or "<empty response>"
+        with YoutubeDL({"quiet": True}) as ydl:
+            info = ydl.extract_info(search, download=False)
+            if info.get("entries"):
+                info = info["entries"][0]
+            title = info.get("title", "<unknown title>")
+            url = info.get("webpage_url", "<unknown url>")
+            notes = f"Resolved '{query}' to {title} ({url})"
+            return EndpointResult(
+                name="youtube_search",
+                url=search,
+                method="yt-dlp",
+                ok=True,
+                status_code=None,
+                notes=notes,
+            )
+    except Exception as exc:  # pragma: no cover - diagnostic script
         return EndpointResult(
-            name=name,
-            url=url,
-            method="POST",
-            ok=ok,
-            status_code=response.status_code,
-            notes=snippet,
-        )
-    except requests.RequestException as exc:  # pragma: no cover - diagnostic script
-        return EndpointResult(
-            name=name,
-            url=url,
-            method="POST",
+            name="youtube_search",
+            url=search,
+            method="yt-dlp",
             ok=False,
             status_code=None,
             notes=str(exc),
@@ -95,48 +129,13 @@ def safe_post(url: str, **kwargs: Any) -> EndpointResult:
 
 def main() -> int:
     playlist_id = "37i9dQZF1DXcBWIGoYBM5M"  # Spotify's "Today's Top Hits"
-    track_id = "4uLU6hMCjMI75M1A2tKUQC"  # Rick Astley - Never Gonna Give You Up
-    youtube_id = "dQw4w9WgXcQ"
+    query = "Rick Astley Never Gonna Give You Up"
 
-    results = [
-        safe_get(
-            f"https://api.spotifydown.com/trackList/playlist/{playlist_id}",
-            headers=DEFAULT_HEADERS,
-            name="spotifydown_track_list",
-        ),
-        safe_get(
-            f"https://api.spotifydown.com/metadata/playlist/{playlist_id}",
-            headers=DEFAULT_HEADERS,
-            name="spotifydown_playlist_metadata",
-        ),
-        safe_get(
-            f"https://api.spotifydown.com/getId/{track_id}",
-            headers=DEFAULT_HEADERS,
-            name="spotifydown_get_id",
-        ),
-        safe_get(
-            f"https://api.spotifydown.com/download/{track_id}",
-            headers=DEFAULT_HEADERS,
-            name="spotifydown_download",
-        ),
-        safe_post(
-            "https://corsproxy.io/?https://www.y2mate.com/mates/analyzeV2/ajax",
-            data={
-                "k_query": f"https://www.youtube.com/watch?v={youtube_id}",
-                "k_page": "home",
-                "hl": "en",
-                "q_auto": 0,
-            },
-            headers={**DEFAULT_HEADERS, "content-type": "application/x-www-form-urlencoded"},
-            name="corsproxy_y2mate_analyze",
-        ),
-        safe_post(
-            "https://corsproxy.io/?https://www.y2mate.com/mates/convertV2/index",
-            data={"vid": youtube_id, "k": "placeholder"},
-            headers={**DEFAULT_HEADERS, "content-type": "application/x-www-form-urlencoded"},
-            name="corsproxy_y2mate_convert",
-        ),
-    ]
+    api = SpotifyDownAPI()
+    playlist_result, first_track = check_spotifydown_playlist(api, playlist_id)
+    results = [playlist_result, check_youtube_search(query)]
+    if first_track is not None:
+        results.append(check_spotifydown_download(api, first_track))
 
     json.dump([result.as_dict() for result in results], sys.stdout, indent=2)
     sys.stdout.write("\n")

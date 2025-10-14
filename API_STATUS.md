@@ -1,28 +1,42 @@
 # External API Status (PyQt Desktop Downloader)
 
-The legacy desktop client (`Spotify_Downloader.py`) depends on a handful of
-unofficial endpoints for Spotify metadata, download links, and YouTube
-transcoding. The following table captures their status as of the latest manual
-check.
+The desktop client once again relies on third-party spotifydown endpoints to
+obtain playlist metadata and direct download links without requiring Spotify
+credentials. YouTube remains the fallback via `yt-dlp` when the direct link is
+missing or stale.
 
-| Endpoint | Purpose in app | Test method | Result |
-| --- | --- | --- | --- |
-| `https://api.spotifydown.com/trackList/playlist/<playlist_id>` | Retrieves full playlist track listing | `scripts/check_api_status.py` → `spotifydown_track_list` | **Fail** – HTTP 503 with body `"DNS resolution failure"` |
-| `https://api.spotifydown.com/metadata/playlist/<playlist_id>` | Fetches playlist title/artist metadata | `scripts/check_api_status.py` → `spotifydown_playlist_metadata` | **Fail** – HTTP 503 with body `"DNS resolution failure"` |
-| `https://api.spotifydown.com/getId/<track_id>` | Converts Spotify track ID to YouTube ID | `scripts/check_api_status.py` → `spotifydown_get_id` | **Fail** – HTTP 503 with body `"DNS resolution failure"` |
-| `https://api.spotifydown.com/download/<track_id>` | Retrieves pre-generated MP3 link | `scripts/check_api_status.py` → `spotifydown_download` | **Fail** – HTTP 503 with body `"DNS resolution failure"` |
-| `https://corsproxy.io/?https://www.y2mate.com/mates/analyzeV2/ajax` | Fallback to y2mate analyze endpoint via CORS proxy | `scripts/check_api_status.py` → `corsproxy_y2mate_analyze` | **Fail** – HTTP 403, response indicates the target domain is blocked |
-| `https://corsproxy.io/?https://www.y2mate.com/mates/convertV2/index` | Fallback to y2mate convert endpoint via CORS proxy | `scripts/check_api_status.py` → `corsproxy_y2mate_convert` | **Fail** – HTTP 403, response indicates the target domain is blocked |
+## Spotifydown-style APIs
 
-## How to re-run the check
+| Check | What it does | How to verify |
+| --- | --- | --- |
+| `spotifydown_playlist_lookup` | Calls `/trackList/playlist/{id}` on the first
+configured base URL and reports the playlist title plus a few sample tracks. |
+Run `python3 scripts/check_api_status.py`. Override
+`SPOTIFYDOWN_BASE_URLS` if the default hosts are blocked on your network. |
+| `spotifydown_track_download` | Hits `/download/{trackId}` for the first track
+returned by the playlist call to confirm a direct MP3 URL is provided. | Same as
+above. |
+
+If both checks fail, rotate the domain list via
+`SPOTIFYDOWN_BASE_URLS="https://your-mirror/api"` and rerun the script.
+
+## YouTube via `yt-dlp`
+
+| Check | What it does | How to verify |
+| --- | --- | --- |
+| `youtube_search` | Uses `yt-dlp`'s `ytsearch1:` extractor to locate the first
+matching video for a test query without downloading media. | Run
+`python3 scripts/check_api_status.py`. |
+
+When the search fails, check your network connection or update `yt-dlp` to the
+latest release.
+
+## Rerunning the diagnostics
 
 ```bash
 python3 scripts/check_api_status.py
 ```
 
-The script prints a JSON array with the HTTP status and a short response
-snippet for every endpoint probed, so you can quickly spot regressions.
-
-If any endpoint starts responding again, replace the failing service inside
-`Spotify_Downloader.py` with a stable alternative before shipping updates to
-users.
+On Windows PowerShell replace `python3` with `python` if needed. The script
+prints a JSON array summarising each dependency. All entries should report
+`"ok": true` before demoing the downloader.
