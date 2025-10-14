@@ -25,6 +25,17 @@ Below are screenshots demonstrating the Sunnify application in action, downloadi
 
 - Python 3.6 or above installed on your system. If not installed, download and install Python from [python.org](https://www.python.org/downloads/).
 - Ensure that pip, Python's package manager, is installed. It usually comes with Python. You can verify by running `pip --version` in your terminal.
+- [FFmpeg](https://ffmpeg.org/) available on your `PATH`. `yt-dlp` uses FFmpeg to transcode the downloaded audio into MP3 files.
+- Outbound HTTPS access to `open.spotify.com` so the app can request an anonymous web-player token for playlist lookups. If you're on a restrictive network, allowlist that domain.
+- Working spotifydown-style API endpoints for direct MP3 links. The desktop client ships with a rotation of public base URLs (e.g. `https://api.spotifydown.com`, `https://spotimate.io/api`). If those ever go dark you can point the app at a new host by exporting `SPOTIFYDOWN_BASE_URLS` before launching, e.g.:
+
+  ```bash
+  export SPOTIFYDOWN_BASE_URLS="https://example.com/api,https://backup.example/api"
+  ```
+
+  ```powershell
+  $Env:SPOTIFYDOWN_BASE_URLS = "https://example.com/api,https://backup.example/api"
+  ```
 
 ### Sunnify Executable (Windows)
 
@@ -50,6 +61,8 @@ Install the required dependencies:
 pip install -r req.txt
 ```
 
+If you have not added FFmpeg to your system yet, install it now and restart the terminal so that `yt-dlp` can locate the executable.
+
 Run the application:
 
 ```bash
@@ -58,12 +71,13 @@ python Spotify_Downloader.py
 
 ## Usage
 
-1. Launch the Sunnify application.
-2. Enter your Spotify playlist URL in the provided input field.
-3. Check show preview box to see progress
-4. Check metadata box if you want to download cover art, author, album, release-date etc...
-5. Press enter in the URL field to start downloading.
-4. The downloaded songs will be saved in the media directory (wherever your source or executable is located).
+1. (Optional) export `SPOTIFYDOWN_BASE_URLS` if you want to override the bundled API host list.
+2. Launch the Sunnify application.
+3. Enter your Spotify playlist URL in the provided input field.
+4. Check show preview box to see progress
+5. Check metadata box if you want to download cover art, author, album, release-date etc...
+6. Press enter in the URL field to start downloading.
+7. The downloaded songs will be saved in the media directory (wherever your source or executable is located).
 
 ## Libraries Used
 
@@ -73,6 +87,7 @@ Sunnify utilizes the following Python libraries:
 - [webbrowser](https://pypi.org/project/pycopy-webbrowser/): Used to bypass Spotify Network Traffic Detection.
 - [requests](https://pypi.org/project/requests/): Used for making HTTP requests.
 - [mutagen.id3](https://mutagen.readthedocs.io/en/latest/api/id3.html): Used for editing ID3 tags and scraping metadata.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp): Downloads and converts the audio for each track directly from YouTube.
 
 ## Common Debugging
 
@@ -81,6 +96,7 @@ If you encounter any issues while running Sunnify, try the following steps:
 1. Ensure that you have a stable internet connection.
 2. Verify that you have entered the correct Spotify playlist URL.
 3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git pull`
+4. Run `python scripts/check_api_status.py` to verify Spotify's web playlist endpoint, the spotifydown mirrors, and `yt-dlp` search are reachable from your network.
 
 
 # Running the Web App (If you choose not to use the Windows Desktop version)

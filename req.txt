@@ -12,3 +12,4 @@ PyQt5-sip==12.11.1
 pywin32-ctypes==0.2.2
 requests==2.31.0
 urllib3==2.0.4
+yt-dlp==2024.8.6
