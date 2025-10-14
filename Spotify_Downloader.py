@@ -38,6 +38,9 @@ import re
 import webbrowser
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, ID3
+from yt_dlp import YoutubeDL
+
+from spotifydown_api import PlaylistInfo, SpotifyDownAPI, SpotifyDownAPIError
 
 
 class MusicScraper(QThread):
@@ -54,270 +57,166 @@ class MusicScraper(QThread):
         super(MusicScraper, self).__init__()
         self.counter = 0  # Initialize counter to zero
         self.session = requests.Session()
+        self.spotifydown_api = None
 
-    def get_ID(self, yt_id):
-        # The 'get_ID' function from your scraper code
-        LINK = f"https://api.spotifydown.com/getId/{yt_id}"
-        headers = {
-            "authority": "api.spotifydown.com",
-            "method": "GET",
-            "path": f"/getId/{id}",
-            "origin": "https://spotifydown.com",
-            "referer": "https://spotifydown.com/",
-            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            "sec-fetch-mode": "cors",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+    def ensure_spotifydown_api(self):
+        if self.spotifydown_api is None:
+            self.spotifydown_api = SpotifyDownAPI(session=self.session)
+        return self.spotifydown_api
+
+    def sanitize_text(self, text):
+        cleaned = text.translate(str.maketrans("", "", string.punctuation))
+        normalized = " ".join(cleaned.split())
+        return normalized or "Unknown"
+
+    def format_playlist_name(self, metadata: PlaylistInfo):
+        owner = metadata.owner or "Spotify"
+        return f"{metadata.name} - {owner}".strip(" -")
+
+    def prepare_playlist_folder(self, base_folder, playlist_name):
+        if not os.path.exists(base_folder):
+            os.makedirs(base_folder)
+        safe_name = "".join(
+            character for character in playlist_name if character.isalnum() or character in [" ", "_"]
+        ).strip()
+        if not safe_name:
+            safe_name = "Sunnify Playlist"
+        playlist_folder = os.path.join(base_folder, safe_name)
+        os.makedirs(playlist_folder, exist_ok=True)
+        return playlist_folder
+
+    def download_track_audio(self, search_query, destination):
+        base, _ = os.path.splitext(destination)
+        output_template = base + ".%(ext)s"
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "noplaylist": True,
+            "quiet": True,
+            "outtmpl": output_template,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }
+            ],
         }
-        response = self.session.get(url=LINK, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-            return data
-        return None
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(search_query, download=True)
+            if info.get("entries"):
+                info = info["entries"][0]
+            expected_path = base + ".mp3"
+            if os.path.exists(expected_path):
+                return expected_path
+            fallback = ydl.prepare_filename(info)
+            if os.path.exists(fallback):
+                return fallback
+        return base + ".mp3"
 
-    def generate_Analyze_id(self, yt_id):
-        # The 'generate_Analyze_id' function from scraper code
-        DL = "https://corsproxy.io/?https://www.y2mate.com/mates/analyzeV2/ajax"
-        data = {
-            "k_query": f"https://www.youtube.com/watch?v={yt_id}",
-            "k_page": "home",
-            "hl": "en",
-            "q_auto": 0,
-        }
-        headers = {
-            "authority": "corsproxy.io",
-            "method": "POST",
-            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
-            "origin": "https://spotifydown.com",
-            "referer": "https://spotifydown.com/",
-            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            "sec-fetch-mode": "cors",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-        }
-        RES = self.session.post(url=DL, data=data, headers=headers)
-        if RES.status_code == 200:
-            return RES.json()
-        return None
+    def download_http_file(self, url, destination):
+        response = self.session.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        total = int(response.headers.get("content-length", 0))
+        downloaded = 0
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with open(destination, "wb") as handle:
+            for chunk in response.iter_content(chunk_size=8192):
+                if not chunk:
+                    continue
+                handle.write(chunk)
+                downloaded += len(chunk)
+                if total:
+                    progress = int(downloaded / total * 100)
+                    self.dlprogress_signal.emit(progress)
+        return destination
 
-    def generate_Conversion_id(self, analyze_yt_id, analyze_id):
-        # The 'generate_Conversion_id' function from scraper code
-        DL = "https://corsproxy.io/?https://www.y2mate.com/mates/convertV2/index"
-        data = {
-            "vid": analyze_yt_id,
-            "k": analyze_id,
-        }
-        headers = {
-            "authority": "corsproxy.io",
-            "method": "POST",
-            "path": "/?https://www.y2mate.com/mates/analyzeV2/ajax",
-            "origin": "https://spotifydown.com",
-            "referer": "https://spotifydown.com/",
-            "sec-ch-ua": '"Not_A Brand";v="99", "Google Chrome";v="109", "Chromium";v="109"',
-            "sec-fetch-mode": "cors",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-        }
-        RES = self.session.post(url=DL, data=data, headers=headers)
-        if RES.status_code == 200:
-            return RES.json()
-        return None
-
-    def get_PlaylistMetadata(self, Playlist_ID):
-        # The 'get_PlaylistMetadata' function from scraper code
-        URL = f"https://api.spotifydown.com/metadata/playlist/{Playlist_ID}"
-        headers = {
-            "authority": "api.spotifydown.com",
-            "method": "GET",
-            "path": f"/metadata/playlist/{Playlist_ID}",
-            "scheme": "https",
-            "origin": "https://spotifydown.com",
-            "referer": "https://spotifydown.com/",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
-        }
-        meta_data = self.session.get(headers=headers, url=URL)
-        if meta_data.status_code == 200:
-            return meta_data.json()["title"] + " - " + meta_data.json()["artists"]
-        return None
-
-    def errorcatch(self, SONG_ID):
-        # The 'errorcatch' function from scraper
-        print("[*] Trying to download...")
-        headers = {
-            "authority": "api.spotifydown.com",
-            "method": "GET",
-            "path": f"/download/{SONG_ID}",
-            "scheme": "https",
-            "origin": "https://spotifydown.com",
-            "referer": "https://spotifydown.com/",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
-        }
-        x = self.session.get(
-            headers=headers, url="https://api.spotifydown.com/download/" + SONG_ID
-        )
-        if x.status_code == 200:
-            return x.json()["link"]
-        return None
-
-    def V2catch(self, SONG_ID):
-        headers = {
-            "authority": "api.spotifydown.com",
-            "method": "POST",
-            "path": "/download/68GdZAAowWDac3SkdNWOwo",
-            "scheme": "https",
-            "Accept": "*/*",
-            "Sec-Ch-Ua": '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
-            "Dnt": "1",
-            "Origin": "https://spotifydown.com",
-            "Referer": "https://spotifydown.com/",
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "cross-site",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-        }
-
-        ## Updated .. .29TH OCTOBER 2023
-        x = self.session.get(
-            url=f"https://api.spotifydown.com/download/{SONG_ID}", headers=headers
-        )
-
-        # if x.status_code == 200 (depricated as of Feb 2024):
-
-        #     # par = {
-        #     #     'aFormat':'"mp3"',
-        #     #     'dubLang':'false',
-        #     #     'filenamePattern':'"classic"',
-        #     #     'isAudioOnly':'true',
-        #     #     'isNoTTWatermark':'true',
-        #     #     'url':f'"https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{yt_id}"'
-        #     # }
-
-        #     file_status = self.session.post(url=f"https://{target_domain}/api/json", json=par, headers=headers)
-        # print('[*] Data Gathered : ', str(x.content))
-        if x.status_code == 200:
-
-            try:
-                return {"link": x.json()["link"], "metadata": None}
-            except:
-                return {"link": None, "metadata": None}
-
-        return None
 
     def scrape_playlist(self, spotify_playlist_link, music_folder):
-        ID = self.returnSPOT_ID(spotify_playlist_link)
-        self.PlaylistID.emit(ID)
-        PlaylistName = self.get_PlaylistMetadata(ID)
-        self.song_Album.emit(PlaylistName)
-        # Create Folder for Playlist
-        if not os.path.exists(music_folder):
-            os.makedirs(music_folder)
+        playlist_id = self.returnSPOT_ID(spotify_playlist_link)
+        self.PlaylistID.emit(playlist_id)
+
         try:
-            FolderPath = "".join(
-                e for e in PlaylistName if e.isalnum() or e in [" ", "_"]
-            )
-            playlist_folder_path = os.path.join(music_folder, FolderPath)
-        except:
-            playlist_folder_path = music_folder
+            spotify_api = self.ensure_spotifydown_api()
+        except SpotifyDownAPIError as exc:
+            raise RuntimeError(str(exc))
 
-        if not os.path.exists(playlist_folder_path):
-            os.makedirs(playlist_folder_path)
+        metadata = spotify_api.get_playlist_metadata(playlist_id)
+        playlist_display_name = self.format_playlist_name(metadata)
+        self.song_Album.emit(playlist_display_name)
 
-        headers = {
-            "authority": "api.spotifydown.com",
-            "method": "GET",
-            "path": f"/trackList/playlist/{ID}",
-            "scheme": "https",
-            "accept": "*/*",
-            "dnt": "1",
-            "origin": "https://spotifydown.com",
-            "referer": "https://spotifydown.com/",
-            "sec-ch-ua": '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-        }
+        playlist_folder_path = self.prepare_playlist_folder(music_folder, playlist_display_name)
 
-        Playlist_Link = f"https://api.spotifydown.com/trackList/playlist/{ID}"
-        offset_data = {}
-        offset = 0
-        offset_data["offset"] = offset
+        for track in spotify_api.iter_playlist_tracks(playlist_id):
+            self.Resetprogress_signal.emit(0)
 
-        while offset is not None:
-            response = self.session.get(
-                url=Playlist_Link, params=offset_data, headers=headers
-            )
-            if response.status_code == 200:
-                Tdata = response.json()["trackList"]
-                page = response.json()["nextOffset"]
-                for count, song in enumerate(Tdata):
-                    self.Resetprogress_signal.emit(0)
-                    filename = (
-                        song["title"].translate(
-                            str.maketrans("", "", string.punctuation)
-                        )
-                        + " - "
-                        + song["artists"].translate(
-                            str.maketrans("", "", string.punctuation)
-                        )
-                        + ".mp3"
-                    )
-                    filepath = os.path.join(playlist_folder_path, filename)
-                    try:
-                        try:
-                            V2METHOD = self.V2catch(song["id"])
-                            DL_LINK = V2METHOD["link"]
-                            SONG_META = song
-                            SONG_META["file"] = filepath
-                            self.song_meta.emit(SONG_META)
-                        except IndentationError:
-                            yt_id = self.get_ID(song["id"])
+            track_title = track.title
+            artists = track.artists
+            sanitized_title = self.sanitize_text(track_title)
+            sanitized_artists = self.sanitize_text(artists)
+            filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+            filepath = os.path.join(playlist_folder_path, filename)
 
-                            if yt_id is not None:
-                                data = self.generate_Analyze_id(yt_id["id"])
-                                try:
-                                    DL_ID = data["links"]["mp3"]["mp3128"]["k"]
-                                    DL_DATA = self.generate_Conversion_id(
-                                        data["vid"], DL_ID
-                                    )
-                                    DL_LINK = DL_DATA["dlink"]
-                                except Exception as NoLinkError:
-                                    CatchMe = self.errorcatch(song["id"])
-                                    if CatchMe is not None:
-                                        DL_LINK = CatchMe
-                            else:
-                                print("[*] No data found for : ", song)
+            album_name = track.album or ""
+            release_date = track.release_date or ""
+            cover_url = track.cover_url or metadata.cover_url
 
-                        download_complete = False
-                        if DL_LINK is not None:
-                            ## DOWNLOAD
-                            link = self.session.get(DL_LINK, stream=True)
-                            total_size = int(link.headers.get("content-length", 0))
-                            block_size = 1024  # 1 Kilobyte
-                            downloaded = 0
-                            ## Save
-                            with open(filepath, "wb") as f:
-                                for data in link.iter_content(block_size):
-                                    f.write(data)
-                                    downloaded += len(data)
-                                    # self.dlprogress_signal.emit(int(100 * downloaded / total_size))
+            song_meta = {
+                "title": track_title,
+                "artists": artists,
+                "album": album_name,
+                "releaseDate": release_date,
+                "cover": cover_url or "",
+                "file": filepath,
+            }
 
-                            # Increment the counter
-                            self.increment_counter()
+            self.song_meta.emit(dict(song_meta))
 
-                            # # Emit the signal with the downloaded song name
-                            self.add_song_meta.emit(SONG_META)
-                        else:
-                            print("[*] No Download Link Found.")
-                    except Exception as error_status:
-                        print("[*] Error Status Code : ", error_status)
-            if page is not None:
-                offset_data["offset"] = page
-                response = self.session.get(
-                    url=Playlist_Link, params=offset_data, headers=headers
-                )
-            else:
-                self.PlaylistCompleted.emit("Download Complete!")
-                break
+            if os.path.exists(filepath):
+                self.add_song_meta.emit(song_meta)
+                self.increment_counter()
+                continue
+
+            final_path = None
+
+            try:
+                download_link = spotify_api.get_track_download_link(track.id)
+            except SpotifyDownAPIError:
+                download_link = None
+
+            if download_link:
+                try:
+                    final_path = self.download_http_file(download_link, filepath)
+                except Exception as error_status:
+                    print("[*] Error downloading direct link:", error_status)
+                    final_path = None
+
+            if not final_path:
+                try:
+                    yt_id = spotify_api.get_track_youtube_id(track.id)
+                except SpotifyDownAPIError:
+                    yt_id = None
+
+                if yt_id:
+                    search_query = f"https://www.youtube.com/watch?v={yt_id}"
+                else:
+                    search_query = f"ytsearch1:{track_title} {artists} audio"
+
+                try:
+                    final_path = self.download_track_audio(search_query, filepath)
+                except Exception as error_status:
+                    print("[*] Error downloading track:", error_status)
+                    continue
+
+            if not os.path.exists(final_path):
+                print("[*] Download did not produce an audio file for:", track_title)
+                continue
+
+            song_meta["file"] = final_path
+            self.add_song_meta.emit(song_meta)
+            self.increment_counter()
+            self.dlprogress_signal.emit(100)
+
+        self.PlaylistCompleted.emit("Download Complete!")
 
     def returnSPOT_ID(self, link):
         # # The 'returnSPOT_ID' function from your scraper code
