@@ -40,7 +40,7 @@ from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, ID3
 from yt_dlp import YoutubeDL
 
-from spotifydown_api import PlaylistInfo, SpotifyDownAPI, SpotifyDownAPIError
+from spotifydown_api import PlaylistClient, PlaylistInfo, SpotifyDownAPIError
 
 
 class MusicScraper(QThread):
@@ -61,7 +61,7 @@ class MusicScraper(QThread):
 
     def ensure_spotifydown_api(self):
         if self.spotifydown_api is None:
-            self.spotifydown_api = SpotifyDownAPI(session=self.session)
+            self.spotifydown_api = PlaylistClient(session=self.session)
         return self.spotifydown_api
 
     def sanitize_text(self, text):

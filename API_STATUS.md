@@ -1,21 +1,24 @@
 # External API Status (PyQt Desktop Downloader)
 
-The desktop client once again relies on third-party spotifydown endpoints to
-obtain playlist metadata and direct download links without requiring Spotify
-credentials. YouTube remains the fallback via `yt-dlp` when the direct link is
-missing or stale.
+The desktop client now prefers Spotify's own public web endpoints to resolve
+playlist metadata and track lists without requiring developer credentials. When
+those calls are blocked it falls back to the usual spotifydown mirrors for
+track discovery plus direct MP3 links. YouTube remains the last-resort audio
+source via `yt-dlp`.
+
+## Playlist metadata & track discovery
+
+| Check | What it does | How to verify |
+| --- | --- | --- |
+| `playlist_client_lookup` | Exercises the combined resolver that first tries Spotify's web API and then spotifydown. The notes include the detected playlist title and a few sample tracks. | Run `python3 scripts/check_api_status.py`. |
+| `spotify_web_playlist_lookup` | Directly queries `https://api.spotify.com/v1/playlists/{id}` using the anonymous web-player token. | Same as above; if this fails in your region, expect the combined lookup to fall back to spotifydown. |
+| `spotifydown_playlist_lookup` | Calls `/trackList/playlist/{id}` on the first configured spotifydown base URL. | Same as above. Override `SPOTIFYDOWN_BASE_URLS` if the default hosts are blocked on your network. |
 
 ## Spotifydown-style APIs
 
 | Check | What it does | How to verify |
 | --- | --- | --- |
-| `spotifydown_playlist_lookup` | Calls `/trackList/playlist/{id}` on the first
-configured base URL and reports the playlist title plus a few sample tracks. |
-Run `python3 scripts/check_api_status.py`. Override
-`SPOTIFYDOWN_BASE_URLS` if the default hosts are blocked on your network. |
-| `spotifydown_track_download` | Hits `/download/{trackId}` for the first track
-returned by the playlist call to confirm a direct MP3 URL is provided. | Same as
-above. |
+| `spotifydown_track_download` | Hits `/download/{trackId}` for the first track returned by the playlist call to confirm a direct MP3 URL is provided. | Run `python3 scripts/check_api_status.py`. |
 
 If both checks fail, rotate the domain list via
 `SPOTIFYDOWN_BASE_URLS="https://your-mirror/api"` and rerun the script.

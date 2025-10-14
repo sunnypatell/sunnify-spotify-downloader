@@ -26,7 +26,8 @@ Below are screenshots demonstrating the Sunnify application in action, downloadi
 - Python 3.6 or above installed on your system. If not installed, download and install Python from [python.org](https://www.python.org/downloads/).
 - Ensure that pip, Python's package manager, is installed. It usually comes with Python. You can verify by running `pip --version` in your terminal.
 - [FFmpeg](https://ffmpeg.org/) available on your `PATH`. `yt-dlp` uses FFmpeg to transcode the downloaded audio into MP3 files.
-- Working spotifydown-style API endpoints. The desktop client ships with a rotation of public base URLs (e.g. `https://api.spotifydown.com`, `https://spotimate.io/api`). If those ever go dark you can point the app at a new host by exporting `SPOTIFYDOWN_BASE_URLS` before launching, e.g.:
+- Outbound HTTPS access to `open.spotify.com` so the app can request an anonymous web-player token for playlist lookups. If you're on a restrictive network, allowlist that domain.
+- Working spotifydown-style API endpoints for direct MP3 links. The desktop client ships with a rotation of public base URLs (e.g. `https://api.spotifydown.com`, `https://spotimate.io/api`). If those ever go dark you can point the app at a new host by exporting `SPOTIFYDOWN_BASE_URLS` before launching, e.g.:
 
   ```bash
   export SPOTIFYDOWN_BASE_URLS="https://example.com/api,https://backup.example/api"
@@ -95,7 +96,7 @@ If you encounter any issues while running Sunnify, try the following steps:
 1. Ensure that you have a stable internet connection.
 2. Verify that you have entered the correct Spotify playlist URL.
 3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git pull`
-4. Run `python scripts/check_api_status.py` to verify the spotifydown hosts and `yt-dlp` search are reachable from your network.
+4. Run `python scripts/check_api_status.py` to verify Spotify's web playlist endpoint, the spotifydown mirrors, and `yt-dlp` search are reachable from your network.
 
 
 # Running the Web App (If you choose not to use the Windows Desktop version)

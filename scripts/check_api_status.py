@@ -5,11 +5,23 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
+import requests
 from yt_dlp import YoutubeDL
 
-from spotifydown_api import SpotifyDownAPI, SpotifyDownAPIError, TrackInfo
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from spotifydown_api import (  # noqa: E402
+    PlaylistClient,
+    SpotifyDownAPI,
+    SpotifyDownAPIError,
+    SpotifyPublicAPI,
+    TrackInfo,
+)
 
 
 @dataclass
@@ -32,7 +44,89 @@ class EndpointResult:
         }
 
 
-def check_spotifydown_playlist(api: SpotifyDownAPI, playlist_id: str) -> tuple[EndpointResult, Optional[TrackInfo]]:
+def summarize_playlist(
+    metadata_title: str,
+    metadata_owner: Optional[str],
+    track_titles: list[str],
+) -> str:
+    owner_text = f" by {metadata_owner}" if metadata_owner else ""
+    sample_text = ", ".join(track_titles or ["<no tracks returned>"])
+    return f"Playlist '{metadata_title}'{owner_text}. Sample tracks: {sample_text}"
+
+
+def check_playlist_client(
+    client: PlaylistClient,
+    playlist_id: str,
+) -> Tuple[EndpointResult, Optional[TrackInfo]]:
+    try:
+        metadata = client.get_playlist_metadata(playlist_id)
+        sample_tracks: list[str] = []
+        first_track: Optional[TrackInfo] = None
+        for track in client.iter_playlist_tracks(playlist_id):
+            if first_track is None:
+                first_track = track
+            sample_tracks.append(track.title)
+            if len(sample_tracks) >= 3:
+                break
+        notes = summarize_playlist(metadata.name, metadata.owner, sample_tracks)
+        return (
+            EndpointResult(
+                name="playlist_client_lookup",
+                url=f"combined providers for {playlist_id}",
+                method="GET",
+                ok=True,
+                status_code=200,
+                notes=notes,
+            ),
+            first_track,
+        )
+    except SpotifyDownAPIError as exc:
+        return (
+            EndpointResult(
+                name="playlist_client_lookup",
+                url=f"combined providers for {playlist_id}",
+                method="GET",
+                ok=False,
+                status_code=None,
+                notes=str(exc),
+            ),
+            None,
+        )
+
+
+def check_spotify_public_playlist(
+    api: SpotifyPublicAPI, playlist_id: str
+) -> EndpointResult:
+    try:
+        metadata = api.get_playlist_metadata(playlist_id)
+        sample_tracks: list[str] = []
+        for track in api.iter_playlist_tracks(playlist_id):
+            sample_tracks.append(track.title)
+            if len(sample_tracks) >= 3:
+                break
+        notes = summarize_playlist(metadata.name, metadata.owner, sample_tracks)
+        return EndpointResult(
+            name="spotify_web_playlist_lookup",
+            url=f"https://api.spotify.com/v1/playlists/{playlist_id}",
+            method="GET",
+            ok=True,
+            status_code=200,
+            notes=notes,
+        )
+    except SpotifyDownAPIError as exc:
+        return EndpointResult(
+            name="spotify_web_playlist_lookup",
+            url=f"https://api.spotify.com/v1/playlists/{playlist_id}",
+            method="GET",
+            ok=False,
+            status_code=None,
+            notes=str(exc),
+        )
+
+
+def check_spotifydown_playlist(
+    api: SpotifyDownAPI, playlist_id: str
+) -> Tuple[EndpointResult, Optional[TrackInfo]]:
     try:
         metadata = api.get_playlist_metadata(playlist_id)
         sample_tracks: list[str] = []
@@ -43,13 +137,7 @@ def check_spotifydown_playlist(api: SpotifyDownAPI, playlist_id: str) -> tuple[E
             sample_tracks.append(track.title)
             if len(sample_tracks) >= 3:
                 break
-        if not sample_tracks:
-            sample_tracks.append("<no tracks returned>")
-        notes = (
-            f"Playlist '{metadata.name}'"
-            + (f" by {metadata.owner}" if metadata.owner else "")
-            + f". Sample tracks: {', '.join(sample_tracks)}"
-        )
+        notes = summarize_playlist(metadata.name, metadata.owner, sample_tracks)
         result = EndpointResult(
             name="spotifydown_playlist_lookup",
             url=f"trackList/playlist/{playlist_id}",
@@ -131,11 +219,23 @@ def main() -> int:
     playlist_id = "37i9dQZF1DXcBWIGoYBM5M"  # Spotify's "Today's Top Hits"
     query = "Rick Astley Never Gonna Give You Up"
 
-    api = SpotifyDownAPI()
-    playlist_result, first_track = check_spotifydown_playlist(api, playlist_id)
-    results = [playlist_result, check_youtube_search(query)]
+    session = requests.Session()
+    playlist_client = PlaylistClient(session=session)
+    web_api = SpotifyPublicAPI(session=session)
+    spotifydown_api = SpotifyDownAPI(session=session)
+
+    client_result, first_track = check_playlist_client(playlist_client, playlist_id)
+    results = [
+        client_result,
+        check_spotify_public_playlist(web_api, playlist_id),
+    ]
+
+    down_result, _ = check_spotifydown_playlist(spotifydown_api, playlist_id)
+    results.append(down_result)
+
+    results.append(check_youtube_search(query))
     if first_track is not None:
-        results.append(check_spotifydown_download(api, first_track))
+        results.append(check_spotifydown_download(spotifydown_api, first_track))
 
     json.dump([result.as_dict() for result in results], sys.stdout, indent=2)
     sys.stdout.write("\n")
