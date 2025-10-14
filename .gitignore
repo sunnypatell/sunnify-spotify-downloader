@@ -1,0 +1,9 @@
+.venv
+venv
+*.pyc
+__pycache__/
+
+web-app/node_modules/
+
+localprod/web-app/node_modules/
+localprod/web-app/build/
