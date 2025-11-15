@@ -1,7 +1,0 @@
-{
-    "python.analysis.extraPaths": ["${workspaceFolder}/.venv/Lib/site-packages"],
-    "python.autoComplete.extraPaths": ["${workspaceFolder}/.venv/Lib/site-packages"],
-    "python.analysis.typeCheckingMode": "basic",
-    "python.analysis.diagnosticMode": "workspace",
-    "python.analysis.autoImportCompletions": true
-  }

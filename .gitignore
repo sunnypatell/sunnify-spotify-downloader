@@ -1,4 +1,77 @@
-.venv
+# ---------- OS / Editor ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+!.env.example
+!.env.*.example
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.cache/
+pip-wheel-metadata/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+.eggs/
+site/
+htmlcov/
+coverage/
+.coverage
+.coverage.*
+
+# Python packaging / build artifacts
+build/
+# dist/ should be ignored as it contains the .exe
+
+# PyInstaller (keep .spec file tracked)
+# *.spec  # Intentionally NOT ignored; spec is source.
+
+# ---------- Node / JS / Next.js ----------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.bun/
+.next/
+.turbo/
+out/
+.vercel/
+.eslintcache
+storybook-static/
+playwright-report/
+test-results/
+
+# ---------- Logs ----------
+*.log
+logs/
+
+# ---------- Repo-specific outputs ----------
+localprod/
+readmeAssets/*.png
+readmeAssets/*.jpg
+
+# ---------- Misc ----------
+.ipynb_checkpoints/
+*.bak
+*.swp
+*.swo.venv
 venv
 *.pyc
 __pycache__/

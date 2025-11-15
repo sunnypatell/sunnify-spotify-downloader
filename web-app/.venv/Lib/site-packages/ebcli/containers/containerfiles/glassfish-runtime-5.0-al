@@ -1,2 +1,0 @@
-FROM amazon/aws-eb-glassfish:5.0-al-onbuild-2.11.1
-EXPOSE 8080
