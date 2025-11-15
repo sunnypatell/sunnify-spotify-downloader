@@ -62,11 +62,6 @@ test-results/
 *.log
 logs/
 
-# ---------- Repo-specific outputs ----------
-localprod/
-readmeAssets/*.png
-readmeAssets/*.jpg
-
 # ---------- Misc ----------
 .ipynb_checkpoints/
 *.bak

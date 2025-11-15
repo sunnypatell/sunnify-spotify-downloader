@@ -36,10 +36,33 @@ latest release.
 
 ## Rerunning the diagnostics
 
+macOS or Linux:
+
 ```bash
 python3 scripts/check_api_status.py
 ```
 
-On Windows PowerShell replace `python3` with `python` if needed. The script
-prints a JSON array summarising each dependency. All entries should report
-`"ok": true` before demoing the downloader.
+Windows PowerShell:
+
+```powershell
+python .\scripts\check_api_status.py
+```
+
+The script prints a JSON array summarising each dependency. All entries should report `"ok": true` before demoing the downloader.
+
+Example snippet:
+
+```json
+[
+	{
+		"name": "playlist_client_lookup",
+		"ok": true,
+		"notes": "Playlist 'Today's Top Hits'. Sample tracks: ..."
+	},
+	{
+		"name": "youtube_search",
+		"ok": true,
+		"notes": "Resolved 'Rick Astley Never Gonna Give You Up' to ..."
+	}
+]
+```

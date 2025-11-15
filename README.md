@@ -1,232 +1,365 @@
-# Sunnify (Spotify Downloader)
+<div align="center">
 
-![GitHub Repo Stars](https://img.shields.io/github/stars/sunnypatell/sunnify-spotify-downloader?style=social)
-![GitHub Issues](https://img.shields.io/github/issues/sunnypatell/sunnify-spotify-downloader)
-![GitHub Pull Requests](https://img.shields.io/github/issues-pr/sunnypatell/sunnify-spotify-downloader)
+<h1>Sunnify (Spotify Downloader)</h1>
 
----
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/sunnypatell/sunnify-spotify-downloader?style=social"></a>
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/issues"><img alt="Issues" src="https://img.shields.io/github/issues/sunnypatell/sunnify-spotify-downloader"></a>
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/pulls"><img alt="PRs" src="https://img.shields.io/github/issues-pr/sunnypatell/sunnify-spotify-downloader"></a>
+<a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Custom-important"></a>
 
-Sunnify is a Spotify downloader application that allows you to download entire playlists locally onto your Mac/Linux/Windows PC.
+<br/>
 
-![Sunnify Logo](./app.ico)
+<img src="./app.png" alt="Sunnify" height="96" />
 
----
+<p><em>🎧 Download entire Spotify playlists to local MP3s with embedded artwork and tags. Desktop app, Python core, and a full web stack in one repo.</em></p>
 
-## Program Demonstration
+</div>
 
-Below are screenshots demonstrating the Sunnify application in action, downloading my personal Spotify playlist.
+<p align="center">
+    <a href="#table-of-contents">Jump to Table of Contents</a>
+</p>
 
-![Download in Progress](/readmeAssets/demonstration%201.jpg)
-![and](/readmeAssets/demonstration%202.jpg)
+<hr/>
 
-## Installation
+## Table of Contents
 
-### Prerequisites
+1. Overview
+2. Architecture
+3. Features
+4. Requirements
+5. Quick Start (3 Paths)
+6. Desktop App Setup (Windows and cross-platform)
+7. Web App Setup (Backend and Frontend)
+8. Configuration
+9. Usage Guide
+10. Diagnostics
+11. Troubleshooting
+12. Notes and Roadmap
+13. Security and Legal
+14. Contributing and Community
+15. Author
 
-- Python 3.6 or above installed on your system. If not installed, download and install Python from [python.org](https://www.python.org/downloads/).
-- Ensure that pip, Python's package manager, is installed. It usually comes with Python. You can verify by running `pip --version` in your terminal.
-- [FFmpeg](https://ffmpeg.org/) available on your `PATH`. `yt-dlp` uses FFmpeg to transcode the downloaded audio into MP3 files.
-- Outbound HTTPS access to `open.spotify.com` so the app can request an anonymous web-player token for playlist lookups. If you're on a restrictive network, allowlist that domain.
-- Working spotifydown-style API endpoints for direct MP3 links. The desktop client ships with a rotation of public base URLs (e.g. `https://api.spotifydown.com`, `https://spotimate.io/api`). If those ever go dark you can point the app at a new host by exporting `SPOTIFYDOWN_BASE_URLS` before launching, e.g.:
+<hr/>
 
-  ```bash
-  export SPOTIFYDOWN_BASE_URLS="https://example.com/api,https://backup.example/api"
-  ```
+## Overview
 
-  ```powershell
-  $Env:SPOTIFYDOWN_BASE_URLS = "https://example.com/api,https://backup.example/api"
-  ```
+Sunnify is built to be resilient, fast, and simple:
 
-### Sunnify Executable (Windows)
+- Falls back from Spotify's public web API to multiple spotifydown-style mirrors.
+- Resolves direct MP3 links when available; otherwise uses `yt-dlp` with FFmpeg.
+- Writes clean ID3 tags and embeds cover art for your library.
+- Ships as a PyQt desktop app, a Flask API, and a modern Next.js web client.
 
-If you're using Windows, you can directly download the executable file from [here](/dist/Sunnify%20(Spotify%20Downloader).exe)
+Screenshots from the desktop app in action:
 
-### Building from Source
+<img src="/readmeAssets/demonstration%201.jpg" alt="Download" width="48%"/> <img src="/readmeAssets/demonstration%202.jpg" alt="Preview" width="48%"/>
 
-Clone the repository:
+<hr/>
+
+## Architecture
+
+```
+root
+├─ Spotify_Downloader.py          (PyQt5 desktop app)
+├─ spotifydown_api.py             (Provider abstraction: Spotify Web + spotifydown)
+├─ Template.py / Template.ui      (Generated UI for the desktop app)
+├─ scripts/
+│  └─ check_api_status.py         (Diagnostics for mirrors, Spotify web, yt-dlp)
+├─ dist/
+│  └─ Sunnify (Spotify Downloader).exe   (Prebuilt Windows executable)
+├─ web-app/
+│  ├─ sunnify-backend/            (Flask API: SSE + JSON responses)
+│  │  ├─ app.py                   (/api/scrape-playlist, /api/download)
+│  │  ├─ requirements.txt         (Backend dependencies)
+│  │  └─ Procfile                 (gunicorn entry)
+│  └─ sunnify-webclient/          (Next.js 14 + Tailwind + shadcn/ui)
+│     ├─ app/page.tsx             (Renders <SunnifyApp />)
+│     └─ components/sunnify-app.tsx  (Main UI + API integration)
+├─ req.txt                        (Desktop app Python deps)
+├─ Sunnify (Spotify Downloader).spec  (PyInstaller build spec)
+└─ README.md
+```
+
+<hr/>
+
+## Features
+
+- 🎼 Full playlist downloader (one link to a tagged MP3 library)
+- 🖼️ Artwork and tagging (title, artists, album, release date, cover art)
+- 🚦 Smart providers (Spotify Web API with fallback to spotifydown mirrors)
+- 🎯 Resilient audio pipeline (direct links or `yt-dlp` fallback)
+- 🪟 Clean desktop UI (progress, preview panel, per-track status)
+- 🌐 Web experience (Flask backend and Next.js client)
+
+<hr/>
+
+## Requirements
+
+- Python 3.8 or newer (3.6+ supported, 3.8+ recommended)
+- FFmpeg on PATH (required by `yt-dlp` for MP3 conversion)
+- Node.js 18 or newer (for the web client)
+- Internet access to `open.spotify.com` and mirror providers
+
+<details>
+<summary>Install FFmpeg (Windows, macOS, Linux)</summary>
+
+- Windows: use winget or choco, then restart terminal so PATH updates
+
+```powershell
+winget install Gyan.FFmpeg
+# or
+choco install ffmpeg
+```
+
+- macOS: use Homebrew
+
+```bash
+brew install ffmpeg
+```
+
+- Ubuntu/Debian
+
+```bash
+sudo apt update
+sudo apt install -y ffmpeg
+```
+
+Verify with `ffmpeg -version`.
+
+</details>
+
+<hr/>
+
+## Quick Start (3 Paths)
+
+- Windows users: download the prebuilt app `dist/Sunnify (Spotify Downloader).exe` and run it.
+- Python users: `pip install -r req.txt` then `python Spotify_Downloader.py`.
+- Web stack: run the Flask backend and Next.js client under `web-app/`.
+
+<hr/>
+
+## Desktop App Setup (Windows and cross-platform)
+
+Windows PowerShell commands:
+
+```powershell
+# Clone
+git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git
+cd sunnify-spotify-downloader
+
+# Create and activate a venv (recommended)
+py -3 -m venv .venv; .\.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r req.txt
+
+# Ensure FFmpeg is on PATH
+ffmpeg -version
+
+# Optional: override mirrors
+$Env:SPOTIFYDOWN_BASE_URLS = "https://api.spotifydown.com,https://spotimate.io/api"
+
+# Launch the PyQt app
+python .\Spotify_Downloader.py
+```
+
+macOS/Linux equivalent:
 
 ```bash
 git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git
-```
-
-Navigate to the project directory:
-
-```bash
 cd sunnify-spotify-downloader
-```
-
-Install the required dependencies:
-
-```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r req.txt
-```
-
-If you have not added FFmpeg to your system yet, install it now and restart the terminal so that `yt-dlp` can locate the executable.
-
-Run the application:
-
-```bash
+ffmpeg -version
+export SPOTIFYDOWN_BASE_URLS="https://api.spotifydown.com,https://spotimate.io/api"
 python Spotify_Downloader.py
 ```
 
-## Usage
+Build a Windows EXE with PyInstaller:
 
-1. (Optional) export `SPOTIFYDOWN_BASE_URLS` if you want to override the bundled API host list.
-2. Launch the Sunnify application.
-3. Enter your Spotify playlist URL in the provided input field.
-4. Check show preview box to see progress
-5. Check metadata box if you want to download cover art, author, album, release-date etc...
-6. Press enter in the URL field to start downloading.
-7. The downloaded songs will be saved in the media directory (wherever your source or executable is located).
+```powershell
+.\.venv\Scripts\Activate.ps1
+pyinstaller "Sunnify (Spotify Downloader).spec"
+```
 
-## Libraries Used
+Output files are placed in `dist/`.
 
-Sunnify utilizes the following Python libraries:
+<hr/>
 
-- [PyQt5](https://pypi.org/project/PyQt5/): Used for the GUI interface.
-- [webbrowser](https://pypi.org/project/pycopy-webbrowser/): Used to bypass Spotify Network Traffic Detection.
-- [requests](https://pypi.org/project/requests/): Used for making HTTP requests.
-- [mutagen.id3](https://mutagen.readthedocs.io/en/latest/api/id3.html): Used for editing ID3 tags and scraping metadata.
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp): Downloads and converts the audio for each track directly from YouTube.
+## Web App Setup (Backend and Frontend)
 
-## Common Debugging
+### Backend (Flask)
 
-If you encounter any issues while running Sunnify, try the following steps:
+```powershell
+cd web-app\sunnify-backend
+py -3 -m venv .venv; .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python .\app.py
+# Serves on http://127.0.0.1:5000
+```
 
-1. Ensure that you have a stable internet connection.
-2. Verify that you have entered the correct Spotify playlist URL.
-3. Check if there are any updates available for Sunnify. You can pull the latest changes from the repository and reinstall the dependencies. `git pull`
-4. Run `python scripts/check_api_status.py` to verify Spotify's web playlist endpoint, the spotifydown mirrors, and `yt-dlp` search are reachable from your network.
+Endpoints:
 
+- `POST /api/scrape-playlist` processes a playlist and emits progress or completion events.
+- `GET /api/download/<filename>?path=<dir>` serves a file from a directory.
 
-# Running the Web App (If you choose not to use the Windows Desktop version)
+The local server can stream Server-Sent Events (SSE). Each event looks like:
+`{"event":"progress"|"complete"|"error","data":{...}}`.
 
-If you want to run the Sunnify web app locally, follow these steps to set up both the backend and frontend:
+Production style run with gunicorn:
 
-### Backend Setup (Sunnify Backend)
+```powershell
+pip install gunicorn
+gunicorn app:app --bind 0.0.0.0:5000
+```
 
-1. Navigate to the `web-app/sunnify-backend` directory in your terminal:
+### Frontend (Next.js)
 
-    ```bash
-    cd web-app/sunnify-backend
-    ```
+```powershell
+cd ..\sunnify-webclient
+npm install
+npm run dev
+# Opens http://localhost:3000
+```
 
-2. Install the required dependencies if not done already:
+Configure API base in `.env.local` (recommended):
 
-    ```bash
-    pip install -r requirements.txt
-    ```
+```dotenv
+NEXT_PUBLIC_API_BASE=http://127.0.0.1:5000
+```
 
-3. Run the backend server:
+Then update `components/sunnify-app.tsx` to use `process.env.NEXT_PUBLIC_API_BASE + '/api/scrape-playlist'`.
 
-    ```bash
-    python app.py
-    ```
+Local production simulation:
 
-   Alternatively, you can use:
+```powershell
+npm run build
+npm start
+```
 
-    ```bash
-    python -m app.py
-    ```
+Note: the current client points at a hosted AWS Lambda URL by default. Switch it to your local Flask server for development and, if desired, add an SSE consumer for realtime progress.
 
-   This will start the backend on `http://127.0.0.1:5000`.
+<hr/>
 
-   The backend communicates with the frontend using **Flask** to create API endpoints and **Flask-CORS** to handle Cross-Origin Resource Sharing (CORS), allowing API requests between the frontend and backend across different domains.
+## Configuration
 
-### Frontend Setup (Sunnify Web Client)
+- `SPOTIFYDOWN_BASE_URLS` a comma-separated mirror list to override defaults
+    - PowerShell example: ``$Env:SPOTIFYDOWN_BASE_URLS = "https://api.spotifydown.com,https://spotimate.io/api"``
+- `NEXT_PUBLIC_API_BASE` base URL for the webclient backend (set via `.env.local`)
 
-1. Once the backend is running, navigate to the `web-app/sunnify-webclient` directory:
+<details>
+<summary>Advanced configuration tips</summary>
 
-    ```bash
-    cd ../sunnify-webclient
-    ```
+- Corporate networks can block `open.spotify.com` and mirrors. Allowlist domains or provide custom mirrors via `SPOTIFYDOWN_BASE_URLS`.
+- Increase request timeouts only if your network is unusually slow. See `spotifydown_api.py` for defaults.
+- Ensure Windows download paths have write permissions.
 
-2. Install the required frontend dependencies:
+</details>
 
-    ```bash
-    npm install
-    ```
+<hr/>
 
-3. Start the frontend development server:
+## Usage Guide
 
-    ```bash
-    npm run dev
-    ```
+Desktop app (GUI):
 
-   The frontend will now be running locally on `http://localhost:3000` and can communicate with the backend on `http://127.0.0.1:5000`.
+1. Launch Sunnify.
+2. Paste a Spotify playlist URL `https://open.spotify.com/playlist/<ID>`.
+3. Press Enter in the URL box to start.
+4. Optional: enable Show Preview to see the cover and meta.
+5. Optional: enable Add Meta Tags to embed ID3 and artwork.
+6. Output appears under `music/<Playlist Name - Owner>/` next to the app.
 
----
-## Technologies Used
+Web client:
 
-### Frontend Technologies:
-- ⚛️ **React**: Used for building the user interface components.
-- 🚀 **Next.js**: Provides the framework for server-side rendering and routing.
-- 🎨 **Tailwind CSS**: Used for styling and responsive design.
-- 🧩 **shadcn/ui**: Provides pre-built, customizable UI components.
-- 🔍 **Lucide React**: Used for icons throughout the application.
-- ⚙️ **React Hooks**: Utilized for state management and side effects.
-- 🌐 **Fetch API**: Used for making HTTP requests to the backend.
-- 🎧 **Web Audio API**: Implemented for audio playback functionality.
+1. Start Flask backend and Next.js client.
+2. Open `http://localhost:3000`.
+3. Enter playlist URL and a writable download path.
+4. Click Process Playlist and watch progress.
 
-### Backend Technologies:
-- 🐍 **Flask**: Python web framework for creating the API endpoints.
-- 🔓 **Flask-CORS**: Handles Cross-Origin Resource Sharing (CORS) for API requests.
-- 🔗 **Requests**: Used for making HTTP requests to fetch playlist data.
-- 🎵 **Mutagen**: Used for editing ID3 tags and scraping metadata.
-- 🕸️ **BeautifulSoup**: Used for web scraping and parsing HTML content.
-- 🆔 **UUID**: Generates unique IDs for tracks and analysis processes.
-- 🕵️‍♂️ **User-Agent**: Emulates real browser activity to bypass protection mechanisms.
-- 🤖 **Selenium**: Used for browser automation and emulating user interactions.
-- 🎥 **FFmpeg**: Handles audio conversion and processing.
+<hr/>
 
----
+## Deep Dive: How It Works
 
-## Key Features
-- 🔒 **CORS Handling**: Implemented to allow cross-origin requests securely.
-- 🆔 **ID Generation**: Unique IDs are generated for tracks and analysis processes.
-- 🛡️ **Browser Headers Emulation**: Mimics real browser headers to avoid detection.
-- 📊 **Playlist Metadata Retrieval**: Fetches and processes playlist information.
-- 🕸️ **Web Scraping**: Extracts necessary data from web pages.
-- 👨‍💻 **Real Browser Activity Emulation**: Simulates human-like browsing patterns.
-- 🔄 **User-Agent Rotation**: Regularly changes user-agent strings to avoid blocking.
-- 🛣️ **Flask Routing**: Handles various API endpoints for different functionalities.
-- ⚡ **Asynchronous Processing**: Manages concurrent downloads and processing tasks.
-- 🚨 **Error Handling**: Robust error management for various scenarios.
+### Provider Strategy (spotifydown_api.py)
 
----
+- `SpotifyPublicAPI` fetches an anonymous web token from `open.spotify.com`, then calls `api.spotify.com/v1` for playlist and tracks.
+- `SpotifyDownAPI` rotates across multiple mirror base URLs to resolve playlist metadata, tracks, MP3 links, and YouTube IDs.
+- `PlaylistClient` tries Spotify Web first, then spotifydown; provides direct link and YouTube ID helpers.
 
-### Important Note
+Environment override: set `SPOTIFYDOWN_BASE_URLS` to replace default mirrors.
 
-The backend for Sunnify is hosted on Render under the free compute plan. If there hasn't been an API call to the Render-hosted backend for a while, it might "fall asleep" and take a moment to wake up when the frontend sends a request (e.g., downloading a playlist). Please be patient as it may take a few seconds for the backend to wake up and process the request.
+### Download Pipeline (Desktop App)
 
----
+For each track:
 
-## Coming Soon
+1. Ask for a direct MP3 link (`/download/<track_id>`) via spotifydown.
+2. If missing, request YouTube ID, then use the watch URL.
+3. If still missing, fallback search: `ytsearch1:<title> <artists> audio`.
+4. Convert to MP3 (`yt-dlp` plus FFmpeg) and write ID3 tags (Mutagen).
+5. Embed cover art (from track or playlist metadata).
 
-I'm currently working on integrating Sunnify with iTunes for seamless transfer of downloaded music to iOS devices, specifically adding them to the Apple Music library. Additionally, I'm also working on adding support for Android filesystems to enable direct transfer of downloaded music to Android devices.
+### Web Backend (web-app/sunnify-backend/app.py)
 
-Stay tuned for these exciting updates, which will enhance the functionality of Sunnify and provide a more seamless experience for users across different platforms.
+- `POST /api/scrape-playlist` can stream JSON events (SSE) while processing.
+- Completion event includes `playlistName` and `tracks` with download links.
 
-## ⚖️Legal and Ethical Notice⚖️
+<hr/>
 
-Sunnify (Spotify Downloader) is intended for educational purposes only. It is your responsibility to ensure that you comply with copyright laws and regulations in your country or region. Downloading copyrighted music without proper authorization may be illegal in certain jurisdictions.
+## Diagnostics
+
+Validate mirrors, Spotify Web, and `yt-dlp` from your network:
+
+```powershell
+python .\scripts\check_api_status.py
+```
+
+Example output summarizes which providers resolved metadata, sample tracks, and whether YouTube search succeeded.
+
+<hr/>
+
+## Troubleshooting
+
+- FFmpeg not found: install FFmpeg and restart terminal so PATH updates.
+- `yt-dlp` errors: `pip install -U yt-dlp` and ensure YouTube is reachable.
+- Playlist URL rejected: format must be `https://open.spotify.com/playlist/<ID>`.
+- Hosted backend cold starts: free tiers can sleep; first call might take seconds.
+- Mirrors down: set `SPOTIFYDOWN_BASE_URLS` to a working mirror list.
+- Windows permissions: choose a download path you can write to.
+
+<hr/>
+
+## Notes and Roadmap
+
+Important note (hosted backends): on free compute plans, the backend might sleep and take a moment to wake on the first request.
+
+Coming soon:
+
+- Apple Music and iTunes import
+- Android MTP copy support
+- Webclient SSE progress UI
+
+<hr/>
+
+## Security and Legal
+
+⚠️ Educational use only. Ensure compliance with copyright laws in your jurisdiction. Do not use this project to infringe on rights holders.
+
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities and [LICENSE](LICENSE) for license terms.
+
+<hr/>
+
+## Contributing and Community
+
+Contributions, ideas, and bug reports are welcome.
+
+- Read the [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md) and [CONTRIBUTING](CONTRIBUTING.md)
+- Open issues with clear repro steps and logs where possible
+- Prefer small, focused PRs
+
+<hr/>
 
 ## Author
 
-Sunnify (Spotify Downloader) is developed and maintained by Sunny Jayendra Patel. For inquiries, suggestions, or feedback, please contact Sunny at sunnypatel124555@gmail.com.
+Created and maintained by Sunny Jayendra Patel. Reach me at `sunnypatel124555@gmail.com` or connect on LinkedIn.
 
-## License
-
-This project is licensed under the [Custom License](LICENSE). See the [LICENSE](LICENSE) file for details.
-
----
-
-## Contributing
-
-If you encounter any bugs, have feature requests, or would like to contribute enhancements, feel free to submit a pull request on GitHub.
-
-### Reporting Issues
-
-If you encounter any issues while using Sunnify, please [open an issue](https://github.com/sunnypatell/sunnify-spotify-downloader/issues) on GitHub. Be sure to include detailed information about the problem, including steps to reproduce it and any error messages you may have encountered. Your feedback helps me improve the application for everyone else.
-
----
+</div>

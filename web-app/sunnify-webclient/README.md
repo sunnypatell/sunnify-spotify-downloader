@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<div align="center">
 
-## Getting Started
+# Sunnify Web Client (Next.js)
 
-First, run the development server:
+<em>Frontend for the Sunnify stack. Built with Next.js 14, Tailwind CSS, and shadcn/ui.</em>
+
+</div>
+
+---
+
+## Prerequisites
+
+- Node.js 18 or newer
+- A running backend API
+	- Local Flask: `http://127.0.0.1:5000`
+	- Or the hosted Lambda used by default in `components/sunnify-app.tsx`
+
+---
+
+## Local Development
+
+1) Install dependencies
+
+```bash
+npm install
+```
+
+2) Configure API base URL via `.env.local` (recommended)
+
+```dotenv
+NEXT_PUBLIC_API_BASE=http://127.0.0.1:5000
+```
+
+3) Start the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Local Production Simulation
 
-## Learn More
+```bash
+npm run build
+npm start
+```
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Switching API Endpoints
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This client currently points at a hosted AWS Lambda URL in `components/sunnify-app.tsx`. For local development, switch to:
 
-## Deploy on Vercel
+```ts
+const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:5000';
+const url = `${base}/api/scrape-playlist`;
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+If you plan to consume realtime progress from the Flask backend, implement an SSE client using `EventSource` or a streaming fetch and update the UI as events arrive.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Scripts
+
+- `npm run dev` start Next.js dev server
+- `npm run build` production build
+- `npm start` run the production server
+- `npm run lint` lint the codebase
+
+---
+
+## Troubleshooting
+
+- 404 from backend: ensure the Flask server is running at `NEXT_PUBLIC_API_BASE` and that CORS is enabled
+- CORS errors: Flask backend uses `flask-cors` by default; double check `app.py`
+- Windows path issues: ensure the download path you enter is writable
+
+---
+
+## License
+
+See the repository root `LICENSE`.

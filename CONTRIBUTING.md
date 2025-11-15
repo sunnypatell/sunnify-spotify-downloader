@@ -1,32 +1,107 @@
-# Contributing to My Project
+<div align="center">
 
-Thank you for your interest in contributing to my project! Contributions are welcome, and they are greatly appreciated. Every little bit helps, whether you’re submitting bug reports, suggesting features, improving documentation, or writing code.
+# Contributing to Sunnify
 
-## How to Contribute
+Thanks for considering a contribution. Whether it’s a bug report, feature idea, doc fix, or code change, you’re welcome here.
 
-### 1. Reporting Bugs
+</div>
 
-If you encounter any bugs, please open an issue on the repository with the following details:
+---
 
-* A summary of the bug
-* Steps to reproduce the issue
-* The expected behavior and the actual behavior
-* Screenshots or code snippets, if applicable
-* Any relevant logs or error messages
+## Ways to Contribute
 
-### 2. Suggesting Features
+### 1) Report bugs
 
-I welcome feature suggestions! If you have an idea for a new feature, please create an issue on the repository and include:
+Include a clear description, steps to reproduce, expected vs actual behavior, and logs or screenshots if helpful.
 
-* A detailed description of the feature
-* Why you believe it would be a valuable addition
-* Any examples or mockups, if available
+### 2) Propose features
 
-### 3. Submitting Changes
+Explain the use case, why it adds value, and any example flows or mockups.
 
-If you would like to contribute code to the project, follow these steps:
+### 3) Submit changes
 
-1. **Fork the repository**: Click the "Fork" button at the top of the repository page to create a personal copy of the project.
-2. **Clone your fork**: Clone your forked repository to your local machine:
+1. Fork the repository, then clone your fork
    ```bash
-   git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git
+   git clone https://github.com/<your-username>/sunnify-spotify-downloader.git
+
+2. Add the upstream remote
+   ```bash
+   cd sunnify-spotify-downloader
+   git remote add upstream https://github.com/sunnypatell/sunnify-spotify-downloader.git
+   ```
+3. Create a branch for your change
+   ```bash
+   git checkout -b feat/short-description
+   # or fix/short-description, docs/short-description
+   ```
+4. Set up the project locally (pick the parts you need)
+
+   Desktop app (Python):
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r req.txt
+   python Spotify_Downloader.py
+   ```
+
+   Backend (Flask):
+   ```bash
+   cd web-app/sunnify-backend
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   python app.py
+   ```
+
+   Frontend (Next.js):
+   ```bash
+   cd web-app/sunnify-webclient
+   npm install
+   npm run dev
+   ```
+
+5. Commit with a clear message
+   ```bash
+   git add -A
+   git commit -m "feat(web): add env-based API base url"
+   ```
+6. Rebase on latest main if needed
+   ```bash
+   git fetch upstream
+   git rebase upstream/main
+   ```
+7. Push and open a Pull Request
+   ```bash
+   git push -u origin HEAD
+   ```
+
+---
+
+## Style and Guidelines
+
+- Keep PRs focused and small where possible
+- Write descriptive commit messages
+- Update or add docs when changing behavior
+- Match the existing code style in each area
+- Avoid unrelated refactors in the same PR
+
+Python tips:
+- Target Python 3.8+ for new code
+- Prefer explicit errors over silent failures
+- Use `requests.Session()` reuse where applicable
+
+Web tips:
+- Use env vars such as `NEXT_PUBLIC_API_BASE` for endpoints
+- Avoid hardcoding URLs when an env option will do
+
+---
+
+## Security and Legal
+
+Please do not open public issues for security vulnerabilities. Instead, follow the process in [SECURITY.md](SECURITY.md).
+
+This project is for educational use. See [LICENSE](LICENSE) and the root README for details.
+
+---
+
+## Code of Conduct
+
+By participating, you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md).
