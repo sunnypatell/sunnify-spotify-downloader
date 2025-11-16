@@ -1,0 +1,33 @@
+name: Documentation update
+description: Improve or correct documentation across README, API_STATUS, webclient README, or comments
+title: "docs: <short summary>"
+labels:
+  - type: docs
+body:
+  - type: dropdown
+    id: doc_area
+    attributes:
+      label: Docs area
+      options:
+        - Root README
+        - API_STATUS.md
+        - CONTRIBUTING.md
+        - SECURITY.md
+        - Webclient README
+        - Code comments / inline docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change?
+      placeholder: Be specific; include file paths and headings
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Why does this help?
+      placeholder: Clarify the impact for users or contributors

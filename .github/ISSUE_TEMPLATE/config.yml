@@ -1,0 +1,11 @@
+blank_issues_disabled: true
+contact_links:
+  - name: Security vulnerabilities
+    url: https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/SECURITY.md
+    about: Please do not file security issues here. Follow the private disclosure process.
+  - name: Usage, setup, and troubleshooting guide
+    url: https://github.com/sunnypatell/sunnify-spotify-downloader#readme
+    about: Read the README for multi-path setup (desktop, backend, web), config, and diagnostics.
+  - name: API and mirror diagnostics
+    url: https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/API_STATUS.md
+    about: Check external dependencies (Spotify Web API, mirrors, yt-dlp) and how to verify them.

@@ -1,0 +1,43 @@
+name: Performance issue
+description: Report slowdowns, excessive memory/CPU, or regressions
+title: "perf: <short summary>"
+labels:
+  - type: performance
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Desktop (PyQt5 GUI)
+        - Backend (Flask API)
+        - Webclient (Next.js)
+        - Core Providers (spotifydown_api.py)
+        - Scripts/Diagnostics
+    validations:
+      required: true
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario and workload
+      description: Describe the playlist size, operations, and environment
+      placeholder: |
+        Playlist with ~500 tracks; Windows 11; ffmpeg 6.1; yt-dlp 2024.8.6
+    validations:
+      required: true
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Baseline vs observed
+      description: Provide timing, CPU/memory stats, or profiling output
+      render: shell
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      placeholder: Minimal steps to observe the performance issue
+    validations:
+      required: true

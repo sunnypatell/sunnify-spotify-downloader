@@ -1,0 +1,64 @@
+name: Feature request
+description: Suggest an enhancement for the desktop app, backend API, webclient, or docs
+title: "feat: <short summary>"
+labels:
+  - type: feature
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Desktop (PyQt5 GUI)
+        - Backend (Flask API)
+        - Webclient (Next.js)
+        - Core Providers (spotifydown_api.py)
+        - Scripts/Diagnostics
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem would this feature solve?
+      placeholder: As a <role>, I want <capability> so that <benefit>.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the solution, UX, endpoints, and config
+      placeholder: |
+        - Desktop UX:
+        - Backend endpoints:
+        - Webclient UI:
+        - Env/config:
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: List other approaches and why they were not chosen
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: Changes desktop UI/behavior
+        - label: Adds/changes backend API
+        - label: Updates webclient UI/logic
+        - label: Touches core providers (spotifydown_api.py)
+        - label: Requires docs updates
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / compatibility
+      description: Note any breaking changes, migrations, or rollbacks

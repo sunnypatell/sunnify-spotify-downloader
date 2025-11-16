@@ -1,0 +1,111 @@
+name: Bug report
+description: Report a reproducible problem in the desktop app, backend API, webclient, or core providers
+title: "bug: <short summary>"
+labels:
+  - type: bug
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the repo is affected?
+      options:
+        - Desktop (PyQt5 GUI)
+        - Backend (Flask API)
+        - Webclient (Next.js)
+        - Core Providers (spotifydown_api.py)
+        - Scripts/Diagnostics (scripts/check_api_status.py)
+        - Documentation
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / Commit
+      description: App version (see version.txt) and/or commit SHA
+      placeholder: e.g., 1.0.0, commit 0abc123
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and architecture
+      placeholder: e.g., Windows 11 x64, macOS 14, Ubuntu 22.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: runtime
+    attributes:
+      label: Runtime details
+      description: Python (and pip) versions; Node and npm versions if webclient; FFmpeg and yt-dlp versions if desktop
+      placeholder: |
+        Python 3.11.9, pip 24.0
+        Node 20.11, npm 10.5
+        ffmpeg 6.1, yt-dlp 2024.08.06
+
+  - type: input
+    id: api_base
+    attributes:
+      label: API base used
+      description: For webclient/backend issues, what API base is used?
+      placeholder: e.g., http://127.0.0.1:5000 or hosted Lambda URL
+
+  - type: input
+    id: mirrors
+    attributes:
+      label: SPOTIFYDOWN_BASE_URLS
+      description: If set, paste the exact value used (or state "default")
+      placeholder: https://api.spotifydown.com,https://spotimate.io/api
+
+  - type: textarea
+    id: url_context
+    attributes:
+      label: Playlist context
+      description: If relevant, share the playlist ID or a sanitized URL (no private info)
+      placeholder: https://open.spotify.com/playlist/<ID>
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a clear, minimal reproduction
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / console output
+      description: Paste relevant logs, traces, or screenshots
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-checks
+      options:
+        - label: I ran `python scripts/check_api_status.py` and reviewed the results
+        - label: I verified FFmpeg is on PATH (`ffmpeg -version`) and updated yt-dlp
+        - label: I searched existing issues to avoid duplicates
+        - label: I read the Troubleshooting section in README
