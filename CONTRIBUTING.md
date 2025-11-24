@@ -22,7 +22,7 @@ Explain the use case, why it adds value, and any example flows or mockups.
 
 1. Fork the repository, then clone your fork
    ```bash
-   git clone https://github.com/<your-username>/sunnify-spotify-downloader.git
+   git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git
 
 2. Add the upstream remote
    ```bash
