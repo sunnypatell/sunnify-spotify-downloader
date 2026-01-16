@@ -90,39 +90,8 @@ jobs:
           name: linux-build
           path: dist/Sunnify-Linux
 
-  build-macos-intel:
-    name: Build macOS (Intel)
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: |
-          pip install -r req.txt
-          pip install pyinstaller
-
-      - name: Build with PyInstaller
-        run: pyinstaller Sunnify.spec
-
-      - name: Create ZIP
-        run: |
-          cd dist
-          zip -r Sunnify-macOS-Intel.zip Sunnify.app
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-intel-build
-          path: dist/Sunnify-macOS-Intel.zip
-
-  build-macos-arm:
-    name: Build macOS (Apple Silicon)
+  build-macos:
+    name: Build macOS
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -144,18 +113,18 @@ jobs:
       - name: Create ZIP
         run: |
           cd dist
-          zip -r Sunnify-macOS-AppleSilicon.zip Sunnify.app
+          zip -r Sunnify-macOS.zip Sunnify.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-arm-build
-          path: dist/Sunnify-macOS-AppleSilicon.zip
+          name: macos-build
+          path: dist/Sunnify-macOS.zip
 
   upload-release:
     name: Upload to Release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-linux, build-macos-intel, build-macos-arm]
+    needs: [build-windows, build-linux, build-macos]
     permissions:
       contents: write
     steps:
@@ -174,5 +143,4 @@ jobs:
           files: |
             artifacts/windows-build/Sunnify-Windows.exe
             artifacts/linux-build/Sunnify-Linux
-            artifacts/macos-intel-build/Sunnify-macOS-Intel.zip
-            artifacts/macos-arm-build/Sunnify-macOS-AppleSilicon.zip
+            artifacts/macos-build/Sunnify-macOS.zip
