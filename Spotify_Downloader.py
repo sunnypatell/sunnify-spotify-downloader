@@ -52,7 +52,8 @@ from Template import Ui_MainWindow
 
 
 def get_ffmpeg_path():
-    """Get path to bundled FFmpeg or None if not bundled."""
+    """Get path to FFmpeg - checks bundled first, then system paths."""
+    # Check bundled FFmpeg first (for PyInstaller builds)
     if getattr(sys, "frozen", False):
         base_path = sys._MEIPASS
         if sys.platform == "win32":
@@ -61,6 +62,27 @@ def get_ffmpeg_path():
             ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg")
         if os.path.exists(ffmpeg):
             return os.path.join(base_path, "ffmpeg")
+
+    # Check common system paths (for homebrew/system installs)
+    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    common_paths = [
+        "/opt/homebrew/bin",  # macOS ARM homebrew
+        "/usr/local/bin",  # macOS Intel homebrew / Linux
+        "/usr/bin",  # Linux system
+    ]
+
+    for path in common_paths:
+        ffmpeg = os.path.join(path, ffmpeg_name)
+        if os.path.exists(ffmpeg):
+            return path
+
+    # Check if ffmpeg is in PATH
+    import shutil
+
+    ffmpeg_in_path = shutil.which("ffmpeg")
+    if ffmpeg_in_path:
+        return os.path.dirname(ffmpeg_in_path)
+
     return None
 
 
@@ -108,6 +130,14 @@ class MusicScraper(QThread):
         return playlist_folder
 
     def download_track_audio(self, search_query, destination):
+        # Check for FFmpeg first
+        ffmpeg_path = get_ffmpeg_path()
+        if not ffmpeg_path:
+            raise RuntimeError(
+                "FFmpeg not found! Install via: brew install ffmpeg (macOS) "
+                "or apt install ffmpeg (Linux)"
+            )
+
         base, _ = os.path.splitext(destination)
         output_template = base + ".%(ext)s"
         ydl_opts = {
@@ -115,6 +145,7 @@ class MusicScraper(QThread):
             "noplaylist": True,
             "quiet": True,
             "outtmpl": output_template,
+            "ffmpeg_location": ffmpeg_path,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -123,9 +154,6 @@ class MusicScraper(QThread):
                 }
             ],
         }
-        ffmpeg_path = get_ffmpeg_path()
-        if ffmpeg_path:
-            ydl_opts["ffmpeg_location"] = ffmpeg_path
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
             if info.get("entries"):
