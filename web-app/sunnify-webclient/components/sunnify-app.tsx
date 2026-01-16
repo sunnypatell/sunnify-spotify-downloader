@@ -145,6 +145,24 @@ export default function SunnifyApp() {
         </div>
       )}
 
+      {/* Info Banner - Web Preview Only */}
+      <div className="relative z-40 border-b border-blue-500/20 bg-blue-500/10 px-4 py-3 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-center gap-3">
+          <Download className="h-4 w-4 flex-shrink-0 text-blue-400" />
+          <p className="text-sm text-blue-200">
+            <span className="font-semibold">Preview mode:</span> This web app displays playlist
+            metadata only. To download MP3s, use the{" "}
+            <a
+              href="https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest"
+              className="font-semibold underline hover:text-blue-100"
+            >
+              desktop app
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+
       <div className="relative mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
         <header className="mb-12 text-center">
