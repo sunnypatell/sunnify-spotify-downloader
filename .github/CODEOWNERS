@@ -1,0 +1,30 @@
+# default owner for everything
+* @sunnypatell
+
+# desktop app
+/Spotify_Downloader.py @sunnypatell
+/Template.py @sunnypatell
+/Template.ui @sunnypatell
+
+# core providers
+/spotifydown_api.py @sunnypatell
+
+# scripts
+/scripts/ @sunnypatell
+
+# web app - backend
+/web-app/sunnify-backend/ @sunnypatell
+
+# web app - frontend
+/web-app/sunnify-webclient/ @sunnypatell
+/web-app/sunnify-webclient/components/ @sunnypatell
+/web-app/sunnify-webclient/app/ @sunnypatell
+/web-app/sunnify-webclient/lib/ @sunnypatell
+
+# github config
+/.github/ @sunnypatell
+
+# documentation
+/README.md @sunnypatell
+/CONTRIBUTING.md @sunnypatell
+/SECURITY.md @sunnypatell
