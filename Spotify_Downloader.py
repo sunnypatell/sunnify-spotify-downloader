@@ -482,14 +482,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.statusMsg.setText("Please enter a Spotify URL")
             return
 
-        # On first download, prompt for location if default isn't writable
-        if not self._download_path_set and not self._ensure_download_path():
+        # ALWAYS prompt for download location on first download
+        if not self._download_path_set:
             self.statusMsg.setText("Select download location...")
             if not self._prompt_download_location():
                 self.statusMsg.setText("Download cancelled - no folder selected")
                 return
 
-        # Ensure the download path exists
+        # Verify the selected path is still writable
         if not self._ensure_download_path():
             self.statusMsg.setText("Cannot write to download folder")
             QMessageBox.warning(

@@ -2,13 +2,16 @@
 # Install: brew install --cask sunnypatell/tap/sunnify
 
 cask "sunnify" do
-  version "2.0.0"
-  sha256 "438fe8ff10de6fa7cde120049c802eaf261c6f744944fb4d8b44a694ca183480"
+  version "2.0.1"
+  sha256 :no_check  # Updated on release
 
   url "https://github.com/sunnypatell/sunnify-spotify-downloader/releases/download/v#{version}/Sunnify-macOS.zip"
   name "Sunnify"
   desc "Download Spotify playlists to local MP3s with artwork and tags"
   homepage "https://github.com/sunnypatell/sunnify-spotify-downloader"
+
+  # FFmpeg is required for audio conversion
+  depends_on formula: "ffmpeg"
 
   app "Sunnify.app"
 
@@ -27,7 +30,7 @@ cask "sunnify" do
   ]
 
   caveats <<~EOS
-    FFmpeg is bundled - no separate installation needed.
+    FFmpeg will be installed automatically as a dependency.
     Educational use only. Ensure compliance with copyright laws.
   EOS
 end

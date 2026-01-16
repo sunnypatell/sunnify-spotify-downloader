@@ -16,6 +16,8 @@ import {
   ExternalLink,
   Clock,
   X,
+  Heart,
+  Coffee,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -416,35 +418,61 @@ export default function SunnifyApp() {
         </div>
 
         {/* Footer */}
-        <footer className="mt-12 flex flex-col items-center justify-between gap-6 border-t border-white/10 pt-8 sm:flex-row">
-          <p className="text-sm text-gray-500">
-            © 2026 Sunny Jayendra Patel — Educational use only
-          </p>
-          <div className="flex items-center gap-2">
-            <a
-              href="https://github.com/sunnypatell/sunnify-spotify-downloader"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
-            >
-              <Github className="h-5 w-5" />
-            </a>
-            <a
-              href="https://www.linkedin.com/in/sunny-patel-30b460204/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
-            >
-              <Linkedin className="h-5 w-5" />
-            </a>
-            <a
-              href="https://www.sunnypatel.net/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
-            >
-              <Globe className="h-5 w-5" />
-            </a>
+        <footer className="mt-12 border-t border-white/10 pt-8">
+          <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
+            <p className="text-sm text-gray-500">
+              © 2026 Sunny Jayendra Patel — Educational use only
+            </p>
+
+            {/* Sponsor Buttons */}
+            <div className="flex items-center gap-3">
+              <a
+                href="https://buymeacoffee.com/sunnypatell"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-xl bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-400 transition-all hover:bg-amber-500/20 hover:text-amber-300"
+              >
+                <Coffee className="h-4 w-4" />
+                Buy Me a Coffee
+              </a>
+              <a
+                href="https://github.com/sponsors/sunnypatell"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-xl bg-pink-500/10 px-4 py-2 text-sm font-medium text-pink-400 transition-all hover:bg-pink-500/20 hover:text-pink-300"
+              >
+                <Heart className="h-4 w-4" />
+                Sponsor
+              </a>
+            </div>
+
+            {/* Social Links */}
+            <div className="flex items-center gap-2">
+              <a
+                href="https://github.com/sunnypatell/sunnify-spotify-downloader"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
+              >
+                <Github className="h-5 w-5" />
+              </a>
+              <a
+                href="https://www.linkedin.com/in/sunny-patel-30b460204/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
+              >
+                <Linkedin className="h-5 w-5" />
+              </a>
+              <a
+                href="https://www.sunnypatel.net/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
+              >
+                <Globe className="h-5 w-5" />
+              </a>
+            </div>
           </div>
         </footer>
       </div>

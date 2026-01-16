@@ -1,0 +1,44 @@
+# Health check for Render deployment
+# Pings the backend every 6 hours to monitor uptime
+# Also keeps the free-tier instance warm to reduce cold starts
+
+name: Render Health Check
+
+on:
+  schedule:
+    # Run every 6 hours to monitor uptime and keep instance warm
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render health endpoint
+        run: |
+          echo "Checking Render backend health..."
+
+          # Allow up to 60 seconds for cold start
+          RESPONSE=$(curl -sf --max-time 60 \
+            "https://sunnify-spotify-downloader.onrender.com/api/health" || echo "FAILED")
+
+          if [ "$RESPONSE" = "FAILED" ]; then
+            echo "Health check failed - backend may be down"
+            exit 1
+          fi
+
+          echo "Response: $RESPONSE"
+
+          # Verify response contains expected status
+          if echo "$RESPONSE" | grep -q '"status":"ok"'; then
+            echo "Health check passed"
+          else
+            echo "Unexpected response - backend may be unhealthy"
+            exit 1
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Render backend health check failed. Check https://sunnify-spotify-downloader.onrender.com"
