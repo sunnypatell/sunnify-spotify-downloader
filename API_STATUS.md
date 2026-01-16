@@ -1,68 +1,92 @@
-# External API Status (PyQt Desktop Downloader)
+# External API Status
 
-The desktop client now prefers Spotify's own public web endpoints to resolve
-playlist metadata and track lists without requiring developer credentials. When
-those calls are blocked it falls back to the usual spotifydown mirrors for
-track discovery plus direct MP3 links. YouTube remains the last-resort audio
-source via `yt-dlp`.
+Sunnify v2.0.0 uses Spotify's embed page endpoints to fetch playlist and track
+metadata without requiring developer credentials. YouTube (via `yt-dlp`) is used
+for audio downloads.
 
-## Playlist metadata & track discovery
+## Current API Architecture
 
-| Check | What it does | How to verify |
+### Primary: Spotify Embed Page API
+
+| Endpoint | Purpose | Notes |
 | --- | --- | --- |
-| `playlist_client_lookup` | Exercises the combined resolver that first tries Spotify's web API and then spotifydown. The notes include the detected playlist title and a few sample tracks. | Run `python3 scripts/check_api_status.py`. |
-| `spotify_web_playlist_lookup` | Directly queries `https://api.spotify.com/v1/playlists/{id}` using the anonymous web-player token. | Same as above; if this fails in your region, expect the combined lookup to fall back to spotifydown. |
-| `spotifydown_playlist_lookup` | Calls `/trackList/playlist/{id}` on the first configured spotifydown base URL. | Same as above. Override `SPOTIFYDOWN_BASE_URLS` if the default hosts are blocked on your network. |
+| `/embed/playlist/{id}` | Playlist metadata + up to 100 tracks | Extracts `__NEXT_DATA__` JSON blob |
+| `/embed/track/{id}` | Single track metadata | Used for individual track downloads |
+| `/oembed?url=...` | Quick playlist validation | Fast existence check |
 
-## Spotifydown-style APIs
+### Fallback: spclient API (for large playlists)
 
-| Check | What it does | How to verify |
-| --- | --- | --- |
-| `spotifydown_track_download` | Hits `/download/{trackId}` for the first track returned by the playlist call to confirm a direct MP3 URL is provided. | Run `python3 scripts/check_api_status.py`. |
+For playlists with >100 tracks, Sunnify uses an anonymous access token extracted
+from embed pages to query `spclient.wg.spotify.com/playlist/v2/playlist/{id}`
+for the complete track URI list, then fetches individual track metadata via
+embed pages.
 
-If both checks fail, rotate the domain list via
-`SPOTIFYDOWN_BASE_URLS="https://your-mirror/api"` and rerun the script.
+### Audio Downloads: YouTube via yt-dlp
 
-## YouTube via `yt-dlp`
+All audio is sourced from YouTube using `yt-dlp`'s `ytsearch1:` extractor.
+The search query format is: `ytsearch1:{title} {artists} audio`
 
-| Check | What it does | How to verify |
-| --- | --- | --- |
-| `youtube_search` | Uses `yt-dlp`'s `ytsearch1:` extractor to locate the first
-matching video for a test query without downloading media. | Run
-`python3 scripts/check_api_status.py`. |
+## Deprecated Endpoints (No Longer Used)
 
-When the search fails, check your network connection or update `yt-dlp` to the
-latest release.
+The following endpoints are **no longer functional** and have been removed:
 
-## Rerunning the diagnostics
+- `api.spotifydown.com` - All mirrors are dead (403/blocked)
+- `spotimate.io/api` - No longer responding
+- `open.spotify.com/get_access_token` - Returns 403 for anonymous requests
+- `api.spotify.com/v1/playlists/{id}` - Requires OAuth (anonymous blocked)
 
-macOS or Linux:
+The `SPOTIFYDOWN_BASE_URLS` environment variable is no longer used.
+
+## Running Diagnostics
+
+Verify all endpoints from your network:
 
 ```bash
+# macOS/Linux
 python3 scripts/check_api_status.py
-```
 
-Windows PowerShell:
-
-```powershell
+# Windows PowerShell
 python .\scripts\check_api_status.py
 ```
 
-The script prints a JSON array summarising each dependency. All entries should report `"ok": true` before demoing the downloader.
+Example output:
 
-Example snippet:
-
-```json
-[
-	{
-		"name": "playlist_client_lookup",
-		"ok": true,
-		"notes": "Playlist 'Today's Top Hits'. Sample tracks: ..."
-	},
-	{
-		"name": "youtube_search",
-		"ok": true,
-		"notes": "Resolved 'Rick Astley Never Gonna Give You Up' to ..."
-	}
-]
 ```
+============================================================
+API STATUS SUMMARY
+============================================================
+
+spotify_embed_api: OK
+  URL: https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M
+  Notes: Playlist 'Today's Top Hits' by Spotify. Sample tracks: ...
+
+playlist_client: OK
+  URL: PlaylistClient for 37i9dQZF1DXcBWIGoYBM5M
+  Notes: Playlist 'Today's Top Hits' by Spotify. Sample tracks: ...
+
+oembed_validation: OK
+  URL: https://open.spotify.com/oembed?url=...
+  Notes: Playlist validation successful
+
+large_playlist_fallback: OK
+  URL: spclient + individual embeds for 37i9dQZF1DX5Ejj0EkURtP
+  Notes: Retrieved all 150 tracks (expected 150)
+
+youtube_search: OK
+  URL: ytsearch1:Rick Astley Never Gonna Give You Up
+  Notes: Resolved 'Rick Astley Never Gonna Give You Up' to ...
+
+youtube_track_search: OK
+  URL: ytsearch1:{track} audio
+  Notes: Track resolved to YouTube video
+============================================================
+```
+
+All entries should report `OK` before using the downloader.
+
+## Troubleshooting
+
+- **Embed page fails**: Check if `open.spotify.com` is accessible from your network
+- **Large playlist incomplete**: The spclient fallback requires a valid access token from embed pages
+- **YouTube search fails**: Run `pip install -U yt-dlp` and ensure YouTube is reachable
+- **Playlist URL rejected**: Format must be `https://open.spotify.com/playlist/{id}` or `https://open.spotify.com/track/{id}`

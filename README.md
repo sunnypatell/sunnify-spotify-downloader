@@ -45,10 +45,11 @@
 
 Sunnify is built to be resilient, fast, and simple:
 
-- Falls back from Spotify's public web API to multiple spotifydown-style mirrors.
-- Resolves direct MP3 links when available; otherwise uses `yt-dlp` with FFmpeg.
+- Uses Spotify's embed page API to fetch playlist/track metadata without credentials.
+- Downloads audio via YouTube search using `yt-dlp` with FFmpeg.
 - Writes clean ID3 tags and embeds cover art for your library.
 - Ships as a PyQt desktop app, a Flask API, and a modern Next.js web client.
+- Supports both individual track and full playlist downloads (v2.0.0+).
 
 Screenshots from the desktop app in action:
 
@@ -61,10 +62,10 @@ Screenshots from the desktop app in action:
 ```
 root
 ├─ Spotify_Downloader.py          (PyQt5 desktop app)
-├─ spotifydown_api.py             (Provider abstraction: Spotify Web + spotifydown)
+├─ spotifydown_api.py             (Spotify embed page API client)
 ├─ Template.py / Template.ui      (Generated UI for the desktop app)
 ├─ scripts/
-│  └─ check_api_status.py         (Diagnostics for mirrors, Spotify web, yt-dlp)
+│  └─ check_api_status.py         (Diagnostics for embed API and yt-dlp)
 ├─ dist/
 │  └─ Sunnify (Spotify Downloader).exe   (Prebuilt Windows executable)
 ├─ web-app/
@@ -84,11 +85,11 @@ root
 
 ## Features
 
-- 🎼 Full playlist downloader (one link to a tagged MP3 library)
+- 🎼 Full playlist and single track downloader (tagged MP3 library)
 - 🖼️ Artwork and tagging (title, artists, album, release date, cover art)
-- 🚦 Smart providers (Spotify Web API with fallback to spotifydown mirrors)
-- 🎯 Resilient audio pipeline (direct links or `yt-dlp` fallback)
-- 🪟 Clean desktop UI (progress, preview panel, per-track status)
+- 🚦 Spotify embed page API (no credentials required)
+- 🎯 YouTube audio via `yt-dlp` with FFmpeg conversion
+- 🪟 Clean desktop UI (progress, preview panel, settings, download location picker)
 - 🌐 Web experience (Flask backend and Next.js client)
 
 <hr/>
@@ -98,7 +99,7 @@ root
 - Python 3.8 or newer (3.6+ supported, 3.8+ recommended)
 - FFmpeg on PATH (required by `yt-dlp` for MP3 conversion)
 - Node.js 18 or newer (for the web client)
-- Internet access to `open.spotify.com` and mirror providers
+- Internet access to `open.spotify.com` and YouTube
 
 <details>
 <summary>Install FFmpeg (Windows, macOS, Linux)</summary>
@@ -156,9 +157,6 @@ pip install -r req.txt
 # Ensure FFmpeg is on PATH
 ffmpeg -version
 
-# Optional: override mirrors
-$Env:SPOTIFYDOWN_BASE_URLS = "https://api.spotifydown.com,https://spotimate.io/api"
-
 # Launch the PyQt app
 python .\Spotify_Downloader.py
 ```
@@ -171,7 +169,6 @@ cd sunnify-spotify-downloader
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r req.txt
 ffmpeg -version
-export SPOTIFYDOWN_BASE_URLS="https://api.spotifydown.com,https://spotimate.io/api"
 python Spotify_Downloader.py
 ```
 
@@ -243,16 +240,15 @@ Note: the current client points at a hosted AWS Lambda URL by default. Switch it
 
 ## Configuration
 
-- `SPOTIFYDOWN_BASE_URLS` a comma-separated mirror list to override defaults
-    - PowerShell example: ``$Env:SPOTIFYDOWN_BASE_URLS = "https://api.spotifydown.com,https://spotimate.io/api"``
 - `NEXT_PUBLIC_API_BASE` base URL for the webclient backend (set via `.env.local`)
+- Desktop app download location: click the ⚙ (settings) button to change
 
 <details>
 <summary>Advanced configuration tips</summary>
 
-- Corporate networks can block `open.spotify.com` and mirrors. Allowlist domains or provide custom mirrors via `SPOTIFYDOWN_BASE_URLS`.
+- Corporate networks may block `open.spotify.com`. Allowlist this domain.
 - Increase request timeouts only if your network is unusually slow. See `spotifydown_api.py` for defaults.
-- Ensure Windows download paths have write permissions.
+- Ensure download paths have write permissions.
 
 </details>
 
@@ -263,11 +259,14 @@ Note: the current client points at a hosted AWS Lambda URL by default. Switch it
 Desktop app (GUI):
 
 1. Launch Sunnify.
-2. Paste a Spotify playlist URL `https://open.spotify.com/playlist/<ID>`.
+2. Paste a Spotify URL:
+   - Playlist: `https://open.spotify.com/playlist/<ID>`
+   - Single track: `https://open.spotify.com/track/<ID>`
 3. Press Enter in the URL box to start.
-4. Optional: enable Show Preview to see the cover and meta.
-5. Optional: enable Add Meta Tags to embed ID3 and artwork.
-6. Output appears under `music/<Playlist Name - Owner>/` next to the app.
+4. Optional: click ⚙ to change download location.
+5. Optional: enable Show Preview to see the cover and meta.
+6. Optional: enable Add Meta Tags to embed ID3 and artwork.
+7. Output appears in your chosen download folder (default: `music/`).
 
 Web client:
 
@@ -282,20 +281,19 @@ Web client:
 
 ### Provider Strategy (spotifydown_api.py)
 
-- `SpotifyPublicAPI` fetches an anonymous web token from `open.spotify.com`, then calls `api.spotify.com/v1` for playlist and tracks.
-- `SpotifyDownAPI` rotates across multiple mirror base URLs to resolve playlist metadata, tracks, MP3 links, and YouTube IDs.
-- `PlaylistClient` tries Spotify Web first, then spotifydown; provides direct link and YouTube ID helpers.
-
-Environment override: set `SPOTIFYDOWN_BASE_URLS` to replace default mirrors.
+- `SpotifyEmbedAPI` fetches playlist/track data from Spotify's embed pages (`/embed/playlist/{id}`, `/embed/track/{id}`).
+- Extracts `__NEXT_DATA__` JSON blob containing full track metadata without authentication.
+- For playlists >100 tracks, uses spclient API with anonymous tokens from embed pages.
+- `PlaylistClient` is a high-level wrapper providing simple methods for common operations.
 
 ### Download Pipeline (Desktop App)
 
 For each track:
 
-1. Ask for a direct MP3 link (`/download/<track_id>`) via spotifydown.
-2. If missing, request YouTube ID, then use the watch URL.
-3. If still missing, fallback search: `ytsearch1:<title> <artists> audio`.
-4. Convert to MP3 (`yt-dlp` plus FFmpeg) and write ID3 tags (Mutagen).
+1. Fetch metadata from Spotify embed page.
+2. Search YouTube: `ytsearch1:<title> <artists> audio`.
+3. Download and convert to MP3 (`yt-dlp` plus FFmpeg).
+4. Write ID3 tags (Mutagen) with title, artist, album, date.
 5. Embed cover art (from track or playlist metadata).
 
 ### Web Backend (web-app/sunnify-backend/app.py)
@@ -307,13 +305,13 @@ For each track:
 
 ## Diagnostics
 
-Validate mirrors, Spotify Web, and `yt-dlp` from your network:
+Validate Spotify embed API and `yt-dlp` from your network:
 
 ```powershell
 python .\scripts\check_api_status.py
 ```
 
-Example output summarizes which providers resolved metadata, sample tracks, and whether YouTube search succeeded.
+Example output shows embed API status, large playlist fallback, and YouTube search results. See [API_STATUS.md](API_STATUS.md) for details.
 
 <hr/>
 
@@ -321,10 +319,10 @@ Example output summarizes which providers resolved metadata, sample tracks, and 
 
 - FFmpeg not found: install FFmpeg and restart terminal so PATH updates.
 - `yt-dlp` errors: `pip install -U yt-dlp` and ensure YouTube is reachable.
-- Playlist URL rejected: format must be `https://open.spotify.com/playlist/<ID>`.
+- URL rejected: format must be `https://open.spotify.com/playlist/<ID>` or `https://open.spotify.com/track/<ID>`.
+- Embed API fails: check if `open.spotify.com` is accessible from your network.
 - Hosted backend cold starts: free tiers can sleep; first call might take seconds.
-- Mirrors down: set `SPOTIFYDOWN_BASE_URLS` to a working mirror list.
-- Windows permissions: choose a download path you can write to.
+- Permission errors: choose a download path you have write access to.
 
 <hr/>
 

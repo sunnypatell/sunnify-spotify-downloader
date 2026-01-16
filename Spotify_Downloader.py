@@ -12,7 +12,7 @@ will not be registered in the URL as the regex does not specify that in the URL 
 <{sunnypatel124555@gmail.com}> or open a fork req. in the repository.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 # Main
 # if __name__ == '__main__':from PyQt5.uic import loadUi
@@ -34,13 +34,20 @@ from PyQt5.QtCore import (
     pyqtSlot,
 )
 from PyQt5.QtGui import QCursor, QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QGraphicsDropShadowEffect, QMainWindow
+from PyQt5.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QGraphicsDropShadowEffect,
+    QMainWindow,
+    QMessageBox,
+)
 from yt_dlp import YoutubeDL
 
 from spotifydown_api import (
     PlaylistClient,
     PlaylistInfo,
     SpotifyDownAPIError,
+    detect_spotify_url_type,
     extract_playlist_id,
     sanitize_filename,
 )
@@ -203,6 +210,73 @@ class MusicScraper(QThread):
         """Extract playlist ID from Spotify URL."""
         return extract_playlist_id(link)
 
+    def scrape_track(self, spotify_track_link, music_folder):
+        """Download a single track from Spotify."""
+        url_type, track_id = detect_spotify_url_type(spotify_track_link)
+        if url_type != "track":
+            raise ValueError("Expected a track URL")
+
+        try:
+            spotify_api = self.ensure_spotifydown_api()
+        except SpotifyDownAPIError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        track = spotify_api.get_track(track_id)
+        self.song_Album.emit("Single Track Download")
+
+        if not os.path.exists(music_folder):
+            os.makedirs(music_folder)
+
+        self.Resetprogress_signal.emit(0)
+
+        track_title = track.title
+        artists = track.artists
+        sanitized_title = self.sanitize_text(track_title)
+        sanitized_artists = self.sanitize_text(artists)
+        filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+        filepath = os.path.join(music_folder, filename)
+
+        album_name = track.album or ""
+        release_date = track.release_date or ""
+        cover_url = track.cover_url
+
+        song_meta = {
+            "title": track_title,
+            "artists": artists,
+            "album": album_name,
+            "releaseDate": release_date,
+            "cover": cover_url or "",
+            "file": filepath,
+        }
+
+        self.song_meta.emit(dict(song_meta))
+
+        if os.path.exists(filepath):
+            self.add_song_meta.emit(song_meta)
+            self.increment_counter()
+            self.PlaylistCompleted.emit("Track already exists!")
+            return
+
+        # Download via YouTube search
+        search_query = f"ytsearch1:{track_title} {artists} audio"
+        try:
+            final_path = self.download_track_audio(search_query, filepath)
+        except Exception as error_status:
+            print(f"[*] Error downloading '{track_title}': {error_status}")
+            self.PlaylistCompleted.emit(f"Error: {error_status}")
+            return
+
+        if not final_path or not os.path.exists(final_path):
+            print(f"[*] Download did not produce an audio file for: {track_title}")
+            self.PlaylistCompleted.emit("Download failed - no audio file produced")
+            return
+
+        song_meta["file"] = final_path
+        self.add_song_meta.emit(song_meta)
+        self.increment_counter()
+        self.dlprogress_signal.emit(100)
+        self.PlaylistCompleted.emit("Download Complete!")
+
     def increment_counter(self):
         self.counter += 1
         self.count_updated.emit(self.counter)  # Emit the signal with the updated count
@@ -212,19 +286,21 @@ class MusicScraper(QThread):
 class ScraperThread(QThread):
     progress_update = pyqtSignal(str)
 
-    def __init__(self, playlist_link):
+    def __init__(self, spotify_link, music_folder=None):
         super().__init__()
-        self.playlist_link = playlist_link
-        self.scraper = MusicScraper()  # Create an instance of MusicScraper
+        self.spotify_link = spotify_link
+        self.music_folder = music_folder or os.path.join(os.getcwd(), "music")
+        self.scraper = MusicScraper()
 
     def run(self):
-        music_folder = os.path.join(
-            os.getcwd(), "music"
-        )  # Change this path to your desired music folder
         self.progress_update.emit("Scraping started...")
         try:
-            self.scraper.returnSPOT_ID(self.playlist_link)
-            self.scraper.scrape_playlist(self.playlist_link, music_folder)
+            # Detect URL type and handle accordingly
+            url_type, _ = detect_spotify_url_type(self.spotify_link)
+            if url_type == "track":
+                self.scraper.scrape_track(self.spotify_link, self.music_folder)
+            else:
+                self.scraper.scrape_playlist(self.spotify_link, self.music_folder)
             self.progress_update.emit("Scraping completed.")
         except Exception as e:
             self.progress_update.emit(f"{e}")
@@ -315,6 +391,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.setupUi(self)
 
+        # Default download path
+        self.download_path = os.path.join(os.getcwd(), "music")
+
         self.SONGINFORMATION.setGraphicsEffect(
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
         )
@@ -324,18 +403,41 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self.Closed.clicked.connect(self.exitprogram)
         self.Select_Home.clicked.connect(self.Linkedin)
+        self.SettingsBtn.clicked.connect(self.open_settings)
         # End main UI code
 
     # https://open.spotify.com/playlist/37i9dQZF1E36hkEAnydKTA?si=20caa5adfed648d3
 
+    def open_settings(self):
+        """Open settings dialog to choose download location."""
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Download Folder",
+            self.download_path,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        )
+        if folder:
+            self.download_path = folder
+            QMessageBox.information(
+                self,
+                "Settings Updated",
+                f"Download location set to:\n{folder}",
+            )
+
     @pyqtSlot()
     def on_returnButton(self):
-        playlist_id = self.PlaylistLink.text()
+        spotify_url = self.PlaylistLink.text().strip()
+        if not spotify_url:
+            self.statusMsg.setText("Please enter a Spotify URL")
+            return
+
         try:
-            # self.PlaylistMsg.setText('Playlist Code : %s' % playlist_id)
+            # Validate URL type
+            url_type, _ = detect_spotify_url_type(spotify_url)
+            self.statusMsg.setText(f"Detected: {url_type}")
 
             # Start the scraper in a separate thread
-            self.scraper_thread = ScraperThread(playlist_id)
+            self.scraper_thread = ScraperThread(spotify_url, self.download_path)
             # self.scraper_thread.scraper.PlaylistID.connect(lambda x:self.PlaylistMsg.setText("Playlist Code : {}".format(x)))  # Connect the signal
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(
@@ -441,14 +543,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def CloseSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(250)
-        self.animation.setEndValue(QSize(0, 330))
+        self.animation.setEndValue(QSize(0, 440))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.start()
 
     def OpenSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(1000)
-        self.animation.setEndValue(QSize(270, 330))
+        self.animation.setEndValue(QSize(350, 440))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.start()
 
@@ -469,8 +571,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     Screen = MainWindow()
-    Screen.setFixedHeight(390)
-    Screen.setFixedWidth(600)
+    Screen.setFixedHeight(500)
+    Screen.setFixedWidth(750)
     Screen.setWindowFlags(Qt.FramelessWindowHint)
     Screen.setAttribute(Qt.WA_TranslucentBackground)
     Screen.show()

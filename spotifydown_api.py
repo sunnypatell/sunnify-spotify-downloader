@@ -331,6 +331,23 @@ class SpotifyEmbedAPI:
         except Exception:
             return False
 
+    def get_track(self, track_id: str) -> TrackInfo:
+        """Get metadata for a single track.
+
+        Args:
+            track_id: Spotify track ID
+
+        Returns:
+            TrackInfo with track metadata
+
+        Raises:
+            SpotifyDownAPIError: If track cannot be fetched
+        """
+        track_info = self._fetch_track_metadata(track_id)
+        if track_info is None:
+            raise SpotifyDownAPIError(f"Could not fetch track {track_id}")
+        return track_info
+
 
 # Legacy class kept for compatibility - redirects to embed API
 class SpotifyDownAPI:
@@ -436,6 +453,17 @@ class PlaylistClient:
         """
         return None
 
+    def get_track(self, track_id: str) -> TrackInfo:
+        """Get metadata for a single track.
+
+        Args:
+            track_id: Spotify track ID
+
+        Returns:
+            TrackInfo with track metadata
+        """
+        return self._embed_api.get_track(track_id)
+
 
 # Utility functions shared across desktop app and web backend
 
@@ -457,6 +485,52 @@ def extract_playlist_id(url: str) -> str:
     if not match:
         raise ValueError("Invalid Spotify playlist URL.")
     return match.group(1)
+
+
+def extract_track_id(url: str) -> str:
+    """Extract track ID from a Spotify URL.
+
+    Args:
+        url: Spotify track URL like https://open.spotify.com/track/ABC123
+
+    Returns:
+        The track ID (e.g., "ABC123")
+
+    Raises:
+        ValueError: If the URL is not a valid Spotify track URL
+    """
+    pattern = r"https://open\.spotify\.com/track/([a-zA-Z0-9]+)"
+    match = re.match(pattern, url)
+    if not match:
+        raise ValueError("Invalid Spotify track URL.")
+    return match.group(1)
+
+
+def detect_spotify_url_type(url: str) -> tuple[str, str]:
+    """Detect the type of Spotify URL and extract the ID.
+
+    Args:
+        url: Spotify URL (track or playlist)
+
+    Returns:
+        Tuple of (type, id) where type is 'track' or 'playlist'
+
+    Raises:
+        ValueError: If the URL is not a valid Spotify URL
+    """
+    # Try playlist first
+    playlist_pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
+    match = re.match(playlist_pattern, url)
+    if match:
+        return ("playlist", match.group(1))
+
+    # Try track
+    track_pattern = r"https://open\.spotify\.com/track/([a-zA-Z0-9]+)"
+    match = re.match(track_pattern, url)
+    if match:
+        return ("track", match.group(1))
+
+    raise ValueError("Invalid Spotify URL. Must be a track or playlist URL.")
 
 
 def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
@@ -486,6 +560,8 @@ __all__ = [
     "SpotifyEmbedAPI",
     "SpotifyPublicAPI",
     "TrackInfo",
+    "detect_spotify_url_type",
     "extract_playlist_id",
+    "extract_track_id",
     "sanitize_filename",
 ]
