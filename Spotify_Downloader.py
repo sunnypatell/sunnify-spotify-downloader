@@ -369,22 +369,26 @@ class WritingMetaTagsThread(QThread):
         super().__init__()
         self.tags = tags
         self.filename = filename
-        self.PICTUREDATA = None
+        self._cover_thread = None  # Keep reference to prevent GC
 
     def run(self):
         try:
             print("[*] FileName : ", self.filename)
             audio = EasyID3(self.filename)
-            audio["title"] = self.tags["title"]
-            audio["artist"] = self.tags["artists"]
-            audio["album"] = self.tags["album"]
-            audio["date"] = self.tags["releaseDate"]
+            audio["title"] = self.tags.get("title", "")
+            audio["artist"] = self.tags.get("artists", "")
+            audio["album"] = self.tags.get("album", "")
+            audio["date"] = self.tags.get("releaseDate", "")
             audio.save()
-            self.CoverPic = DownloadCover(self.tags["cover"] + "?size=1")
-            self.CoverPic.albumCover.connect(self.setPIC)
-            self.CoverPic.start()
-        except Exception:
-            pass
+
+            # Only download cover if URL exists
+            cover_url = self.tags.get("cover", "")
+            if cover_url:
+                self._cover_thread = DownloadCover(cover_url)
+                self._cover_thread.albumCover.connect(self.setPIC)
+                self._cover_thread.start()
+        except Exception as e:
+            print(f"[*] Error writing meta tags: {e}")
 
     def setPIC(self, data):
         if data is None:
@@ -394,23 +398,36 @@ class WritingMetaTagsThread(QThread):
                 audio = ID3(self.filename)
                 audio["APIC"] = APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=data)
                 audio.save()
+                self.tags_success.emit("Tags added successfully")
             except Exception as e:
                 self.tags_success.emit(f"Error adding cover: {e}")
 
 
 class DownloadThumbnail(QThread):
+    thumbnail_ready = pyqtSignal(bytes)  # Signal to safely update UI from main thread
+
     def __init__(self, url, main_UI):
         super().__init__()
         self.url = url
         self.main_UI = main_UI
+        self.thumbnail_ready.connect(self._update_ui)
 
     def run(self):
-        response = requests.get(self.url, stream=True)
-        if response.status_code == 200:
-            pic = QImage()
-            pic.loadFromData(response.content)
-            self.main_UI.CoverImg.setPixmap(QPixmap(pic))
-            self.main_UI.CoverImg.show()
+        if not self.url:
+            return
+        try:
+            response = requests.get(self.url, stream=True, timeout=10)
+            if response.status_code == 200:
+                self.thumbnail_ready.emit(response.content)
+        except Exception:
+            pass  # Silently fail for thumbnails
+
+    def _update_ui(self, data):
+        """Update UI from main thread via signal."""
+        pic = QImage()
+        pic.loadFromData(data)
+        self.main_UI.CoverImg.setPixmap(QPixmap(pic))
+        self.main_UI.CoverImg.show()
 
 
 # Main Window
@@ -423,6 +440,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Default download path - use user's Music folder, not cwd (which is / on macOS bundles)
         self.download_path = self._get_default_download_path()
         self._download_path_set = False  # Track if user has explicitly chosen a path
+        self._active_threads = []  # Keep references to running threads to prevent GC crashes
+        self._is_downloading = False  # Track download state for stop button
+        self._stop_requested = False  # Flag to signal threads to stop
 
         self.SONGINFORMATION.setGraphicsEffect(
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
@@ -505,6 +525,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @pyqtSlot()
     def on_returnButton(self):
+        # If already downloading, stop the download
+        if self._is_downloading:
+            self._stop_download()
+            return
+
         spotify_url = self.PlaylistLink.text().strip()
         if not spotify_url:
             self.statusMsg.setText("Please enter a Spotify URL")
@@ -533,6 +558,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             url_type, _ = detect_spotify_url_type(spotify_url)
             self.statusMsg.setText(f"Detected: {url_type}")
 
+            # Reset stop flag and set downloading state
+            self._stop_requested = False
+            self._is_downloading = True
+            self.DownloadBtn.setText("Stop")
+
             self.scraper_thread = ScraperThread(spotify_url, self.download_path)
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
@@ -548,39 +578,71 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Connect the count_updated signal to the update_counter slot
             self.scraper_thread.scraper.count_updated.connect(self.update_counter)
 
+            # Pass stop flag reference to scraper
+            self.scraper_thread.scraper._main_window = self
+
             self.scraper_thread.start()
 
         except ValueError as e:
             self.statusMsg.setText(str(e))
+            self._is_downloading = False
+            self.DownloadBtn.setText("Download")
+
+    def _stop_download(self):
+        """Stop the current download gracefully."""
+        self._stop_requested = True
+        self.statusMsg.setText("Stopping download...")
+
+        # Terminate the scraper thread if running
+        if hasattr(self, "scraper_thread") and self.scraper_thread.isRunning():
+            self.scraper_thread.terminate()
+            self.scraper_thread.wait(2000)  # Wait up to 2 seconds
+
+        self._is_downloading = False
+        self.DownloadBtn.setText("Download")
+        self.statusMsg.setText("Download stopped")
 
     def thread_finished(self):
-        self.scraper_thread.deleteLater()  # Clean up the thread properly
+        """Reset UI state when download thread finishes."""
+        self._is_downloading = False
+        self.DownloadBtn.setText("Download")
+        if hasattr(self, "scraper_thread"):
+            self.scraper_thread.deleteLater()  # Clean up the thread properly
 
     def update_progress(self, message):
         self.statusMsg.setText(message)
 
     @pyqtSlot(dict)
     def update_song_META(self, song_meta):
+        """Update UI with current track info (called BEFORE download starts)."""
         if self.showPreviewCheck.isChecked():
-            self.thumbnail_thread = DownloadThumbnail(song_meta["cover"] + "?size=1", self)
-            self.thumbnail_thread.start()
-            self.ArtistNameText.setText(song_meta["artists"])
-            self.AlbumText.setText(song_meta["album"])
-            self.SongName.setText(song_meta["title"])
-            self.YearText.setText(song_meta["releaseDate"])
+            cover_url = song_meta.get("cover", "")
+            if cover_url:
+                thumb_thread = DownloadThumbnail(cover_url, self)
+                self._active_threads.append(thumb_thread)
+                thumb_thread.finished.connect(lambda: self._cleanup_thread(thumb_thread))
+                thumb_thread.start()
+            self.ArtistNameText.setText(song_meta.get("artists", ""))
+            self.AlbumText.setText(song_meta.get("album", ""))
+            self.SongName.setText(song_meta.get("title", ""))
+            self.YearText.setText(song_meta.get("releaseDate", ""))
 
-        self.MainSongName.setText(song_meta["title"] + " - " + song_meta["artists"])
-        if self.AddMetaDataCheck.isChecked():
-            self.meta_thread = WritingMetaTagsThread(song_meta, song_meta["file"])
-            self.meta_thread.tags_success.connect(lambda x: self.statusMsg.setText(f"{x}"))
-            self.meta_thread.start()
+        self.MainSongName.setText(song_meta.get("title", "") + " - " + song_meta.get("artists", ""))
+        # NOTE: Meta tags are written in add_song_META (after file exists), not here
 
     @pyqtSlot(dict)
     def add_song_META(self, song_meta):
         if self.AddMetaDataCheck.isChecked():
-            self.meta_thread = WritingMetaTagsThread(song_meta, song_meta["file"])
-            self.meta_thread.tags_success.connect(lambda x: self.statusMsg.setText(f"{x}"))
-            self.meta_thread.start()
+            meta_thread = WritingMetaTagsThread(song_meta, song_meta["file"])
+            meta_thread.tags_success.connect(lambda x: self.statusMsg.setText(f"{x}"))
+            self._active_threads.append(meta_thread)
+            meta_thread.finished.connect(lambda: self._cleanup_thread(meta_thread))
+            meta_thread.start()
+
+    def _cleanup_thread(self, thread):
+        """Remove finished thread from active list."""
+        if thread in self._active_threads:
+            self._active_threads.remove(thread)
 
     @pyqtSlot(str)
     def update_AlbumName(self, AlbumName):
