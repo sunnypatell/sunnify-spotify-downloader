@@ -42,7 +42,7 @@ coverage/
 
 # python packaging / build artifacts
 build/
-# dist/ contains .exe - managed separately
+dist/
 
 # pyinstaller (keep .spec file tracked)
 # *.spec  # intentionally NOT ignored; spec is source
