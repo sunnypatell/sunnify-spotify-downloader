@@ -310,13 +310,38 @@ class SpotifyEmbedAPI:
         if isinstance(audio_preview, dict):
             preview_url = audio_preview.get("url")
 
+        # Extract cover URL from visualIdentity.image
+        cover_url = None
+        visual_identity = entity.get("visualIdentity", {})
+        images = visual_identity.get("image", [])
+        if images:
+            # Get the largest image (usually last or highest resolution)
+            for img in images:
+                if isinstance(img, dict) and img.get("url"):
+                    cover_url = img.get("url")
+                    if img.get("maxWidth", 0) >= 300:
+                        break  # Use 300px+ image
+
+        # Extract release date properly
+        release_date = None
+        rd = entity.get("releaseDate")
+        if isinstance(rd, dict):
+            release_date = rd.get("isoString", "")[:10]  # YYYY-MM-DD
+        elif isinstance(rd, str):
+            release_date = rd
+
+        # Try to get album name
+        album = None
+        # Album info might be in relatedEntityUri or other fields
+        # For now, we'll leave it None as individual track embeds don't include album
+
         return TrackInfo(
             id=track_id,
             title=str(title),
             artists=str(artists),
-            album=None,
-            release_date=entity.get("releaseDate"),
-            cover_url=None,
+            album=album,
+            release_date=release_date,
+            cover_url=cover_url,
             duration_ms=entity.get("duration"),
             preview_url=preview_url,
             raw=dict(entity),

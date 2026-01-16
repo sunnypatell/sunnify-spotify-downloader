@@ -98,16 +98,19 @@ def scrape_playlist():
             # Playlist
             metadata = client.get_playlist_metadata(item_id)
             playlist_name = f"{metadata.name} - {metadata.owner or 'Unknown'}"
+            playlist_cover = metadata.cover_url or ""
 
             # Fetch tracks with memory-efficient iteration
             for track in client.iter_playlist_tracks(item_id):
+                # Use track cover if available, otherwise fall back to playlist cover
+                cover = track.cover_url or playlist_cover
                 tracks.append(
                     {
                         "id": track.spotify_id,
                         "title": track.title,
                         "artists": track.artists,
                         "album": track.album or "",
-                        "cover": track.cover_url or "",
+                        "cover": cover,
                         "releaseDate": track.release_date or "",
                         "downloadLink": "",  # No server-side downloads
                     }
