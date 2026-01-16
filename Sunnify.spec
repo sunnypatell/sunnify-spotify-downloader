@@ -102,7 +102,7 @@ if is_mac:
             'CFBundleIdentifier': 'com.sunnypatel.sunnify',
             'CFBundleVersion': '2.0.0',
             'CFBundleShortVersionString': '2.0.0',
-            'NSHumanReadableCopyright': '© 2025 Sunny Jayendra Patel',
+            'NSHumanReadableCopyright': '© 2026 Sunny Jayendra Patel',
             'NSHighResolutionCapable': True,
         },
     )
