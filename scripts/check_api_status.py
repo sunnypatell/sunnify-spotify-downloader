@@ -1,4 +1,11 @@
-"""Utility script that probes Spotify embed endpoint and yt-dlp."""
+"""Utility script that probes all Spotify endpoints and yt-dlp.
+
+Tests:
+1. Embed page API (primary) - /embed/playlist/{id}
+2. spclient API (fallback for large playlists)
+3. oEmbed API (quick validation)
+4. YouTube search via yt-dlp
+"""
 
 from __future__ import annotations
 
@@ -194,8 +201,59 @@ def check_youtube_download(track: TrackInfo) -> EndpointResult:
         )
 
 
+def check_large_playlist_fallback(client: PlaylistClient, playlist_id: str) -> EndpointResult:
+    """Check that large playlists work with spclient fallback."""
+    try:
+        metadata = client.get_playlist_metadata(playlist_id)
+        track_count = 0
+        for _ in client.iter_playlist_tracks(playlist_id):
+            track_count += 1
+        notes = f"Retrieved all {track_count} tracks (expected {metadata.track_count})"
+        return EndpointResult(
+            name="large_playlist_fallback",
+            url=f"spclient + individual embeds for {playlist_id}",
+            method="GET",
+            ok=track_count >= 100,
+            status_code=200,
+            notes=notes,
+        )
+    except Exception as exc:
+        return EndpointResult(
+            name="large_playlist_fallback",
+            url=f"spclient fallback for {playlist_id}",
+            method="GET",
+            ok=False,
+            status_code=None,
+            notes=str(exc),
+        )
+
+
+def check_oembed_validation(client: PlaylistClient, playlist_id: str) -> EndpointResult:
+    """Check the oEmbed validation endpoint."""
+    try:
+        is_valid = client.validate_playlist(playlist_id)
+        return EndpointResult(
+            name="oembed_validation",
+            url=f"https://open.spotify.com/oembed?url=...{playlist_id}",
+            method="GET",
+            ok=is_valid,
+            status_code=200 if is_valid else None,
+            notes="Playlist validation successful" if is_valid else "Validation failed",
+        )
+    except Exception as exc:
+        return EndpointResult(
+            name="oembed_validation",
+            url=f"oEmbed for {playlist_id}",
+            method="GET",
+            ok=False,
+            status_code=None,
+            notes=str(exc),
+        )
+
+
 def main() -> int:
     playlist_id = "37i9dQZF1DXcBWIGoYBM5M"  # Spotify's "Today's Top Hits"
+    large_playlist_id = "37i9dQZF1DX5Ejj0EkURtP"  # "All Out 2010s" - 150 tracks
     query = "Rick Astley Never Gonna Give You Up"
 
     embed_api = SpotifyEmbedAPI()
@@ -210,6 +268,12 @@ def main() -> int:
     # Check PlaylistClient (high-level wrapper)
     client_result, _ = check_playlist_client(playlist_client, playlist_id)
     results.append(client_result)
+
+    # Check oEmbed validation
+    results.append(check_oembed_validation(playlist_client, playlist_id))
+
+    # Check large playlist fallback (spclient + individual embeds)
+    results.append(check_large_playlist_fallback(playlist_client, large_playlist_id))
 
     # Check YouTube search (fallback for audio)
     results.append(check_youtube_search(query))

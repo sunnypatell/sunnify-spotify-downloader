@@ -1,14 +1,18 @@
-"""Spotify playlist data fetcher using the embed endpoint.
+"""Spotify playlist data fetcher with multiple fallback endpoints.
 
-The original spotifydown mirrors are dead. This module now uses Spotify's
-embed page which returns playlist data in the __NEXT_DATA__ JSON blob.
-Audio is downloaded via yt-dlp YouTube search as the fallback.
+Primary: Embed page (/embed/playlist/{id}) - returns up to 100 tracks
+Fallback: spclient API - returns full track URIs for large playlists
+Individual: Track embed pages - for metadata on tracks beyond 100
+
+All methods work without authentication by extracting anonymous tokens
+from Spotify's embed pages.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
@@ -46,6 +50,11 @@ class TrackInfo:
     preview_url: str | None
     raw: dict[str, object]
 
+    @property
+    def spotify_id(self) -> str:
+        """Alias for id field for compatibility."""
+        return self.id
+
 
 class SpotifyEmbedAPI:
     """Fetch playlist data from Spotify's embed page.
@@ -55,16 +64,22 @@ class SpotifyEmbedAPI:
     - Track titles, artists, durations
     - Track URIs/IDs
     - 96kbps audio preview URLs
-    - Anonymous access tokens
+    - Anonymous access tokens (can be used with spclient API)
 
     This works without any authentication.
+    Limitation: Returns max ~100 tracks per playlist.
     """
 
-    _EMBED_URL = "https://open.spotify.com/embed/playlist/{playlist_id}"
+    _EMBED_PLAYLIST_URL = "https://open.spotify.com/embed/playlist/{playlist_id}"
+    _EMBED_TRACK_URL = "https://open.spotify.com/embed/track/{track_id}"
+    _OEMBED_URL = "https://open.spotify.com/oembed"
+    _SPCLIENT_URL = "https://spclient.wg.spotify.com/playlist/v2/playlist/{playlist_id}"
     _NEXT_DATA_PATTERN = re.compile(r'<script id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
 
     def __init__(self, *, session: requests.Session | None = None) -> None:
         self._session = session or requests.Session()
+        self._cached_token: str | None = None
+        self._token_expiry: float = 0
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -73,10 +88,8 @@ class SpotifyEmbedAPI:
             "user-agent": _DEFAULT_USER_AGENT,
         }
 
-    def _fetch_embed_data(self, playlist_id: str) -> dict:
-        """Fetch and parse the embed page __NEXT_DATA__."""
-        url = self._EMBED_URL.format(playlist_id=playlist_id)
-
+    def _fetch_embed_data(self, url: str) -> dict:
+        """Fetch and parse __NEXT_DATA__ from any embed page."""
         try:
             response = self._session.get(url, headers=self._headers(), timeout=30)
         except requests.RequestException as exc:
@@ -85,7 +98,6 @@ class SpotifyEmbedAPI:
         if response.status_code != 200:
             raise SpotifyDownAPIError(f"Embed page returned HTTP {response.status_code}")
 
-        # Extract __NEXT_DATA__ JSON from HTML
         match = self._NEXT_DATA_PATTERN.search(response.text)
         if not match:
             raise SpotifyDownAPIError("Could not find __NEXT_DATA__ in embed page")
@@ -94,6 +106,15 @@ class SpotifyEmbedAPI:
             data = json.loads(match.group(1))
         except json.JSONDecodeError as exc:
             raise SpotifyDownAPIError(f"Invalid JSON in __NEXT_DATA__: {exc}") from exc
+
+        # Cache the access token if present
+        try:
+            session_data = data["props"]["pageProps"]["state"]["settings"]["session"]
+            self._cached_token = session_data.get("accessToken")
+            expiry_ms = session_data.get("accessTokenExpirationTimestampMs", 0)
+            self._token_expiry = expiry_ms / 1000 if expiry_ms else 0
+        except (KeyError, TypeError):
+            pass
 
         return data
 
@@ -104,77 +125,211 @@ class SpotifyEmbedAPI:
         except (KeyError, TypeError) as exc:
             raise SpotifyDownAPIError(f"Unexpected embed page structure: {exc}") from exc
 
+    def _get_access_token(self, playlist_id: str) -> str | None:
+        """Get a valid access token, refreshing if needed."""
+        if self._cached_token and time.time() < self._token_expiry - 60:
+            return self._cached_token
+
+        # Fetch embed page to get fresh token
+        url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
+        self._fetch_embed_data(url)
+        return self._cached_token
+
     def get_playlist_metadata(self, playlist_id: str) -> PlaylistInfo:
         """Get playlist metadata from the embed page."""
-        data = self._fetch_embed_data(playlist_id)
+        url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
+        data = self._fetch_embed_data(url)
         entity = self._extract_entity(data)
 
         name = entity.get("name") or entity.get("title") or "Unknown Playlist"
-        subtitle = entity.get("subtitle")  # Usually "Spotify" for official playlists
+        subtitle = entity.get("subtitle")
 
         # Get cover URL from coverArt sources
         cover_url = None
         cover_art = entity.get("coverArt", {})
         sources = cover_art.get("sources", [])
         if sources:
-            # Get the largest image
             cover_url = sources[-1].get("url") if sources else None
 
-        # Get track count from trackList
+        # Get track count - try spclient for accurate count
         track_list = entity.get("trackList", [])
-        track_count = len(track_list) if isinstance(track_list, list) else None
+        track_count = len(track_list)
+
+        # Try to get true count from spclient
+        try:
+            token = self._cached_token
+            if token:
+                spclient_url = self._SPCLIENT_URL.format(playlist_id=playlist_id)
+                headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+                resp = self._session.get(spclient_url, headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    spc_data = resp.json()
+                    track_count = spc_data.get("length", track_count)
+        except Exception:
+            pass  # Fall back to embed count
 
         return PlaylistInfo(
             name=str(name),
             owner=str(subtitle) if subtitle else None,
-            description=None,  # Embed page doesn't include description
+            description=entity.get("description"),
             cover_url=cover_url,
             track_count=track_count,
         )
 
     def iter_playlist_tracks(self, playlist_id: str) -> Iterator[TrackInfo]:
-        """Iterate over playlist tracks from the embed page.
+        """Iterate over playlist tracks with fallback for large playlists.
 
-        Note: The embed page only returns the first ~50 tracks.
-        For larger playlists, this may be incomplete.
+        For playlists with <=100 tracks: Uses embed page (fast).
+        For playlists with >100 tracks: Uses spclient for URIs + individual
+        track embeds for metadata on remaining tracks.
         """
-        data = self._fetch_embed_data(playlist_id)
+        url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
+        data = self._fetch_embed_data(url)
         entity = self._extract_entity(data)
 
         track_list = entity.get("trackList", [])
+        embed_track_ids: set[str] = set()
 
+        # Yield tracks from embed page (up to ~100)
         for track in track_list:
             if not isinstance(track, dict):
                 continue
 
-            # Extract track ID from URI (spotify:track:XXXXX)
             uri = track.get("uri", "")
             track_id = uri.split(":")[-1] if uri.startswith("spotify:track:") else ""
             if not track_id:
                 continue
 
-            title = track.get("title", "Unknown Track")
-            artists = track.get("subtitle", "")  # Artist name is in subtitle
+            embed_track_ids.add(track_id)
+            yield self._parse_track(track, track_id)
 
-            # Get preview URL if available
-            preview_url = None
-            audio_preview = track.get("audioPreview", {})
-            if isinstance(audio_preview, dict):
-                preview_url = audio_preview.get("url")
+        # Check if there are more tracks via spclient
+        token = self._cached_token
+        if not token:
+            return
 
-            duration_ms = track.get("duration")
+        try:
+            spclient_url = self._SPCLIENT_URL.format(playlist_id=playlist_id)
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+            resp = self._session.get(spclient_url, headers=headers, timeout=30)
 
-            yield TrackInfo(
-                id=track_id,
-                title=str(title),
-                artists=str(artists),
-                album=None,  # Embed page doesn't include album name
-                release_date=None,  # Embed page doesn't include release date
-                cover_url=None,  # Individual track covers not in embed
-                duration_ms=int(duration_ms) if duration_ms else None,
-                preview_url=preview_url,
-                raw=dict(track),
-            )
+            if resp.status_code != 200:
+                return
+
+            spc_data = resp.json()
+            total_tracks = spc_data.get("length", 0)
+
+            if total_tracks <= len(embed_track_ids):
+                return  # All tracks already yielded
+
+            # Get remaining track URIs from spclient
+            contents = spc_data.get("contents", {})
+            items = contents.get("items", [])
+
+            for item in items:
+                uri = item.get("uri", "")
+                if not uri.startswith("spotify:track:"):
+                    continue
+
+                track_id = uri.split(":")[-1]
+                if track_id in embed_track_ids:
+                    continue  # Already yielded
+
+                # Fetch individual track metadata
+                try:
+                    track_info = self._fetch_track_metadata(track_id)
+                    if track_info:
+                        yield track_info
+                except Exception:
+                    # If individual fetch fails, yield minimal info
+                    yield TrackInfo(
+                        id=track_id,
+                        title=f"Track {track_id}",
+                        artists="Unknown Artist",
+                        album=None,
+                        release_date=None,
+                        cover_url=None,
+                        duration_ms=None,
+                        preview_url=None,
+                        raw={"uri": uri},
+                    )
+
+        except Exception:
+            pass  # spclient fallback failed, just return what we have
+
+    def _parse_track(self, track: dict, track_id: str) -> TrackInfo:
+        """Parse a track dict from embed trackList."""
+        title = track.get("title") or track.get("name") or "Unknown Track"
+        artists = track.get("subtitle") or track.get("artists") or ""
+
+        if isinstance(artists, list):
+            artists = ", ".join(a.get("name", "") for a in artists if isinstance(a, dict))
+
+        preview_url = None
+        audio_preview = track.get("audioPreview", {})
+        if isinstance(audio_preview, dict):
+            preview_url = audio_preview.get("url")
+
+        duration_ms = track.get("duration")
+
+        return TrackInfo(
+            id=track_id,
+            title=str(title),
+            artists=str(artists),
+            album=track.get("album", {}).get("name")
+            if isinstance(track.get("album"), dict)
+            else None,
+            release_date=track.get("releaseDate"),
+            cover_url=None,
+            duration_ms=int(duration_ms) if duration_ms else None,
+            preview_url=preview_url,
+            raw=dict(track),
+        )
+
+    def _fetch_track_metadata(self, track_id: str) -> TrackInfo | None:
+        """Fetch metadata for a single track from its embed page."""
+        url = self._EMBED_TRACK_URL.format(track_id=track_id)
+
+        try:
+            data = self._fetch_embed_data(url)
+            entity = self._extract_entity(data)
+        except SpotifyDownAPIError:
+            return None
+
+        title = entity.get("name") or entity.get("title") or "Unknown Track"
+
+        # Artists can be in different formats
+        artists_data = entity.get("artists", [])
+        if isinstance(artists_data, list):
+            artists = ", ".join(a.get("name", "") for a in artists_data if isinstance(a, dict))
+        else:
+            artists = entity.get("subtitle", "")
+
+        preview_url = None
+        audio_preview = entity.get("audioPreview", {})
+        if isinstance(audio_preview, dict):
+            preview_url = audio_preview.get("url")
+
+        return TrackInfo(
+            id=track_id,
+            title=str(title),
+            artists=str(artists),
+            album=None,
+            release_date=entity.get("releaseDate"),
+            cover_url=None,
+            duration_ms=entity.get("duration"),
+            preview_url=preview_url,
+            raw=dict(entity),
+        )
+
+    def validate_playlist(self, playlist_id: str) -> bool:
+        """Quick validation using oEmbed API (no full data fetch)."""
+        try:
+            params = {"url": f"https://open.spotify.com/playlist/{playlist_id}"}
+            resp = self._session.get(self._OEMBED_URL, params=params, timeout=10)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
 
 # Legacy class kept for compatibility - redirects to embed API
@@ -236,7 +391,10 @@ class SpotifyPublicAPI:
 class PlaylistClient:
     """High-level client for fetching Spotify playlist data.
 
-    Uses the embed page API as the primary (and only working) method.
+    Uses multiple fallback methods:
+    1. Embed page API (primary) - fast, up to 100 tracks
+    2. spclient API - for full track list on large playlists
+    3. Individual track embeds - for metadata on tracks beyond 100
     """
 
     def __init__(
@@ -253,11 +411,16 @@ class PlaylistClient:
         return self._embed_api.get_playlist_metadata(playlist_id)
 
     def iter_playlist_tracks(self, playlist_id: str) -> Iterator[TrackInfo]:
-        """Iterate over playlist tracks.
+        """Iterate over all playlist tracks.
 
-        Note: The embed page may only return the first ~50 tracks.
+        For large playlists (>100 tracks), automatically uses fallback
+        methods to retrieve complete track list.
         """
         yield from self._embed_api.iter_playlist_tracks(playlist_id)
+
+    def validate_playlist(self, playlist_id: str) -> bool:
+        """Quick validation that a playlist exists."""
+        return self._embed_api.validate_playlist(playlist_id)
 
     def get_track_download_link(self, track_id: str) -> str | None:
         """No longer available - spotifydown is dead.
