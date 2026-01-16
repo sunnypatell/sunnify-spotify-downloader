@@ -9,7 +9,7 @@ permission of {Sunny Patel} <{sunnypatel124555@gmail.com}>.
 
 For the program to work, the playlist URL pattern must be following the format of /playlist/abcdefghijklmnopqrstuvwxyz... (special chars)
 will not be registered in the URL as the regex does not specify that in the URL pattern. If the program stops working, email
-<{sunnypatel124555@gmail.com}> or open a fork req. in the repository. 
+<{sunnypatel124555@gmail.com}> or open a fork req. in the repository.
 """
 
 __version__ = "1.0.0"
@@ -17,30 +17,30 @@ __version__ = "1.0.0"
 # Main
 # if __name__ == '__main__':from PyQt5.uic import loadUi
 
-from PyQt5.QtWidgets import QMainWindow, QApplication, QGraphicsDropShadowEffect
+import os
+import re
+import string
+import sys
+import webbrowser
+
+import requests
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import APIC, ID3
 from PyQt5.QtCore import (
+    QEasingCurve,
+    QPropertyAnimation,
+    QSize,
     Qt,
     QThread,
     pyqtSignal,
     pyqtSlot,
-    QSize,
-    QPropertyAnimation,
-    QEasingCurve,
 )
 from PyQt5.QtGui import QCursor, QImage, QPixmap
-from Template import Ui_MainWindow
-
-import sys
-import os
-import string
-import requests
-import re
-import webbrowser
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import APIC, ID3
+from PyQt5.QtWidgets import QApplication, QGraphicsDropShadowEffect, QMainWindow
 from yt_dlp import YoutubeDL
 
 from spotifydown_api import PlaylistClient, PlaylistInfo, SpotifyDownAPIError
+from Template import Ui_MainWindow
 
 
 class MusicScraper(QThread):
@@ -54,7 +54,7 @@ class MusicScraper(QThread):
     Resetprogress_signal = pyqtSignal(int)
 
     def __init__(self):
-        super(MusicScraper, self).__init__()
+        super().__init__()
         self.counter = 0  # Initialize counter to zero
         self.session = requests.Session()
         self.spotifydown_api = None
@@ -77,7 +77,9 @@ class MusicScraper(QThread):
         if not os.path.exists(base_folder):
             os.makedirs(base_folder)
         safe_name = "".join(
-            character for character in playlist_name if character.isalnum() or character in [" ", "_"]
+            character
+            for character in playlist_name
+            if character.isalnum() or character in [" ", "_"]
         ).strip()
         if not safe_name:
             safe_name = "Sunnify Playlist"
@@ -130,7 +132,6 @@ class MusicScraper(QThread):
                     self.dlprogress_signal.emit(progress)
         return destination
 
-
     def scrape_playlist(self, spotify_playlist_link, music_folder):
         playlist_id = self.returnSPOT_ID(spotify_playlist_link)
         self.PlaylistID.emit(playlist_id)
@@ -138,7 +139,7 @@ class MusicScraper(QThread):
         try:
             spotify_api = self.ensure_spotifydown_api()
         except SpotifyDownAPIError as exc:
-            raise RuntimeError(str(exc))
+            raise RuntimeError(str(exc)) from exc
 
         metadata = spotify_api.get_playlist_metadata(playlist_id)
         playlist_display_name = self.format_playlist_name(metadata)
@@ -301,7 +302,7 @@ class WritingMetaTagsThread(QThread):
             self.CoverPic = DownloadCover(self.tags["cover"] + "?size=1")
             self.CoverPic.albumCover.connect(self.setPIC)
             self.CoverPic.start()
-        except Exception as e:
+        except Exception:
             pass
             # print(f'Error {e}')
             # self.tags_success.emit(f"Error in FIle : {e}")
@@ -312,9 +313,7 @@ class WritingMetaTagsThread(QThread):
         else:
             try:
                 audio = ID3(self.filename)
-                audio["APIC"] = APIC(
-                    encoding=3, mime="image/jpeg", type=3, desc="Cover", data=data
-                )
+                audio["APIC"] = APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=data)
                 audio.save()
                 # self.tags_success.emit("Cover Added..!")
             except Exception as e:
@@ -322,7 +321,6 @@ class WritingMetaTagsThread(QThread):
 
 
 class DownloadThumbnail(QThread):
-
     def __init__(self, url, main_UI):
         super().__init__()
         self.url = url
@@ -343,7 +341,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def __init__(self):
         """MainWindow constructor"""
-        super(MainWindow, self).__init__()
+        super().__init__()
 
         # Main UI code goes here
         # loadUi("Template.ui", self)
@@ -412,11 +410,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @pyqtSlot(dict)
     def update_song_META(self, song_meta):
-
         if self.showPreviewCheck.isChecked():
-            self.thumbnail_thread = DownloadThumbnail(
-                song_meta["cover"] + "?size=1", self
-            )
+            self.thumbnail_thread = DownloadThumbnail(song_meta["cover"] + "?size=1", self)
             self.thumbnail_thread.start()
             self.ArtistNameText.setText(song_meta["artists"])
             self.AlbumText.setText(song_meta["album"])
@@ -428,18 +423,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.MainSongName.setText(song_meta["title"] + " - " + song_meta["artists"])
         if self.AddMetaDataCheck.isChecked():
             self.meta_thread = WritingMetaTagsThread(song_meta, song_meta["file"])
-            self.meta_thread.tags_success.connect(
-                lambda x: self.statusMsg.setText("{}".format(x))
-            )
+            self.meta_thread.tags_success.connect(lambda x: self.statusMsg.setText(f"{x}"))
             self.meta_thread.start()
 
     @pyqtSlot(dict)
     def add_song_META(self, song_meta):
         if self.AddMetaDataCheck.isChecked():
             self.meta_thread = WritingMetaTagsThread(song_meta, song_meta["file"])
-            self.meta_thread.tags_success.connect(
-                lambda x: self.statusMsg.setText("{}".format(x))
-            )
+            self.meta_thread.tags_success.connect(lambda x: self.statusMsg.setText(f"{x}"))
             self.meta_thread.start()
 
     @pyqtSlot(str)
@@ -457,7 +448,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @pyqtSlot(int)
     def Reset_song_progress(self, progress):
-
         self.SongDownloadprogressBar.setValue(0)
         self.SongDownloadprogress.setValue(0)
 
@@ -474,7 +464,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if Qt.LeftButton and self.m_drag:
                 self.move(QMouseEvent.globalPos() - self.m_DragPosition)
                 QMouseEvent.accept()
-        except:
+        except AttributeError:
             pass
 
     def mouseReleaseEvent(self, QMouseEvent):

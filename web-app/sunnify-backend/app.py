@@ -1,16 +1,17 @@
-from flask import Flask, request, jsonify, send_from_directory, Response
-from flask_cors import CORS
-import os
-import string
-import requests
-import re
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3, APIC
-import time
 import json
+import os
+import re
+import string
+
+import requests
+from flask import Flask, Response, jsonify, request, send_from_directory
+from flask_cors import CORS
+from mutagen.easyid3 import EasyID3
+from mutagen.id3 import APIC, ID3
 
 app = Flask(__name__)
 CORS(app)
+
 
 class MusicScraper:
     def __init__(self):
@@ -111,13 +112,11 @@ class MusicScraper:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         }
 
-        x = self.session.get(
-            url=f"https://api.spotifydown.com/download/{SONG_ID}", headers=headers
-        )
+        x = self.session.get(url=f"https://api.spotifydown.com/download/{SONG_ID}", headers=headers)
         if x.status_code == 200:
             try:
                 return {"link": x.json()["link"], "metadata": x.json()}
-            except:
+            except (KeyError, ValueError):
                 return {"link": None, "metadata": None}
         return None
 
@@ -126,11 +125,9 @@ class MusicScraper:
             ID = self.returnSPOT_ID(spotify_playlist_link)
             PlaylistName = self.get_PlaylistMetadata(ID)
 
-            FolderPath = "".join(
-                e for e in PlaylistName if e.isalnum() or e in [" ", "_"]
-            )
+            FolderPath = "".join(e for e in PlaylistName if e.isalnum() or e in [" ", "_"])
             playlist_folder_path = os.path.join(music_folder, FolderPath)
-            
+
             if not os.path.exists(playlist_folder_path):
                 os.makedirs(playlist_folder_path)
 
@@ -160,22 +157,16 @@ class MusicScraper:
             total_tracks = 0
 
             while offset is not None:
-                response = self.session.get(
-                    url=Playlist_Link, params=offset_data, headers=headers
-                )
+                response = self.session.get(url=Playlist_Link, params=offset_data, headers=headers)
                 if response.status_code == 200:
                     Tdata = response.json()["trackList"]
                     page = response.json()["nextOffset"]
                     total_tracks += len(Tdata)
-                    for count, song in enumerate(Tdata):
+                    for _count, song in enumerate(Tdata):
                         filename = (
-                            song["title"].translate(
-                                str.maketrans("", "", string.punctuation)
-                            )
+                            song["title"].translate(str.maketrans("", "", string.punctuation))
                             + " - "
-                            + song["artists"].translate(
-                                str.maketrans("", "", string.punctuation)
-                            )
+                            + song["artists"].translate(str.maketrans("", "", string.punctuation))
                             + ".mp3"
                         )
                         filepath = os.path.join(playlist_folder_path, filename)
@@ -189,17 +180,19 @@ class MusicScraper:
                                 with open(filepath, "wb") as f:
                                     for data in link.iter_content(1024):
                                         f.write(data)
-                            
+
                                 self.write_metadata(filepath, song, metadata)
-                                downloaded_tracks.append({
-                                    "id": song["id"],
-                                    "title": song["title"],
-                                    "artists": song["artists"],
-                                    "album": song.get("album", ""),
-                                    "cover": song.get("cover", ""),
-                                    "releaseDate": song.get("releaseDate", ""),
-                                    "downloadLink": f"/api/download/{filename}"
-                                })
+                                downloaded_tracks.append(
+                                    {
+                                        "id": song["id"],
+                                        "title": song["title"],
+                                        "artists": song["artists"],
+                                        "album": song.get("album", ""),
+                                        "cover": song.get("cover", ""),
+                                        "releaseDate": song.get("releaseDate", ""),
+                                        "downloadLink": f"/api/download/{filename}",
+                                    }
+                                )
 
                                 yield {
                                     "event": "progress",
@@ -207,9 +200,9 @@ class MusicScraper:
                                         "progress": len(downloaded_tracks) / total_tracks * 100,
                                         "currentTrack": {
                                             "title": song["title"],
-                                            "artists": song["artists"]
-                                        }
-                                    }
+                                            "artists": song["artists"],
+                                        },
+                                    },
                                 }
 
                         except Exception as error_status:
@@ -218,7 +211,7 @@ class MusicScraper:
                                 "event": "error",
                                 "data": {
                                     "message": f"Error downloading {song['title']}: {str(error_status)}"
-                                }
+                                },
                             }
 
                 if page is not None:
@@ -231,17 +224,12 @@ class MusicScraper:
 
             yield {
                 "event": "complete",
-                "data": {
-                    "playlistName": PlaylistName,
-                    "tracks": downloaded_tracks
-                }
+                "data": {"playlistName": PlaylistName, "tracks": downloaded_tracks},
             }
         except Exception as e:
             yield {
                 "event": "error",
-                "data": {
-                    "message": f"An error occurred while processing the playlist: {str(e)}"
-                }
+                "data": {"message": f"An error occurred while processing the playlist: {str(e)}"},
             }
 
     def write_metadata(self, filepath, song_meta, additional_meta):
@@ -263,7 +251,7 @@ class MusicScraper:
                         mime="image/jpeg",
                         type=3,
                         desc="Cover",
-                        data=cover_response.content
+                        data=cover_response.content,
                     )
                     audio.save()
 
@@ -280,7 +268,8 @@ class MusicScraper:
 
         return extracted_id
 
-@app.route('/api/scrape-playlist', methods=['POST'])
+
+@app.route("/api/scrape-playlist", methods=["POST"])
 def scrape_playlist():
     data = request.get_json()
     spotify_playlist_link = data.get("playlistUrl")
@@ -304,8 +293,11 @@ def scrape_playlist():
         except Exception as e:
             yield f"data: {json.dumps({'event': 'error', 'data': {'message': str(e)}})}\n\n"
 
-    return Response(generate(), mimetype='text/event-stream')
+    return Response(generate(), mimetype="text/event-stream")
 
-@app.route('/api/download/<path:filename>')
+
+@app.route("/api/download/<path:filename>")
 def download_file(filename):
-    return send_from_directory(directory=request.args.get('path', ''), filename=filename, as_attachment=True)
+    return send_from_directory(
+        directory=request.args.get("path", ""), filename=filename, as_attachment=True
+    )

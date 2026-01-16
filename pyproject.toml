@@ -1,0 +1,71 @@
+[project]
+name = "sunnify-spotify-downloader"
+version = "1.0.0"
+description = "Spotify playlist downloader with PyQt5 GUI, Flask backend, and Next.js web client"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Custom - Educational Use Only" }
+authors = [{ name = "Sunny Jayendra Patel", email = "sunnypatell124555@gmail.com" }]
+keywords = ["spotify", "downloader", "playlist", "music", "pyqt5"]
+
+[project.urls]
+homepage = "https://github.com/sunnypatell/sunnify-spotify-downloader"
+repository = "https://github.com/sunnypatell/sunnify-spotify-downloader"
+issues = "https://github.com/sunnypatell/sunnify-spotify-downloader/issues"
+
+# ruff - modern python linter + formatter (replaces black, isort, flake8)
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+indent-width = 4
+exclude = [
+    "Template.py",  # auto-generated from Template.ui via pyuic5
+    ".venv",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B905",   # zip without strict= (py3.10+)
+    "ARG001", # unused function argument (common in qt signals)
+    "ARG002", # unused method argument (common in qt overrides)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["spotifydown_api"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+# pytest configuration (if tests are added later)
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+# mypy configuration (optional static type checking)
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true

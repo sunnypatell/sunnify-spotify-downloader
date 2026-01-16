@@ -6,7 +6,7 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import requests
 from yt_dlp import YoutubeDL
@@ -30,10 +30,10 @@ class EndpointResult:
     url: str
     method: str
     ok: bool
-    status_code: Optional[int]
+    status_code: int | None
     notes: str
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "url": self.url,
@@ -46,7 +46,7 @@ class EndpointResult:
 
 def summarize_playlist(
     metadata_title: str,
-    metadata_owner: Optional[str],
+    metadata_owner: str | None,
     track_titles: list[str],
 ) -> str:
     owner_text = f" by {metadata_owner}" if metadata_owner else ""
@@ -57,11 +57,11 @@ def summarize_playlist(
 def check_playlist_client(
     client: PlaylistClient,
     playlist_id: str,
-) -> Tuple[EndpointResult, Optional[TrackInfo]]:
+) -> tuple[EndpointResult, TrackInfo | None]:
     try:
         metadata = client.get_playlist_metadata(playlist_id)
         sample_tracks: list[str] = []
-        first_track: Optional[TrackInfo] = None
+        first_track: TrackInfo | None = None
         for track in client.iter_playlist_tracks(playlist_id):
             if first_track is None:
                 first_track = track
@@ -94,9 +94,7 @@ def check_playlist_client(
         )
 
 
-def check_spotify_public_playlist(
-    api: SpotifyPublicAPI, playlist_id: str
-) -> EndpointResult:
+def check_spotify_public_playlist(api: SpotifyPublicAPI, playlist_id: str) -> EndpointResult:
     try:
         metadata = api.get_playlist_metadata(playlist_id)
         sample_tracks: list[str] = []
@@ -126,11 +124,11 @@ def check_spotify_public_playlist(
 
 def check_spotifydown_playlist(
     api: SpotifyDownAPI, playlist_id: str
-) -> Tuple[EndpointResult, Optional[TrackInfo]]:
+) -> tuple[EndpointResult, TrackInfo | None]:
     try:
         metadata = api.get_playlist_metadata(playlist_id)
         sample_tracks: list[str] = []
-        first_track: Optional[TrackInfo] = None
+        first_track: TrackInfo | None = None
         for track in api.iter_playlist_tracks(playlist_id):
             if first_track is None:
                 first_track = track

@@ -1,0 +1,38 @@
+# editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# python files use 4 spaces per PEP 8
+[*.py]
+indent_size = 4
+
+# markdown needs trailing whitespace for line breaks
+[*.md]
+trim_trailing_whitespace = false
+
+# makefiles require tabs
+[Makefile]
+indent_style = tab
+
+# yaml/yml
+[*.{yaml,yml}]
+indent_size = 2
+
+# json
+[*.json]
+indent_size = 2
+
+# shell scripts
+[*.sh]
+indent_size = 2
+
+# qt ui files
+[*.ui]
+indent_size = 2
