@@ -133,9 +133,39 @@ Verify with `ffmpeg -version`.
 
 ## Quick Start (3 Paths)
 
-- Windows users: download the prebuilt app `dist/Sunnify (Spotify Downloader).exe` and run it.
-- Python users: `pip install -r req.txt` then `python Spotify_Downloader.py`.
-- Web stack: run the Flask backend and Next.js client under `web-app/`.
+### Download Pre-built Apps
+
+| Platform | Download | Notes |
+|----------|----------|-------|
+| **Windows** | [Sunnify.exe](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Run directly, no install needed |
+| **macOS** | [Sunnify.app](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | See macOS notes below |
+| **Linux** | [Sunnify](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Make executable: `chmod +x Sunnify` |
+
+<details>
+<summary><strong>macOS: Unsigned app instructions</strong></summary>
+
+The macOS app is not notarized. After downloading and extracting:
+
+```bash
+# Remove quarantine attribute (required for unsigned apps)
+sudo xattr -cr /Applications/Sunnify.app
+
+# Or if you extracted elsewhere:
+sudo xattr -cr ~/Downloads/Sunnify.app
+```
+
+If you see "app is damaged" or "unidentified developer":
+1. Open System Preferences → Security & Privacy → General
+2. Click "Open Anyway" next to the Sunnify message
+3. Or run the `xattr` command above
+
+</details>
+
+### Other Install Methods
+
+- **Python users**: `pip install -r req.txt` then `python Spotify_Downloader.py`
+- **Homebrew (macOS)**: See [homebrew/sunnify.rb](homebrew/sunnify.rb) for cask formula
+- **Web stack**: run the Flask backend and Next.js client under `web-app/`
 
 <hr/>
 
@@ -262,10 +292,10 @@ Desktop app (GUI):
 2. Paste a Spotify URL:
    - Playlist: `https://open.spotify.com/playlist/<ID>`
    - Single track: `https://open.spotify.com/track/<ID>`
-3. Press Enter in the URL box to start.
+3. Click the green **Download** button (or press Enter) to start.
 4. Optional: click ⚙ to change download location.
-5. Optional: enable Show Preview to see the cover and meta.
-6. Optional: enable Add Meta Tags to embed ID3 and artwork.
+5. Optional: enable **Show Preview** to see the cover and meta.
+6. Optional: enable **Add Meta Tags** to embed ID3 and artwork.
 7. Output appears in your chosen download folder (default: `music/`).
 
 Web client:
@@ -317,12 +347,14 @@ Example output shows embed API status, large playlist fallback, and YouTube sear
 
 ## Troubleshooting
 
-- FFmpeg not found: install FFmpeg and restart terminal so PATH updates.
-- `yt-dlp` errors: `pip install -U yt-dlp` and ensure YouTube is reachable.
-- URL rejected: format must be `https://open.spotify.com/playlist/<ID>` or `https://open.spotify.com/track/<ID>`.
-- Embed API fails: check if `open.spotify.com` is accessible from your network.
-- Hosted backend cold starts: free tiers can sleep; first call might take seconds.
-- Permission errors: choose a download path you have write access to.
+- **FFmpeg not found**: install FFmpeg and restart terminal so PATH updates.
+- **yt-dlp errors**: `pip install -U yt-dlp` and ensure YouTube is reachable.
+- **URL rejected**: format must be `https://open.spotify.com/playlist/<ID>` or `https://open.spotify.com/track/<ID>`.
+- **Embed API fails**: check if `open.spotify.com` is accessible from your network.
+- **Hosted backend cold starts**: free tiers can sleep; first call might take seconds.
+- **Permission errors**: choose a download path you have write access to.
+- **macOS "app is damaged"**: run `sudo xattr -cr /path/to/Sunnify.app` to remove quarantine.
+- **macOS "unidentified developer"**: open System Preferences → Security & Privacy → click "Open Anyway".
 
 <hr/>
 
