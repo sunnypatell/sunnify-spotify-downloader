@@ -1,4 +1,4 @@
-"""Utility script that probes spotifydown-style endpoints and yt-dlp."""
+"""Utility script that probes Spotify embed endpoint and yt-dlp."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import requests
 from yt_dlp import YoutubeDL
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,9 +16,8 @@ if str(ROOT) not in sys.path:
 
 from spotifydown_api import (  # noqa: E402
     PlaylistClient,
-    SpotifyDownAPI,
     SpotifyDownAPIError,
-    SpotifyPublicAPI,
+    SpotifyEmbedAPI,
     TrackInfo,
 )
 
@@ -54,10 +52,51 @@ def summarize_playlist(
     return f"Playlist '{metadata_title}'{owner_text}. Sample tracks: {sample_text}"
 
 
+def check_embed_api(
+    api: SpotifyEmbedAPI, playlist_id: str
+) -> tuple[EndpointResult, TrackInfo | None]:
+    """Check the Spotify embed page API."""
+    try:
+        metadata = api.get_playlist_metadata(playlist_id)
+        sample_tracks: list[str] = []
+        first_track: TrackInfo | None = None
+        for track in api.iter_playlist_tracks(playlist_id):
+            if first_track is None:
+                first_track = track
+            sample_tracks.append(track.title)
+            if len(sample_tracks) >= 3:
+                break
+        notes = summarize_playlist(metadata.name, metadata.owner, sample_tracks)
+        return (
+            EndpointResult(
+                name="spotify_embed_api",
+                url=f"https://open.spotify.com/embed/playlist/{playlist_id}",
+                method="GET",
+                ok=True,
+                status_code=200,
+                notes=notes,
+            ),
+            first_track,
+        )
+    except SpotifyDownAPIError as exc:
+        return (
+            EndpointResult(
+                name="spotify_embed_api",
+                url=f"https://open.spotify.com/embed/playlist/{playlist_id}",
+                method="GET",
+                ok=False,
+                status_code=None,
+                notes=str(exc),
+            ),
+            None,
+        )
+
+
 def check_playlist_client(
     client: PlaylistClient,
     playlist_id: str,
 ) -> tuple[EndpointResult, TrackInfo | None]:
+    """Check the high-level PlaylistClient."""
     try:
         metadata = client.get_playlist_metadata(playlist_id)
         sample_tracks: list[str] = []
@@ -71,8 +110,8 @@ def check_playlist_client(
         notes = summarize_playlist(metadata.name, metadata.owner, sample_tracks)
         return (
             EndpointResult(
-                name="playlist_client_lookup",
-                url=f"combined providers for {playlist_id}",
+                name="playlist_client",
+                url=f"PlaylistClient for {playlist_id}",
                 method="GET",
                 ok=True,
                 status_code=200,
@@ -83,108 +122,19 @@ def check_playlist_client(
     except SpotifyDownAPIError as exc:
         return (
             EndpointResult(
-                name="playlist_client_lookup",
-                url=f"combined providers for {playlist_id}",
+                name="playlist_client",
+                url=f"PlaylistClient for {playlist_id}",
                 method="GET",
                 ok=False,
                 status_code=None,
                 notes=str(exc),
             ),
             None,
-        )
-
-
-def check_spotify_public_playlist(api: SpotifyPublicAPI, playlist_id: str) -> EndpointResult:
-    try:
-        metadata = api.get_playlist_metadata(playlist_id)
-        sample_tracks: list[str] = []
-        for track in api.iter_playlist_tracks(playlist_id):
-            sample_tracks.append(track.title)
-            if len(sample_tracks) >= 3:
-                break
-        notes = summarize_playlist(metadata.name, metadata.owner, sample_tracks)
-        return EndpointResult(
-            name="spotify_web_playlist_lookup",
-            url=f"https://api.spotify.com/v1/playlists/{playlist_id}",
-            method="GET",
-            ok=True,
-            status_code=200,
-            notes=notes,
-        )
-    except SpotifyDownAPIError as exc:
-        return EndpointResult(
-            name="spotify_web_playlist_lookup",
-            url=f"https://api.spotify.com/v1/playlists/{playlist_id}",
-            method="GET",
-            ok=False,
-            status_code=None,
-            notes=str(exc),
-        )
-
-
-def check_spotifydown_playlist(
-    api: SpotifyDownAPI, playlist_id: str
-) -> tuple[EndpointResult, TrackInfo | None]:
-    try:
-        metadata = api.get_playlist_metadata(playlist_id)
-        sample_tracks: list[str] = []
-        first_track: TrackInfo | None = None
-        for track in api.iter_playlist_tracks(playlist_id):
-            if first_track is None:
-                first_track = track
-            sample_tracks.append(track.title)
-            if len(sample_tracks) >= 3:
-                break
-        notes = summarize_playlist(metadata.name, metadata.owner, sample_tracks)
-        result = EndpointResult(
-            name="spotifydown_playlist_lookup",
-            url=f"trackList/playlist/{playlist_id}",
-            method="GET",
-            ok=True,
-            status_code=200,
-            notes=notes,
-        )
-        return result, first_track
-    except SpotifyDownAPIError as exc:
-        return (
-            EndpointResult(
-                name="spotifydown_playlist_lookup",
-                url=f"trackList/playlist/{playlist_id}",
-                method="GET",
-                ok=False,
-                status_code=None,
-                notes=str(exc),
-            ),
-            None,
-        )
-
-
-def check_spotifydown_download(api: SpotifyDownAPI, track: TrackInfo) -> EndpointResult:
-    try:
-        link = api.get_track_download_link(track.id)
-        if not link:
-            raise SpotifyDownAPIError("Download link missing from response")
-        notes = f"Resolved {track.title} to {link[:80]}..."
-        return EndpointResult(
-            name="spotifydown_track_download",
-            url=f"download/{track.id}",
-            method="GET",
-            ok=True,
-            status_code=200,
-            notes=notes,
-        )
-    except SpotifyDownAPIError as exc:
-        return EndpointResult(
-            name="spotifydown_track_download",
-            url=f"download/{track.id}",
-            method="GET",
-            ok=False,
-            status_code=None,
-            notes=str(exc),
         )
 
 
 def check_youtube_search(query: str) -> EndpointResult:
+    """Check if yt-dlp YouTube search works."""
     search = f"ytsearch1:{query}"
     try:
         with YoutubeDL({"quiet": True}) as ydl:
@@ -213,31 +163,81 @@ def check_youtube_search(query: str) -> EndpointResult:
         )
 
 
+def check_youtube_download(track: TrackInfo) -> EndpointResult:
+    """Check if yt-dlp can find audio for a track."""
+    query = f"{track.title} {track.artists} audio"
+    search = f"ytsearch1:{query}"
+    try:
+        with YoutubeDL({"quiet": True}) as ydl:
+            info = ydl.extract_info(search, download=False)
+            if info.get("entries"):
+                info = info["entries"][0]
+            title = info.get("title", "<unknown title>")
+            url = info.get("webpage_url", "<unknown url>")
+            notes = f"Track '{track.title}' resolved to: {title} ({url})"
+            return EndpointResult(
+                name="youtube_track_search",
+                url=search,
+                method="yt-dlp",
+                ok=True,
+                status_code=None,
+                notes=notes,
+            )
+    except Exception as exc:  # pragma: no cover - diagnostic script
+        return EndpointResult(
+            name="youtube_track_search",
+            url=search,
+            method="yt-dlp",
+            ok=False,
+            status_code=None,
+            notes=str(exc),
+        )
+
+
 def main() -> int:
     playlist_id = "37i9dQZF1DXcBWIGoYBM5M"  # Spotify's "Today's Top Hits"
     query = "Rick Astley Never Gonna Give You Up"
 
-    session = requests.Session()
-    playlist_client = PlaylistClient(session=session)
-    web_api = SpotifyPublicAPI(session=session)
-    spotifydown_api = SpotifyDownAPI(session=session)
+    embed_api = SpotifyEmbedAPI()
+    playlist_client = PlaylistClient()
 
-    client_result, first_track = check_playlist_client(playlist_client, playlist_id)
-    results = [
-        client_result,
-        check_spotify_public_playlist(web_api, playlist_id),
-    ]
+    results: list[EndpointResult] = []
 
-    down_result, _ = check_spotifydown_playlist(spotifydown_api, playlist_id)
-    results.append(down_result)
+    # Check embed API (primary method)
+    embed_result, first_track = check_embed_api(embed_api, playlist_id)
+    results.append(embed_result)
 
+    # Check PlaylistClient (high-level wrapper)
+    client_result, _ = check_playlist_client(playlist_client, playlist_id)
+    results.append(client_result)
+
+    # Check YouTube search (fallback for audio)
     results.append(check_youtube_search(query))
-    if first_track is not None:
-        results.append(check_spotifydown_download(spotifydown_api, first_track))
 
+    # Check YouTube can find a specific track
+    if first_track is not None:
+        results.append(check_youtube_download(first_track))
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("API STATUS SUMMARY")
+    print("=" * 60)
+    for result in results:
+        status = "✓ OK" if result.ok else "✗ FAILED"
+        print(f"\n{result.name}: {status}")
+        print(f"  URL: {result.url}")
+        print(f"  Notes: {result.notes[:100]}...")
+    print("\n" + "=" * 60)
+
+    # Output JSON
+    print("\nJSON Output:")
     json.dump([result.as_dict() for result in results], sys.stdout, indent=2)
     sys.stdout.write("\n")
-    return 0
+
+    # Return non-zero if any critical checks failed
+    critical_checks = ["spotify_embed_api", "youtube_search"]
+    failed_critical = [r for r in results if r.name in critical_checks and not r.ok]
+    return 1 if failed_critical else 0
 
 
 if __name__ == "__main__":  # pragma: no cover - manual diagnostic

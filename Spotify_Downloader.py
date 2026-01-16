@@ -177,39 +177,16 @@ class MusicScraper(QThread):
                 self.increment_counter()
                 continue
 
-            final_path = None
-
+            # Download via YouTube search (spotifydown mirrors are dead)
+            search_query = f"ytsearch1:{track_title} {artists} audio"
             try:
-                download_link = spotify_api.get_track_download_link(track.id)
-            except SpotifyDownAPIError:
-                download_link = None
+                final_path = self.download_track_audio(search_query, filepath)
+            except Exception as error_status:
+                print(f"[*] Error downloading '{track_title}': {error_status}")
+                continue
 
-            if download_link:
-                try:
-                    final_path = self.download_http_file(download_link, filepath)
-                except Exception as error_status:
-                    print("[*] Error downloading direct link:", error_status)
-                    final_path = None
-
-            if not final_path:
-                try:
-                    yt_id = spotify_api.get_track_youtube_id(track.id)
-                except SpotifyDownAPIError:
-                    yt_id = None
-
-                if yt_id:
-                    search_query = f"https://www.youtube.com/watch?v={yt_id}"
-                else:
-                    search_query = f"ytsearch1:{track_title} {artists} audio"
-
-                try:
-                    final_path = self.download_track_audio(search_query, filepath)
-                except Exception as error_status:
-                    print("[*] Error downloading track:", error_status)
-                    continue
-
-            if not os.path.exists(final_path):
-                print("[*] Download did not produce an audio file for:", track_title)
+            if not final_path or not os.path.exists(final_path):
+                print(f"[*] Download did not produce an audio file for: {track_title}")
                 continue
 
             song_meta["file"] = final_path
