@@ -1,5 +1,5 @@
 # Homebrew Cask for Sunnify
-# Install via tap: brew tap sunnypatell/sunnify && brew install --cask sunnify
+# Install: brew install --cask sunnypatell/sunnify/sunnify
 
 cask "sunnify" do
   version "2.0.0"
