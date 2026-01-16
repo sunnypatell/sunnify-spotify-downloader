@@ -67,7 +67,7 @@ export default function SunnifyApp() {
 
     try {
       const response = await fetch(
-        "https://coxpynrvnl46ro5bybq7aikbim0vmypk.lambda-url.us-east-2.on.aws/api/scrape-playlist",
+        "https://sunnify-spotify-downloader.onrender.com/api/scrape-playlist",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
