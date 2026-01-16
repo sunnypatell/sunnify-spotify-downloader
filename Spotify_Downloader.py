@@ -398,6 +398,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
         )
         self.PlaylistLink.returnPressed.connect(self.on_returnButton)
+        self.DownloadBtn.clicked.connect(self.on_returnButton)
 
         self.showPreviewCheck.stateChanged.connect(self.show_preview)
 

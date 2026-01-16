@@ -142,7 +142,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>16</pointsize>
        <kerning>false</kerning>
       </font>
@@ -183,7 +183,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>9</pointsize>
       </font>
      </property>
@@ -205,7 +205,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>8</pointsize>
       </font>
      </property>
@@ -224,7 +224,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>12</pointsize>
       </font>
      </property>
@@ -273,7 +273,7 @@ QPushButton#Select_Home:pressed{
         </property>
         <property name="font">
          <font>
-          <family>Agency FB</family>
+          <family>Arial</family>
           <pointsize>12</pointsize>
          </font>
         </property>
@@ -286,7 +286,7 @@ QPushButton#Select_Home:pressed{
        <widget class="QLabel" name="statusMsg">
         <property name="font">
          <font>
-          <family>Agency FB</family>
+          <family>Arial</family>
           <pointsize>11</pointsize>
          </font>
         </property>
@@ -308,7 +308,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>10</pointsize>
       </font>
      </property>
@@ -336,7 +336,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>12</pointsize>
       </font>
      </property>
@@ -358,7 +358,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>12</pointsize>
       </font>
      </property>
@@ -398,7 +398,7 @@ QPushButton#Select_Home:pressed{
         </property>
         <property name="font">
          <font>
-          <family>Agency FB</family>
+          <family>Arial</family>
           <pointsize>12</pointsize>
          </font>
         </property>
@@ -411,7 +411,7 @@ QPushButton#Select_Home:pressed{
        <widget class="QLabel" name="CounterLabel">
         <property name="font">
          <font>
-          <family>Agency FB</family>
+          <family>Arial</family>
           <pointsize>11</pointsize>
          </font>
         </property>
@@ -505,7 +505,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>17</pointsize>
        <weight>50</weight>
        <italic>false</italic>
@@ -540,7 +540,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
@@ -559,7 +559,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
@@ -578,7 +578,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
@@ -597,7 +597,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
@@ -619,7 +619,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
@@ -641,7 +641,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
@@ -715,7 +715,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
@@ -737,7 +737,7 @@ QPushButton#Select_Home:pressed{
      </property>
      <property name="font">
       <font>
-       <family>Agency FB</family>
+       <family>Arial</family>
        <pointsize>13</pointsize>
       </font>
      </property>
