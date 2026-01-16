@@ -96,36 +96,31 @@ root
 
 ## Requirements
 
-- Python 3.8 or newer (3.6+ supported, 3.8+ recommended)
-- FFmpeg on PATH (required by `yt-dlp` for MP3 conversion)
-- Node.js 18 or newer (for the web client)
+**Pre-built apps**: No dependencies required. FFmpeg is bundled.
+
+**Building from source**:
+- Python 3.8 or newer
+- FFmpeg on PATH (for MP3 conversion)
+- Node.js 18+ (for web client only)
 - Internet access to `open.spotify.com` and YouTube
 
 <details>
-<summary>Install FFmpeg (Windows, macOS, Linux)</summary>
+<summary>Install FFmpeg for building from source</summary>
 
-- Windows: use winget or choco, then restart terminal so PATH updates
-
+Windows:
 ```powershell
 winget install Gyan.FFmpeg
-# or
-choco install ffmpeg
 ```
 
-- macOS: use Homebrew
-
+macOS:
 ```bash
 brew install ffmpeg
 ```
 
-- Ubuntu/Debian
-
+Linux:
 ```bash
-sudo apt update
 sudo apt install -y ffmpeg
 ```
-
-Verify with `ffmpeg -version`.
 
 </details>
 
