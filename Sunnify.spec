@@ -102,7 +102,7 @@ if is_mac:
             'CFBundleIdentifier': 'com.sunnypatel.sunnify',
             'CFBundleVersion': '2.0.0',
             'CFBundleShortVersionString': '2.0.0',
-            'NSHumanReadableCopyright': '© 2024 Sunny Patel',
+            'NSHumanReadableCopyright': '© 2025 Sunny Jayendra Patel',
             'NSHighResolutionCapable': True,
         },
     )
@@ -122,7 +122,7 @@ else:
         upx=True,
         upx_exclude=[],
         runtime_tmpdir=None,
-        console=False if is_windows else True,  # GUI mode on Windows
+        console=False,  # GUI mode, no terminal window
         disable_windowed_traceback=False,
         argv_emulation=False,
         target_arch=None,

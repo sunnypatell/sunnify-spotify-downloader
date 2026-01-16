@@ -1,8 +1,7 @@
 name: Build Release
 
+# manual trigger only - avoids 10x macos cost on every commit
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -60,7 +59,17 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxcb-xinerama0 libxcb-cursor0 libxkbcommon-x11-0 libegl1
+          sudo apt-get install -y \
+            libxcb-xinerama0 \
+            libxcb-cursor0 \
+            libxkbcommon-x11-0 \
+            libegl1 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0
 
       - name: Install dependencies
         run: |
@@ -81,38 +90,89 @@ jobs:
           name: linux-build
           path: dist/Sunnify-Linux
 
+  build-macos-intel:
+    name: Build macOS (Intel)
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r req.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller Sunnify.spec
+
+      - name: Create ZIP
+        run: |
+          cd dist
+          zip -r Sunnify-macOS-Intel.zip Sunnify.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-build
+          path: dist/Sunnify-macOS-Intel.zip
+
+  build-macos-arm:
+    name: Build macOS (Apple Silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r req.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller Sunnify.spec
+
+      - name: Create ZIP
+        run: |
+          cd dist
+          zip -r Sunnify-macOS-AppleSilicon.zip Sunnify.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-build
+          path: dist/Sunnify-macOS-AppleSilicon.zip
+
   upload-release:
     name: Upload to Release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-macos-intel, build-macos-arm]
     permissions:
       contents: write
     steps:
-      - name: Download Windows artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-build
           path: ./artifacts
 
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-build
-          path: ./artifacts
-
-      - name: Get release tag
-        id: get-tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
-          fi
+      - name: List artifacts
+        run: find ./artifacts -type f
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get-tag.outputs.tag }}
+          tag_name: ${{ github.event.inputs.tag }}
           files: |
-            artifacts/Sunnify-Windows.exe
-            artifacts/Sunnify-Linux
+            artifacts/windows-build/Sunnify-Windows.exe
+            artifacts/linux-build/Sunnify-Linux
+            artifacts/macos-intel-build/Sunnify-macOS-Intel.zip
+            artifacts/macos-arm-build/Sunnify-macOS-AppleSilicon.zip
