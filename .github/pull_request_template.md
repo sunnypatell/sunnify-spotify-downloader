@@ -62,10 +62,21 @@ Call out risk areas and how to revert if needed.
 
 ## Checklist
 
+### Code quality
+- [ ] Python: `ruff check .` and `ruff format --check .` pass
+- [ ] Webclient: `npm run lint`, `npm run typecheck`, `npm run format:check` pass
+- [ ] No new warnings introduced (or warnings are intentional and documented)
+
+### Testing
 - [ ] I ran `python scripts/check_api_status.py` or validated relevant endpoints
 - [ ] FFmpeg is on PATH (`ffmpeg -version`) and `yt-dlp` is up to date when desktop is affected
-- [ ] Webclient changes use `NEXT_PUBLIC_API_BASE` instead of hardcoded URLs
-- [ ] Backend changes documented in README or API docs
 - [ ] Tests or manual validation steps included
+
+### Documentation
 - [ ] Docs updated where behavior changed (README/CONTRIBUTING/etc.)
+- [ ] Backend changes documented in README or API docs
+
+### Security
 - [ ] I read the SECURITY and Legal sections to avoid adding risky functionality
+- [ ] Webclient changes use `NEXT_PUBLIC_API_BASE` instead of hardcoded URLs
+- [ ] No secrets, credentials, or sensitive data in the code

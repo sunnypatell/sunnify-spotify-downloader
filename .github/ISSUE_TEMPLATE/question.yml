@@ -1,0 +1,46 @@
+name: Question
+description: Ask a question about usage, setup, or how the project works
+title: "question: <your question>"
+labels:
+  - type: question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before asking:**
+        - Check the [README](https://github.com/sunnypatell/sunnify-spotify-downloader#readme) for setup and usage
+        - Check [API_STATUS.md](https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/API_STATUS.md) for provider info
+        - Search existing issues for similar questions
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      description: What is your question about?
+      options:
+        - Desktop app setup/usage
+        - Backend API setup/usage
+        - Webclient setup/usage
+        - Provider strategy (Spotify API, mirrors, yt-dlp)
+        - Build/packaging
+        - Contributing
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Be specific and include any relevant context
+      placeholder: |
+        I'm trying to understand how...
+        When I do X, what happens with Y?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Any extra info, screenshots, or links that might help
