@@ -1,4 +1,4 @@
-import SunnifyApp from '@/components/sunnify-app'
+import SunnifyApp from "@/components/sunnify-app"
 
 export default function Home() {
   return (

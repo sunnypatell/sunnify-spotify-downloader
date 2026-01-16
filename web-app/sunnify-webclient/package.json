@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "cd ../.. && husky web-app/sunnify-webclient/.husky || true"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.0",
@@ -25,7 +29,6 @@
     "react-dom": "^18",
     "react-hot-toast": "^2.4.1",
     "react-icons": "^5.3.0",
-    "sunnify-webclient": "file:",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7"
   },
@@ -35,7 +38,11 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "14.2.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0",
     "postcss": "^8",
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.9",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }
