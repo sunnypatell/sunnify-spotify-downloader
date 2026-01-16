@@ -3,7 +3,11 @@
 Thumbs.db
 desktop.ini
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.sublime-workspace
+*.sublime-project
 
 # ---------- Python ----------
 __pycache__/
@@ -34,13 +38,14 @@ htmlcov/
 coverage/
 .coverage
 .coverage.*
+.hypothesis/
 
-# Python packaging / build artifacts
+# python packaging / build artifacts
 build/
-# dist/ should be ignored as it contains the .exe
+# dist/ contains .exe - managed separately
 
-# PyInstaller (keep .spec file tracked)
-# *.spec  # Intentionally NOT ignored; spec is source.
+# pyinstaller (keep .spec file tracked)
+# *.spec  # intentionally NOT ignored; spec is source
 
 # ---------- Node / JS / Next.js ----------
 node_modules/
@@ -62,16 +67,31 @@ test-results/
 *.log
 logs/
 
+# ---------- Secrets ----------
+.secrets.baseline
+*.pem
+*.key
+credentials.json
+
+# ---------- Build Outputs ----------
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.snap
+*.rpm
+release/
+dist-electron/
+
 # ---------- Misc ----------
 .ipynb_checkpoints/
 *.bak
 *.swp
-*.swo.venv
-venv
-*.pyc
-__pycache__/
+*.swo
+*.tmp
+*.temp
+.cache/
 
+# ---------- Project Specific ----------
 web-app/node_modules/
-
-localprod/web-app/node_modules/
-localprod/web-app/build/
+localprod/
