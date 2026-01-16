@@ -12,12 +12,6 @@ cask "sunnify" do
 
   app "Sunnify.app"
 
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-cr", "#{appdir}/Sunnify.app"],
-                   sudo: true
-  end
-
   uninstall quit: "com.sunnypatel.sunnify"
 
   zap trash: [
@@ -29,9 +23,8 @@ cask "sunnify" do
   caveats <<~EOS
     FFmpeg is bundled with the app - no separate installation needed.
 
-    If you see "app is damaged" or "unidentified developer" errors,
-    the postflight script should have handled this automatically.
-    If not, run: sudo xattr -cr /Applications/Sunnify.app
+    After installation, run this command to remove macOS quarantine:
+      sudo xattr -cr /Applications/Sunnify.app
 
     Educational use only. Ensure compliance with copyright laws.
   EOS
