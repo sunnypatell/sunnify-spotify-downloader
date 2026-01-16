@@ -1,29 +1,18 @@
 # Homebrew Cask for Sunnify
-# To install: brew install --cask sunnify
-#
-# Note: This is a template. To publish to Homebrew, either:
-# 1. Submit to homebrew-cask (requires notarization)
-# 2. Create your own tap: brew tap sunnypatell/sunnify
-#
-# For unsigned apps, users need to run after installation:
-#   sudo xattr -cr /Applications/Sunnify.app
+# Install via tap: brew tap sunnypatell/sunnify && brew install --cask sunnify
 
 cask "sunnify" do
   version "2.0.0"
-  sha256 :no_check  # Update with actual SHA256 after release
+  sha256 "8b264436d644e42dc82c8a3e8fe79ea9e1003dfde9482c225e5a03f60ac89607"
 
   url "https://github.com/sunnypatell/sunnify-spotify-downloader/releases/download/v#{version}/Sunnify-macOS.zip"
   name "Sunnify"
   desc "Download Spotify playlists to local MP3s with artwork and tags"
   homepage "https://github.com/sunnypatell/sunnify-spotify-downloader"
 
-  # Requires FFmpeg for audio conversion
-  depends_on formula: "ffmpeg"
-
   app "Sunnify.app"
 
   postflight do
-    # Remove quarantine attribute for unsigned app
     system_command "/usr/bin/xattr",
                    args: ["-cr", "#{appdir}/Sunnify.app"],
                    sudo: true
@@ -38,11 +27,11 @@ cask "sunnify" do
   ]
 
   caveats <<~EOS
-    Sunnify requires FFmpeg for audio conversion.
-    Install it with: brew install ffmpeg
+    FFmpeg is bundled with the app - no separate installation needed.
 
-    If you see "app is damaged" or "unidentified developer" errors:
-      sudo xattr -cr /Applications/Sunnify.app
+    If you see "app is damaged" or "unidentified developer" errors,
+    the postflight script should have handled this automatically.
+    If not, run: sudo xattr -cr /Applications/Sunnify.app
 
     Educational use only. Ensure compliance with copyright laws.
   EOS
