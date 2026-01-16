@@ -129,7 +129,8 @@ export default function SunnifyApp() {
               <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" />
               <p className="text-sm text-amber-200">
                 <span className="font-semibold">Heads up:</span> The backend runs on a free server
-                that spins down after inactivity. First request may take 30-60 seconds to wake up.
+                that spins down after inactivity. First request may take up to 50 seconds to wake
+                up.
               </p>
             </div>
             <button

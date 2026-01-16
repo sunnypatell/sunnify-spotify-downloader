@@ -259,7 +259,7 @@ npm run build
 npm start
 ```
 
-Note: the current client points at a hosted AWS Lambda URL by default. Switch it to your local Flask server for development and, if desired, add an SSE consumer for realtime progress.
+Note: the web client points to a Render-hosted backend by default. The free tier spins down after inactivity, so the first request may take up to 50 seconds. For local development, update the API URL in `components/sunnify-app.tsx`.
 
 <hr/>
 

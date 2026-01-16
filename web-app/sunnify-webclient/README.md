@@ -11,9 +11,7 @@
 ## Prerequisites
 
 - Node.js 18 or newer
-- A running backend API
-  - Local Flask: `http://127.0.0.1:5000`
-  - Or the hosted Lambda used by default in `components/sunnify-app.tsx`
+- A running backend API (Render deployment or local Flask)
 
 ---
 
@@ -25,13 +23,7 @@
 npm install
 ```
 
-2. Configure API base URL via `.env.local` (recommended)
-
-```dotenv
-NEXT_PUBLIC_API_BASE=http://127.0.0.1:5000
-```
-
-3. Start the dev server
+2. Start the dev server
 
 ```bash
 npm run dev
@@ -41,25 +33,15 @@ Open `http://localhost:3000`.
 
 ---
 
-## Local Production Simulation
+## API Endpoint
 
-```bash
-npm run build
-npm start
+The client points to the Render-hosted backend by default:
+
+```
+https://sunnify-spotify-downloader.onrender.com/api/scrape-playlist
 ```
 
----
-
-## Switching API Endpoints
-
-This client currently points at a hosted AWS Lambda URL in `components/sunnify-app.tsx`. For local development, switch to:
-
-```ts
-const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:5000"
-const url = `${base}/api/scrape-playlist`
-```
-
-If you plan to consume realtime progress from the Flask backend, implement an SSE client using `EventSource` or a streaming fetch and update the UI as events arrive.
+For local development, update `components/sunnify-app.tsx` or use environment variables.
 
 ---
 
@@ -69,14 +51,16 @@ If you plan to consume realtime progress from the Flask backend, implement an SS
 - `npm run build` production build
 - `npm start` run the production server
 - `npm run lint` lint the codebase
+- `npm run typecheck` run TypeScript type checking
+- `npm run format` format code with Prettier
 
 ---
 
 ## Troubleshooting
 
-- 404 from backend: ensure the Flask server is running at `NEXT_PUBLIC_API_BASE` and that CORS is enabled
-- CORS errors: Flask backend uses `flask-cors` by default; double check `app.py`
-- Windows path issues: ensure the download path you enter is writable
+- **Cold starts**: The Render free tier spins down after inactivity. First request may take up to 50 seconds.
+- **CORS errors**: The Flask backend uses `flask-cors` which allows all origins by default.
+- **Build failures**: Ensure Node.js 18+ and run `npm install` first.
 
 ---
 
