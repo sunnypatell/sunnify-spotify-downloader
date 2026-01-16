@@ -30,6 +30,13 @@ elif is_windows:
 else:
     icon_file = None  # Linux doesn't use icons in the same way
 
+# FFmpeg binaries (downloaded by CI before build)
+import os
+ffmpeg_dir = 'ffmpeg'
+ffmpeg_datas = []
+if os.path.exists(ffmpeg_dir):
+    ffmpeg_datas = [(ffmpeg_dir, 'ffmpeg')]
+
 a = Analysis(
     ['Spotify_Downloader.py'],
     pathex=[],
@@ -37,7 +44,7 @@ a = Analysis(
     datas=[
         ('spotifydown_api.py', '.'),
         ('Template.py', '.'),
-    ],
+    ] + ffmpeg_datas,
     hiddenimports=[
         'PyQt5',
         'PyQt5.QtCore',

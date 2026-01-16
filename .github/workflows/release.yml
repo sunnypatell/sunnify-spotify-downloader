@@ -1,6 +1,5 @@
 name: Build Release
 
-# manual trigger only - avoids 10x macos cost on every commit
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +24,19 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Download FFmpeg
+        shell: pwsh
+        run: |
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-temp
+          $ffmpegDir = Get-ChildItem -Path ffmpeg-temp -Directory | Select-Object -First 1
+          New-Item -ItemType Directory -Path ffmpeg -Force
+          Copy-Item -Path "$($ffmpegDir.FullName)\bin\ffmpeg.exe" -Destination ffmpeg\
+          Copy-Item -Path "$($ffmpegDir.FullName)\bin\ffprobe.exe" -Destination ffmpeg\
+          Remove-Item -Recurse -Force ffmpeg-temp, ffmpeg.zip
+          Get-ChildItem ffmpeg
 
       - name: Install dependencies
         run: |
@@ -71,6 +83,17 @@ jobs:
             libxcb-render-util0 \
             libxcb-shape0
 
+      - name: Download FFmpeg
+        run: |
+          curl -L -o ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          tar -xf ffmpeg.tar.xz
+          mkdir -p ffmpeg
+          cp ffmpeg-*-amd64-static/ffmpeg ffmpeg/
+          cp ffmpeg-*-amd64-static/ffprobe ffmpeg/
+          chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
+          rm -rf ffmpeg-*-amd64-static ffmpeg.tar.xz
+          ls -la ffmpeg/
+
       - name: Install dependencies
         run: |
           pip install -r req.txt
@@ -101,6 +124,19 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Download FFmpeg
+        run: |
+          curl -L -o ffmpeg.zip https://evermeet.cx/ffmpeg/getrelease/zip
+          unzip ffmpeg.zip -d ffmpeg-temp
+          curl -L -o ffprobe.zip https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
+          unzip ffprobe.zip -d ffmpeg-temp
+          mkdir -p ffmpeg
+          mv ffmpeg-temp/ffmpeg ffmpeg/
+          mv ffmpeg-temp/ffprobe ffmpeg/
+          chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
+          rm -rf ffmpeg-temp ffmpeg.zip ffprobe.zip
+          ls -la ffmpeg/
 
       - name: Install dependencies
         run: |

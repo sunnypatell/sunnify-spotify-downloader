@@ -54,6 +54,19 @@ from spotifydown_api import (
 from Template import Ui_MainWindow
 
 
+def get_ffmpeg_path():
+    """Get path to bundled FFmpeg or None if not bundled."""
+    if getattr(sys, "frozen", False):
+        base_path = sys._MEIPASS
+        if sys.platform == "win32":
+            ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg.exe")
+        else:
+            ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg")
+        if os.path.exists(ffmpeg):
+            return os.path.join(base_path, "ffmpeg")
+    return None
+
+
 class MusicScraper(QThread):
     PlaylistCompleted = pyqtSignal(str)
     PlaylistID = pyqtSignal(str)
@@ -113,6 +126,9 @@ class MusicScraper(QThread):
                 }
             ],
         }
+        ffmpeg_path = get_ffmpeg_path()
+        if ffmpeg_path:
+            ydl_opts["ffmpeg_location"] = ffmpeg_path
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
             if info.get("entries"):
