@@ -418,8 +418,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if sys.platform == "win32":
             try:
                 import winreg
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
+
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+                )
                 music_folder = os.path.join(winreg.QueryValueEx(key, "My Music")[0], "Sunnify")
                 winreg.CloseKey(key)
             except Exception:
@@ -437,7 +440,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 f.write("test")
             os.remove(test_file)
             return True
-        except (OSError, IOError):
+        except OSError:
             return False
 
     def _prompt_download_location(self):
@@ -480,12 +483,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
 
         # On first download, prompt for location if default isn't writable
-        if not self._download_path_set:
-            if not self._ensure_download_path():
-                self.statusMsg.setText("Select download location...")
-                if not self._prompt_download_location():
-                    self.statusMsg.setText("Download cancelled - no folder selected")
-                    return
+        if not self._download_path_set and not self._ensure_download_path():
+            self.statusMsg.setText("Select download location...")
+            if not self._prompt_download_location():
+                self.statusMsg.setText("Download cancelled - no folder selected")
+                return
 
         # Ensure the download path exists
         if not self._ensure_download_path():
