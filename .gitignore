@@ -76,6 +76,7 @@ credentials.json
 # ---------- Build Outputs ----------
 *.dmg
 *.exe
+*.zip
 *.AppImage
 *.deb
 *.snap

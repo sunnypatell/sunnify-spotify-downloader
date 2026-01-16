@@ -14,9 +14,6 @@ will not be registered in the URL as the regex does not specify that in the URL 
 
 __version__ = "2.0.0"
 
-# Main
-# if __name__ == '__main__':from PyQt5.uic import loadUi
-
 import os
 import sys
 import webbrowser
@@ -347,7 +344,6 @@ class WritingMetaTagsThread(QThread):
         self.PICTUREDATA = None
 
     def run(self):
-        # self.tags_success.emit("Writing Metatags")
         try:
             print("[*] FileName : ", self.filename)
             audio = EasyID3(self.filename)
@@ -356,15 +352,11 @@ class WritingMetaTagsThread(QThread):
             audio["album"] = self.tags["album"]
             audio["date"] = self.tags["releaseDate"]
             audio.save()
-            # self.tags_success.emit("Meta added!")
-            # self.tags_success.emit("Adding Cover")
             self.CoverPic = DownloadCover(self.tags["cover"] + "?size=1")
             self.CoverPic.albumCover.connect(self.setPIC)
             self.CoverPic.start()
         except Exception:
             pass
-            # print(f'Error {e}')
-            # self.tags_success.emit(f"Error in FIle : {e}")
 
     def setPIC(self, data):
         if data is None:
@@ -374,7 +366,6 @@ class WritingMetaTagsThread(QThread):
                 audio = ID3(self.filename)
                 audio["APIC"] = APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=data)
                 audio.save()
-                # self.tags_success.emit("Cover Added..!")
             except Exception as e:
                 self.tags_success.emit(f"Error adding cover: {e}")
 
@@ -396,15 +387,9 @@ class DownloadThumbnail(QThread):
 
 # Main Window
 class MainWindow(QMainWindow, Ui_MainWindow):
-    # class MainWindow(QMainWindow):
-
     def __init__(self):
         """MainWindow constructor"""
         super().__init__()
-
-        # Main UI code goes here
-        # loadUi("Template.ui", self)
-
         self.setupUi(self)
 
         # Default download path
@@ -421,9 +406,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Closed.clicked.connect(self.exitprogram)
         self.Select_Home.clicked.connect(self.Linkedin)
         self.SettingsBtn.clicked.connect(self.open_settings)
-        # End main UI code
-
-    # https://open.spotify.com/playlist/37i9dQZF1E36hkEAnydKTA?si=20caa5adfed648d3
 
     def open_settings(self):
         """Open settings dialog to choose download location."""
@@ -453,29 +435,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             url_type, _ = detect_spotify_url_type(spotify_url)
             self.statusMsg.setText(f"Detected: {url_type}")
 
-            # Start the scraper in a separate thread
             self.scraper_thread = ScraperThread(spotify_url, self.download_path)
-            # self.scraper_thread.scraper.PlaylistID.connect(lambda x:self.PlaylistMsg.setText("Playlist Code : {}".format(x)))  # Connect the signal
             self.scraper_thread.progress_update.connect(self.update_progress)
-            self.scraper_thread.finished.connect(
-                self.thread_finished
-            )  # Connect the finished signal
-            self.scraper_thread.scraper.song_Album.connect(
-                self.update_AlbumName
-            )  # Connect the signal
-            self.scraper_thread.scraper.song_meta.connect(
-                self.update_song_META
-            )  # Connect the signal
-            self.scraper_thread.scraper.add_song_meta.connect(
-                self.add_song_META
-            )  # Connect the signal
-
-            self.scraper_thread.scraper.dlprogress_signal.connect(
-                self.update_song_progress
-            )  # Download Progress
-            self.scraper_thread.scraper.Resetprogress_signal.connect(
-                self.Reset_song_progress
-            )  # Download Progress
+            self.scraper_thread.finished.connect(self.thread_finished)
+            self.scraper_thread.scraper.song_Album.connect(self.update_AlbumName)
+            self.scraper_thread.scraper.song_meta.connect(self.update_song_META)
+            self.scraper_thread.scraper.add_song_meta.connect(self.add_song_META)
+            self.scraper_thread.scraper.dlprogress_signal.connect(self.update_song_progress)
+            self.scraper_thread.scraper.Resetprogress_signal.connect(self.Reset_song_progress)
             self.scraper_thread.scraper.PlaylistCompleted.connect(
                 lambda x: self.statusMsg.setText(x)
             )
@@ -503,8 +470,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.AlbumText.setText(song_meta["album"])
             self.SongName.setText(song_meta["title"])
             self.YearText.setText(song_meta["releaseDate"])
-        else:
-            pass
 
         self.MainSongName.setText(song_meta["title"] + " - " + song_meta["artists"])
         if self.AddMetaDataCheck.isChecked():
