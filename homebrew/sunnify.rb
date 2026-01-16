@@ -1,5 +1,5 @@
 # Homebrew Cask for Sunnify
-# Install: brew install --cask sunnypatell/sunnify/sunnify
+# Install: brew install --cask sunnypatell/tap/sunnify
 
 cask "sunnify" do
   version "2.0.0"
@@ -12,6 +12,12 @@ cask "sunnify" do
 
   app "Sunnify.app"
 
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-cr", "#{appdir}/Sunnify.app"],
+                   sudo: true
+  end
+
   uninstall quit: "com.sunnypatel.sunnify"
 
   zap trash: [
@@ -21,11 +27,7 @@ cask "sunnify" do
   ]
 
   caveats <<~EOS
-    FFmpeg is bundled with the app - no separate installation needed.
-
-    After installation, run this command to remove macOS quarantine:
-      sudo xattr -cr /Applications/Sunnify.app
-
+    FFmpeg is bundled - no separate installation needed.
     Educational use only. Ensure compliance with copyright laws.
   EOS
 end
