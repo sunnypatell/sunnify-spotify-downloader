@@ -18,8 +18,6 @@ __version__ = "1.0.0"
 # if __name__ == '__main__':from PyQt5.uic import loadUi
 
 import os
-import re
-import string
 import sys
 import webbrowser
 
@@ -39,7 +37,13 @@ from PyQt5.QtGui import QCursor, QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QGraphicsDropShadowEffect, QMainWindow
 from yt_dlp import YoutubeDL
 
-from spotifydown_api import PlaylistClient, PlaylistInfo, SpotifyDownAPIError
+from spotifydown_api import (
+    PlaylistClient,
+    PlaylistInfo,
+    SpotifyDownAPIError,
+    extract_playlist_id,
+    sanitize_filename,
+)
 from Template import Ui_MainWindow
 
 
@@ -65,9 +69,8 @@ class MusicScraper(QThread):
         return self.spotifydown_api
 
     def sanitize_text(self, text):
-        cleaned = text.translate(str.maketrans("", "", string.punctuation))
-        normalized = " ".join(cleaned.split())
-        return normalized or "Unknown"
+        """Sanitize text for filename usage."""
+        return sanitize_filename(text, allow_spaces=True)
 
     def format_playlist_name(self, metadata: PlaylistInfo):
         owner = metadata.owner or "Spotify"
@@ -197,21 +200,8 @@ class MusicScraper(QThread):
         self.PlaylistCompleted.emit("Download Complete!")
 
     def returnSPOT_ID(self, link):
-        # # The 'returnSPOT_ID' function from your scraper code
-        # return link.split('/')[-1].split('?si')[0]
-
-        # Define the regular expression pattern for the Spotify playlist URL
-        pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
-
-        # Try to match the pattern in the input text
-        match = re.match(pattern, link)
-
-        if not match:
-            raise ValueError("Invalid Spotify playlist URL.")
-        # Extract the playlist ID from the matched pattern
-        extracted_id = match.group(1)
-
-        return extracted_id
+        """Extract playlist ID from Spotify URL."""
+        return extract_playlist_id(link)
 
     def increment_counter(self):
         self.counter += 1

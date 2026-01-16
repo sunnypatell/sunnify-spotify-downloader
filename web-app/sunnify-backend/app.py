@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import tempfile
 from pathlib import Path
@@ -24,7 +23,12 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from spotifydown_api import PlaylistClient, SpotifyDownAPIError  # noqa: E402
+from spotifydown_api import (  # noqa: E402
+    PlaylistClient,
+    SpotifyDownAPIError,
+    extract_playlist_id,
+    sanitize_filename,
+)
 
 app = Flask(__name__)
 CORS(app)
@@ -168,15 +172,11 @@ class MusicScraper:
 
     def _extract_playlist_id(self, link: str) -> str:
         """Extract playlist ID from Spotify URL."""
-        pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
-        match = re.match(pattern, link)
-        if not match:
-            raise ValueError("Invalid Spotify playlist URL.")
-        return match.group(1)
+        return extract_playlist_id(link)
 
     def _sanitize_filename(self, filename: str) -> str:
         """Remove invalid characters from filename."""
-        return "".join(c for c in filename if c.isalnum() or c in [" ", "_", "-", "."])
+        return sanitize_filename(filename, allow_spaces=True)
 
 
 @app.route("/api/scrape-playlist", methods=["POST"])

@@ -31,6 +31,7 @@ class PlaylistInfo:
     owner: str | None
     description: str | None
     cover_url: str | None
+    track_count: int | None = None
 
 
 @dataclass
@@ -119,11 +120,16 @@ class SpotifyEmbedAPI:
             # Get the largest image
             cover_url = sources[-1].get("url") if sources else None
 
+        # Get track count from trackList
+        track_list = entity.get("trackList", [])
+        track_count = len(track_list) if isinstance(track_list, list) else None
+
         return PlaylistInfo(
             name=str(name),
             owner=str(subtitle) if subtitle else None,
             description=None,  # Embed page doesn't include description
             cover_url=cover_url,
+            track_count=track_count,
         )
 
     def iter_playlist_tracks(self, playlist_id: str) -> Iterator[TrackInfo]:
@@ -268,6 +274,47 @@ class PlaylistClient:
         return None
 
 
+# Utility functions shared across desktop app and web backend
+
+
+def extract_playlist_id(url: str) -> str:
+    """Extract playlist ID from a Spotify URL.
+
+    Args:
+        url: Spotify playlist URL like https://open.spotify.com/playlist/ABC123
+
+    Returns:
+        The playlist ID (e.g., "ABC123")
+
+    Raises:
+        ValueError: If the URL is not a valid Spotify playlist URL
+    """
+    pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
+    match = re.match(pattern, url)
+    if not match:
+        raise ValueError("Invalid Spotify playlist URL.")
+    return match.group(1)
+
+
+def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
+    """Sanitize a string for use as a filename.
+
+    Args:
+        name: The string to sanitize
+        allow_spaces: Whether to allow spaces in the result
+
+    Returns:
+        A sanitized string safe for use as a filename
+    """
+    valid_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")
+    if allow_spaces:
+        valid_chars.add(" ")
+    sanitized = "".join(c for c in name if c in valid_chars)
+    # Collapse multiple spaces and strip
+    sanitized = " ".join(sanitized.split())
+    return sanitized or "Unknown"
+
+
 __all__ = [
     "PlaylistClient",
     "PlaylistInfo",
@@ -276,4 +323,6 @@ __all__ = [
     "SpotifyEmbedAPI",
     "SpotifyPublicAPI",
     "TrackInfo",
+    "extract_playlist_id",
+    "sanitize_filename",
 ]
