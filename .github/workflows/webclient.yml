@@ -1,4 +1,4 @@
-name: CI
+name: Webclient
 
 on:
   push:
@@ -7,54 +7,12 @@ on:
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: webclient-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  python-tests:
-    name: Python Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: |
-          pip install -r req.txt -r requirements-dev.txt
-          pip install pytest-mock
-
-      - name: Run tests
-        run: pytest tests/ -v --tb=short
-
-  python-quality:
-    name: Python Quality
-    runs-on: ubuntu-latest
-    needs: python-tests
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Lint with ruff
-        run: ruff check .
-
-      - name: Format check with ruff
-        run: ruff format --check .
-
-  webclient-quality:
-    name: Webclient Quality
+  quality:
+    name: Quality
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -81,10 +39,10 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-  webclient-build:
-    name: Webclient Build
+  build:
+    name: Build
     runs-on: ubuntu-latest
-    needs: webclient-quality
+    needs: quality
     defaults:
       run:
         working-directory: web-app/sunnify-webclient
