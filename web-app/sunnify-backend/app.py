@@ -1,22 +1,20 @@
 """Flask backend for Sunnify web client.
 
-Uses SpotifyEmbedAPI for playlist data and yt-dlp for audio downloads.
+Lightweight API that fetches Spotify metadata without downloading.
+Optimized for free-tier hosting (512MB RAM, 0.1 CPU).
+
+For actual MP3 downloads, use the desktop app.
 """
 
 from __future__ import annotations
 
-import json
+import gc
 import os
 import sys
-import tempfile
 from pathlib import Path
 
-import requests
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import APIC, ID3
-from yt_dlp import YoutubeDL
 
 # Add parent directory to path for spotifydown_api import
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -26,202 +24,141 @@ if str(ROOT) not in sys.path:
 from spotifydown_api import (  # noqa: E402
     PlaylistClient,
     SpotifyDownAPIError,
-    extract_playlist_id,
-    sanitize_filename,
+    SpotifyEmbedAPI,
+    detect_spotify_url_type,
 )
 
 app = Flask(__name__)
 CORS(app)
 
+# Reusable client (saves memory on repeated requests)
+_playlist_client: PlaylistClient | None = None
 
-class MusicScraper:
-    """Scraper that uses Spotify embed API and yt-dlp for downloads."""
 
-    def __init__(self):
-        self.session = requests.Session()
-        self.playlist_client = PlaylistClient()
-
-    def scrape_playlist(self, spotify_playlist_link: str, music_folder: str):
-        """Scrape a Spotify playlist and download tracks via YouTube."""
-        try:
-            playlist_id = self._extract_playlist_id(spotify_playlist_link)
-            metadata = self.playlist_client.get_playlist_metadata(playlist_id)
-
-            # sanitize folder name
-            folder_name = "".join(
-                c
-                for c in f"{metadata.name} - {metadata.owner or 'Unknown'}"
-                if c.isalnum() or c in [" ", "_", "-"]
-            )
-            playlist_folder_path = os.path.join(music_folder, folder_name)
-
-            if not os.path.exists(playlist_folder_path):
-                os.makedirs(playlist_folder_path)
-
-            downloaded_tracks: list[dict] = []
-            total_tracks = metadata.track_count or 100  # estimate if unknown
-
-            for idx, track in enumerate(self.playlist_client.iter_playlist_tracks(playlist_id)):
-                filename = self._sanitize_filename(f"{track.title} - {track.artists}.mp3")
-                filepath = os.path.join(playlist_folder_path, filename)
-
-                try:
-                    # download via youtube search
-                    search_query = f"ytsearch1:{track.title} {track.artists} audio"
-                    self._download_audio(search_query, filepath)
-
-                    # write metadata
-                    self._write_metadata(filepath, track)
-
-                    downloaded_tracks.append(
-                        {
-                            "id": track.spotify_id,
-                            "title": track.title,
-                            "artists": track.artists,
-                            "album": track.album,
-                            "cover": track.cover_url,
-                            "downloadLink": f"/api/download/{filename}",
-                        }
-                    )
-
-                    yield {
-                        "event": "progress",
-                        "data": {
-                            "progress": (idx + 1) / total_tracks * 100,
-                            "currentTrack": {
-                                "title": track.title,
-                                "artists": track.artists,
-                            },
-                        },
-                    }
-
-                except Exception as error:
-                    print(f"[*] Error downloading '{track.title}': {error}")
-                    yield {
-                        "event": "error",
-                        "data": {"message": f"Error downloading {track.title}: {error}"},
-                    }
-
-            yield {
-                "event": "complete",
-                "data": {
-                    "playlistName": f"{metadata.name} - {metadata.owner or 'Unknown'}",
-                    "tracks": downloaded_tracks,
-                },
-            }
-
-        except SpotifyDownAPIError as e:
-            yield {
-                "event": "error",
-                "data": {"message": f"Spotify API error: {e}"},
-            }
-        except Exception as e:
-            yield {
-                "event": "error",
-                "data": {"message": f"An error occurred: {e}"},
-            }
-
-    def _download_audio(self, search_query: str, output_path: str) -> None:
-        """Download audio using yt-dlp."""
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": output_path.replace(".mp3", ".%(ext)s"),
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
-            "quiet": True,
-            "no_warnings": True,
-        }
-
-        with YoutubeDL(ydl_opts) as ydl:
-            ydl.download([search_query])
-
-    def _write_metadata(self, filepath: str, track) -> None:
-        """Write ID3 metadata to the downloaded file."""
-        try:
-            # wait for file to exist (yt-dlp postprocessor creates it)
-            if not os.path.exists(filepath):
-                return
-
-            audio = EasyID3(filepath)
-            audio["title"] = track.title
-            audio["artist"] = track.artists
-            audio["album"] = track.album or "Unknown Album"
-            audio.save()
-
-            # embed cover art if available
-            if track.cover_url:
-                cover_response = self.session.get(track.cover_url, timeout=10)
-                if cover_response.status_code == 200:
-                    audio = ID3(filepath)
-                    audio["APIC"] = APIC(
-                        encoding=3,
-                        mime="image/jpeg",
-                        type=3,
-                        desc="Cover",
-                        data=cover_response.content,
-                    )
-                    audio.save()
-
-        except Exception as e:
-            print(f"Error writing metadata for {filepath}: {e}")
-
-    def _extract_playlist_id(self, link: str) -> str:
-        """Extract playlist ID from Spotify URL."""
-        return extract_playlist_id(link)
-
-    def _sanitize_filename(self, filename: str) -> str:
-        """Remove invalid characters from filename."""
-        return sanitize_filename(filename, allow_spaces=True)
+def get_playlist_client() -> PlaylistClient:
+    """Get or create a playlist client (singleton pattern for memory efficiency)."""
+    global _playlist_client
+    if _playlist_client is None:
+        _playlist_client = PlaylistClient()
+    return _playlist_client
 
 
 @app.route("/api/scrape-playlist", methods=["POST"])
 def scrape_playlist():
-    """Endpoint to scrape a Spotify playlist."""
-    data = request.get_json()
-    spotify_playlist_link = data.get("playlistUrl")
-    download_path = data.get("downloadPath", tempfile.gettempdir())
+    """Fetch Spotify playlist/track metadata (no downloads).
 
-    if not download_path:
-        return jsonify({"error": "Download path not specified"}), 400
+    This endpoint is optimized for free-tier hosting:
+    - No file downloads (saves CPU/memory/disk)
+    - No yt-dlp/FFmpeg processing
+    - Just returns metadata for the frontend to display
 
-    if not os.path.exists(download_path):
-        return jsonify({"error": "Specified download path does not exist"}), 400
+    Request body:
+        {"playlistUrl": "https://open.spotify.com/playlist/..."}
 
-    if not os.access(download_path, os.W_OK):
-        return jsonify({"error": "No write permission for the specified download path"}), 400
+    Response:
+        {"event": "complete", "data": {"playlistName": "...", "tracks": [...]}}
+    """
+    try:
+        data = request.get_json()
+        spotify_url = data.get("playlistUrl", "").strip()
 
-    scraper = MusicScraper()
+        if not spotify_url:
+            return jsonify({"event": "error", "data": {"message": "No URL provided"}}), 400
 
-    def generate():
-        try:
-            for event in scraper.scrape_playlist(spotify_playlist_link, download_path):
-                yield f"data: {json.dumps(event)}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'event': 'error', 'data': {'message': str(e)}})}\n\n"
+        # Detect URL type
+        url_type, item_id = detect_spotify_url_type(spotify_url)
 
-    return Response(generate(), mimetype="text/event-stream")
+        if url_type == "unknown" or not item_id:
+            return (
+                jsonify({"event": "error", "data": {"message": "Invalid Spotify URL"}}),
+                400,
+            )
 
+        client = get_playlist_client()
+        tracks: list[dict] = []
 
-@app.route("/api/download/<path:filename>")
-def download_file(filename):
-    """Endpoint to download a file."""
-    return send_from_directory(
-        directory=request.args.get("path", ""),
-        path=filename,
-        as_attachment=True,
-    )
+        if url_type == "track":
+            # Single track
+            api = SpotifyEmbedAPI()
+            track = api.get_track(item_id)
+            tracks.append(
+                {
+                    "id": track.spotify_id,
+                    "title": track.title,
+                    "artists": track.artists,
+                    "album": track.album or "",
+                    "cover": track.cover_url or "",
+                    "releaseDate": track.release_date or "",
+                    "downloadLink": "",  # No server-side downloads
+                }
+            )
+            playlist_name = f"{track.title} - {track.artists}"
+
+        else:
+            # Playlist
+            metadata = client.get_playlist_metadata(item_id)
+            playlist_name = f"{metadata.name} - {metadata.owner or 'Unknown'}"
+
+            # Fetch tracks with memory-efficient iteration
+            for track in client.iter_playlist_tracks(item_id):
+                tracks.append(
+                    {
+                        "id": track.spotify_id,
+                        "title": track.title,
+                        "artists": track.artists,
+                        "album": track.album or "",
+                        "cover": track.cover_url or "",
+                        "releaseDate": track.release_date or "",
+                        "downloadLink": "",  # No server-side downloads
+                    }
+                )
+
+                # Memory management for large playlists
+                if len(tracks) % 50 == 0:
+                    gc.collect()
+
+        # Final cleanup
+        gc.collect()
+
+        return jsonify(
+            {
+                "event": "complete",
+                "data": {
+                    "playlistName": playlist_name,
+                    "tracks": tracks,
+                },
+            }
+        )
+
+    except SpotifyDownAPIError as e:
+        return jsonify({"event": "error", "data": {"message": f"Spotify API error: {e}"}}), 500
+    except Exception as e:
+        return jsonify({"event": "error", "data": {"message": f"Error: {e}"}}), 500
 
 
 @app.route("/api/health")
 def health_check():
-    """Health check endpoint."""
-    return jsonify({"status": "ok"})
+    """Health check endpoint for monitoring."""
+    return jsonify({"status": "ok", "mode": "metadata-only"})
+
+
+@app.route("/")
+def index():
+    """Root endpoint with API info."""
+    return jsonify(
+        {
+            "name": "Sunnify API",
+            "version": "2.0.0",
+            "mode": "metadata-only",
+            "description": "Fetches Spotify metadata. For MP3 downloads, use the desktop app.",
+            "endpoints": {
+                "POST /api/scrape-playlist": "Fetch playlist/track metadata",
+                "GET /api/health": "Health check",
+            },
+        }
+    )
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

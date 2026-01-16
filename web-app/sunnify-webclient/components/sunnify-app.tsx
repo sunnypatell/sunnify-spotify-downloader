@@ -14,6 +14,8 @@ import {
   Disc3,
   Sparkles,
   ExternalLink,
+  Clock,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,6 +44,7 @@ export default function SunnifyApp() {
   const [statusMessage, setStatusMessage] = useState("Paste a Spotify URL to begin")
   const [tracks, setTracks] = useState<Track[]>([])
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null)
+  const [showBanner, setShowBanner] = useState(true)
 
   const handleProcess = async () => {
     if (!playlistLink) {
@@ -117,6 +120,27 @@ export default function SunnifyApp() {
           style: { background: "#1a1a1a", color: "#fff", border: "1px solid #333" },
         }}
       />
+
+      {/* Cold Start Banner */}
+      {showBanner && (
+        <div className="relative z-50 border-b border-amber-500/20 bg-amber-500/10 px-4 py-3 backdrop-blur-sm">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" />
+              <p className="text-sm text-amber-200">
+                <span className="font-semibold">Heads up:</span> The backend runs on a free server
+                that spins down after inactivity. First request may take 30-60 seconds to wake up.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowBanner(false)}
+              className="flex-shrink-0 rounded-lg p-1 text-amber-400 transition-colors hover:bg-amber-500/20"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="relative mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
