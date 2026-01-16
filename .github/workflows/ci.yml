@@ -11,9 +11,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r req.txt -r requirements-dev.txt
+          pip install pytest-mock
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
   python-quality:
     name: Python Quality
     runs-on: ubuntu-latest
+    needs: python-tests
     steps:
       - uses: actions/checkout@v4
 

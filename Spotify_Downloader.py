@@ -16,6 +16,7 @@ __version__ = "2.0.0"
 
 import os
 import sys
+import threading
 import webbrowser
 
 import requests
@@ -41,8 +42,11 @@ from PyQt5.QtWidgets import (
 from yt_dlp import YoutubeDL
 
 from spotifydown_api import (
+    ExtractionError,
+    NetworkError,
     PlaylistClient,
     PlaylistInfo,
+    RateLimitError,
     SpotifyDownAPIError,
     detect_spotify_url_type,
     extract_playlist_id,
@@ -95,12 +99,33 @@ class MusicScraper(QThread):
     count_updated = pyqtSignal(int)
     dlprogress_signal = pyqtSignal(int)
     Resetprogress_signal = pyqtSignal(int)
+    error_signal = pyqtSignal(str)  # Signal for error messages to UI
 
-    def __init__(self):
+    def __init__(self, cancel_event: threading.Event | None = None):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
         self.session = requests.Session()
         self.spotifydown_api = None
+        self._cancel_event = cancel_event or threading.Event()
+        self._failed_tracks: list[str] = []  # Track failed downloads
+
+    def is_cancelled(self) -> bool:
+        """Check if cancellation has been requested."""
+        return self._cancel_event.is_set()
+
+    def _get_user_friendly_error(self, error: Exception, track_title: str = "") -> str:
+        """Convert exception to user-friendly error message."""
+        if isinstance(error, RateLimitError):
+            return "Rate limited by Spotify - waiting..."
+        if isinstance(error, NetworkError):
+            return "Network error - retrying..."
+        if isinstance(error, ExtractionError):
+            return f"Could not access '{track_title}' - may be unavailable"
+        if "HTTP Error 429" in str(error):
+            return "YouTube rate limit - waiting..."
+        if "No video formats" in str(error) or "unavailable" in str(error).lower():
+            return f"'{track_title}' not found on YouTube"
+        return f"Error: {str(error)[:50]}"
 
     def ensure_spotifydown_api(self):
         if self.spotifydown_api is None:
@@ -199,6 +224,11 @@ class MusicScraper(QThread):
         playlist_folder_path = self.prepare_playlist_folder(music_folder, playlist_display_name)
 
         for track in spotify_api.iter_playlist_tracks(playlist_id):
+            # Check for cancellation before each track
+            if self.is_cancelled():
+                self.PlaylistCompleted.emit("Download cancelled")
+                return
+
             self.Resetprogress_signal.emit(0)
 
             track_title = track.title
@@ -233,11 +263,16 @@ class MusicScraper(QThread):
             try:
                 final_path = self.download_track_audio(search_query, filepath)
             except Exception as error_status:
+                error_msg = self._get_user_friendly_error(error_status, track_title)
+                self.error_signal.emit(error_msg)
                 print(f"[*] Error downloading '{track_title}': {error_status}")
+                self._failed_tracks.append(track_title)
                 continue
 
             if not final_path or not os.path.exists(final_path):
+                self.error_signal.emit(f"'{track_title}' - download failed")
                 print(f"[*] Download did not produce an audio file for: {track_title}")
+                self._failed_tracks.append(track_title)
                 continue
 
             song_meta["file"] = final_path
@@ -245,7 +280,11 @@ class MusicScraper(QThread):
             self.increment_counter()
             self.dlprogress_signal.emit(100)
 
-        self.PlaylistCompleted.emit("Download Complete!")
+        # Report completion with failed track count
+        if self._failed_tracks:
+            self.PlaylistCompleted.emit(f"Done! {len(self._failed_tracks)} track(s) failed")
+        else:
+            self.PlaylistCompleted.emit("Download Complete!")
 
     def returnSPOT_ID(self, link):
         """Extract playlist ID from Spotify URL."""
@@ -303,8 +342,9 @@ class MusicScraper(QThread):
         try:
             final_path = self.download_track_audio(search_query, filepath)
         except Exception as error_status:
+            error_msg = self._get_user_friendly_error(error_status, track_title)
             print(f"[*] Error downloading '{track_title}': {error_status}")
-            self.PlaylistCompleted.emit(f"Error: {error_status}")
+            self.PlaylistCompleted.emit(error_msg)
             return
 
         if not final_path or not os.path.exists(final_path):
@@ -327,11 +367,18 @@ class MusicScraper(QThread):
 class ScraperThread(QThread):
     progress_update = pyqtSignal(str)
 
-    def __init__(self, spotify_link, music_folder=None):
+    def __init__(
+        self, spotify_link, music_folder=None, cancel_event: threading.Event | None = None
+    ):
         super().__init__()
         self.spotify_link = spotify_link
         self.music_folder = music_folder or os.path.join(os.getcwd(), "music")
-        self.scraper = MusicScraper()
+        self._cancel_event = cancel_event or threading.Event()
+        self.scraper = MusicScraper(cancel_event=self._cancel_event)
+
+    def request_cancel(self):
+        """Request cancellation of the download."""
+        self._cancel_event.set()
 
     def run(self):
         self.progress_update.emit("Scraping started...")
@@ -442,7 +489,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._download_path_set = False  # Track if user has explicitly chosen a path
         self._active_threads = []  # Keep references to running threads to prevent GC crashes
         self._is_downloading = False  # Track download state for stop button
-        self._stop_requested = False  # Flag to signal threads to stop
+        self._cancel_event = threading.Event()  # Event for cooperative thread cancellation
 
         self.SONGINFORMATION.setGraphicsEffect(
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
@@ -558,12 +605,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             url_type, _ = detect_spotify_url_type(spotify_url)
             self.statusMsg.setText(f"Detected: {url_type}")
 
-            # Reset stop flag and set downloading state
-            self._stop_requested = False
+            # Reset cancel event and set downloading state
+            self._cancel_event = threading.Event()
             self._is_downloading = True
             self.DownloadBtn.setText("Stop")
 
-            self.scraper_thread = ScraperThread(spotify_url, self.download_path)
+            self.scraper_thread = ScraperThread(
+                spotify_url, self.download_path, cancel_event=self._cancel_event
+            )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
             self.scraper_thread.scraper.song_Album.connect(self.update_AlbumName)
@@ -574,12 +623,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.scraper_thread.scraper.PlaylistCompleted.connect(
                 lambda x: self.statusMsg.setText(x)
             )
+            self.scraper_thread.scraper.error_signal.connect(lambda x: self.statusMsg.setText(x))
 
             # Connect the count_updated signal to the update_counter slot
             self.scraper_thread.scraper.count_updated.connect(self.update_counter)
-
-            # Pass stop flag reference to scraper
-            self.scraper_thread.scraper._main_window = self
 
             self.scraper_thread.start()
 
@@ -589,14 +636,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.DownloadBtn.setText("Download")
 
     def _stop_download(self):
-        """Stop the current download gracefully."""
-        self._stop_requested = True
+        """Stop the current download gracefully using cooperative cancellation."""
         self.statusMsg.setText("Stopping download...")
 
-        # Terminate the scraper thread if running
+        # Signal cancellation via event (thread checks this periodically)
+        self._cancel_event.set()
+
+        # Wait for thread to finish gracefully
         if hasattr(self, "scraper_thread") and self.scraper_thread.isRunning():
-            self.scraper_thread.terminate()
-            self.scraper_thread.wait(2000)  # Wait up to 2 seconds
+            self.scraper_thread.request_cancel()
+            # Give thread time to finish current operation and exit cleanly
+            if not self.scraper_thread.wait(3000):  # Wait up to 3 seconds
+                # Only terminate as last resort if thread doesn't respond
+                self.scraper_thread.terminate()
+                self.scraper_thread.wait(1000)
 
         self._is_downloading = False
         self.DownloadBtn.setText("Download")

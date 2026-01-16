@@ -10,13 +10,17 @@ from Spotify's embed pages.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from typing import Callable, TypeVar
 
 import requests
+
+T = TypeVar("T")
 
 _DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -27,6 +31,50 @@ _DEFAULT_USER_AGENT = (
 
 class SpotifyDownAPIError(RuntimeError):
     """Raised when Spotify data cannot be fetched."""
+
+
+class NetworkError(SpotifyDownAPIError):
+    """Network/connectivity issues - typically retryable."""
+
+
+class ExtractionError(SpotifyDownAPIError):
+    """Failed to extract data from response - usually not retryable."""
+
+
+class RateLimitError(SpotifyDownAPIError):
+    """Rate limited by Spotify - should back off before retrying."""
+
+
+def retry_on_network_error(
+    max_attempts: int = 3,
+    backoff_factor: float = 1.0,
+    exceptions: tuple = (NetworkError, requests.Timeout, requests.ConnectionError),
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """Decorator to retry a function on network errors with exponential backoff.
+
+    Args:
+        max_attempts: Maximum number of attempts before giving up
+        backoff_factor: Multiplier for wait time between attempts (wait = backoff_factor * 2^attempt)
+        exceptions: Tuple of exception types to catch and retry
+    """
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> T:
+            last_exception = None
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_attempts - 1:
+                        wait_time = backoff_factor * (2**attempt)
+                        time.sleep(wait_time)
+            raise last_exception  # type: ignore
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass
@@ -88,24 +136,39 @@ class SpotifyEmbedAPI:
             "user-agent": _DEFAULT_USER_AGENT,
         }
 
+    @retry_on_network_error(max_attempts=3, backoff_factor=1.0)
     def _fetch_embed_data(self, url: str) -> dict:
-        """Fetch and parse __NEXT_DATA__ from any embed page."""
+        """Fetch and parse __NEXT_DATA__ from any embed page.
+
+        Raises:
+            NetworkError: For connection issues (retryable)
+            RateLimitError: When rate limited by Spotify (retryable with backoff)
+            ExtractionError: When page structure is unexpected (not retryable)
+        """
         try:
             response = self._session.get(url, headers=self._headers(), timeout=30)
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            raise NetworkError(f"Network error fetching embed page: {exc}") from exc
         except requests.RequestException as exc:
             raise SpotifyDownAPIError(f"Failed to fetch embed page: {exc}") from exc
 
+        if response.status_code == 429:
+            raise RateLimitError("Rate limited by Spotify - please wait before retrying")
+        if response.status_code in (401, 403):
+            raise ExtractionError(
+                f"Access denied (HTTP {response.status_code}) - playlist may be private"
+            )
         if response.status_code != 200:
-            raise SpotifyDownAPIError(f"Embed page returned HTTP {response.status_code}")
+            raise NetworkError(f"Embed page returned HTTP {response.status_code}")
 
         match = self._NEXT_DATA_PATTERN.search(response.text)
         if not match:
-            raise SpotifyDownAPIError("Could not find __NEXT_DATA__ in embed page")
+            raise ExtractionError("Could not find __NEXT_DATA__ in embed page")
 
         try:
             data = json.loads(match.group(1))
         except json.JSONDecodeError as exc:
-            raise SpotifyDownAPIError(f"Invalid JSON in __NEXT_DATA__: {exc}") from exc
+            raise ExtractionError(f"Invalid JSON in __NEXT_DATA__: {exc}") from exc
 
         # Cache the access token if present
         try:
@@ -123,7 +186,7 @@ class SpotifyEmbedAPI:
         try:
             return data["props"]["pageProps"]["state"]["data"]["entity"]
         except (KeyError, TypeError) as exc:
-            raise SpotifyDownAPIError(f"Unexpected embed page structure: {exc}") from exc
+            raise ExtractionError(f"Unexpected embed page structure: {exc}") from exc
 
     def _get_access_token(self, playlist_id: str) -> str | None:
         """Get a valid access token, refreshing if needed."""
@@ -578,8 +641,11 @@ def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
 
 
 __all__ = [
+    "ExtractionError",
+    "NetworkError",
     "PlaylistClient",
     "PlaylistInfo",
+    "RateLimitError",
     "SpotifyDownAPI",
     "SpotifyDownAPIError",
     "SpotifyEmbedAPI",
