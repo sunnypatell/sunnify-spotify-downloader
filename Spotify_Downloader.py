@@ -392,8 +392,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
 
-        # Default download path
-        self.download_path = os.path.join(os.getcwd(), "music")
+        # Default download path - use user's Music folder, not cwd (which is / on macOS bundles)
+        self.download_path = self._get_default_download_path()
+        self._download_path_set = False  # Track if user has explicitly chosen a path
 
         self.SONGINFORMATION.setGraphicsEffect(
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
@@ -407,20 +408,68 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Select_Home.clicked.connect(self.Linkedin)
         self.SettingsBtn.clicked.connect(self.open_settings)
 
+    def _get_default_download_path(self):
+        """Get a sensible default download path that's writable."""
+        # Try user's Music folder first
+        home = os.path.expanduser("~")
+        music_folder = os.path.join(home, "Music", "Sunnify")
+
+        # On Windows, Music might be in a different location
+        if sys.platform == "win32":
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders")
+                music_folder = os.path.join(winreg.QueryValueEx(key, "My Music")[0], "Sunnify")
+                winreg.CloseKey(key)
+            except Exception:
+                music_folder = os.path.join(home, "Music", "Sunnify")
+
+        return music_folder
+
+    def _ensure_download_path(self):
+        """Ensure download path exists and is writable. Returns True if valid."""
+        try:
+            os.makedirs(self.download_path, exist_ok=True)
+            # Test write access
+            test_file = os.path.join(self.download_path, ".sunnify_test")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            return True
+        except (OSError, IOError):
+            return False
+
+    def _prompt_download_location(self):
+        """Prompt user to select download location. Returns True if selected."""
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Download Folder",
+            os.path.expanduser("~"),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        )
+        if folder:
+            # Create Sunnify subfolder so downloads don't splatter everywhere
+            self.download_path = os.path.join(folder, "Sunnify")
+            self._download_path_set = True
+            return True
+        return False
+
     def open_settings(self):
         """Open settings dialog to choose download location."""
         folder = QFileDialog.getExistingDirectory(
             self,
             "Select Download Folder",
-            self.download_path,
+            self.download_path if os.path.exists(self.download_path) else os.path.expanduser("~"),
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
         if folder:
-            self.download_path = folder
+            self.download_path = os.path.join(folder, "Sunnify")
+            self._download_path_set = True
             QMessageBox.information(
                 self,
                 "Settings Updated",
-                f"Download location set to:\n{folder}",
+                f"Download location set to:\n{self.download_path}",
             )
 
     @pyqtSlot()
@@ -429,6 +478,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not spotify_url:
             self.statusMsg.setText("Please enter a Spotify URL")
             return
+
+        # On first download, prompt for location if default isn't writable
+        if not self._download_path_set:
+            if not self._ensure_download_path():
+                self.statusMsg.setText("Select download location...")
+                if not self._prompt_download_location():
+                    self.statusMsg.setText("Download cancelled - no folder selected")
+                    return
+
+        # Ensure the download path exists
+        if not self._ensure_download_path():
+            self.statusMsg.setText("Cannot write to download folder")
+            QMessageBox.warning(
+                self,
+                "Invalid Download Location",
+                f"Cannot write to:\n{self.download_path}\n\nPlease select a different folder.",
+            )
+            if not self._prompt_download_location():
+                return
 
         try:
             # Validate URL type
