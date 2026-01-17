@@ -15,6 +15,19 @@
 
 </div>
 
+> [!CAUTION]
+> **⚠️ EDUCATIONAL PROJECT DISCLAIMER**
+>
+> This software was developed as a **student portfolio project** for educational purposes only. It is intended to demonstrate software engineering skills including API integration, multi-threading, cross-platform development, and full-stack architecture.
+>
+> **By using this software, you acknowledge that:**
+> - You will only use it in jurisdictions where downloading copyrighted content for personal use is permitted
+> - You are responsible for complying with all applicable laws in your region
+> - This tool should only be used with content you own or have explicit permission to download
+> - The developer assumes no liability for misuse of this software
+>
+> **See [full disclaimer](#-legal-disclaimer) below.**
+
 <p align="center">
     <a href="#table-of-contents">Jump to Table of Contents</a>
 </p>
@@ -35,7 +48,7 @@
 10. Diagnostics
 11. Troubleshooting
 12. Notes and Roadmap
-13. Security and Legal
+13. **⚖️ Legal Disclaimer**
 14. Contributing and Community
 15. Author
 
@@ -365,11 +378,51 @@ Coming soon:
 
 <hr/>
 
-## Security and Legal
+## ⚖️ Legal Disclaimer
 
-⚠️ Educational use only. Ensure compliance with copyright laws in your jurisdiction. Do not use this project to infringe on rights holders.
+### Educational Purpose Statement
 
-See [SECURITY.md](SECURITY.md) for reporting vulnerabilities and [LICENSE](LICENSE) for license terms.
+**Sunnify was created as a student portfolio project** to demonstrate proficiency in:
+- Full-stack software development (Python, Flask, Next.js, PyQt5)
+- API design and reverse engineering
+- Multi-threaded application architecture
+- Cross-platform desktop application development
+- CI/CD pipelines and automated testing
+
+This project is provided **free of charge** as an open-source educational resource. It is not intended for commercial use or to facilitate copyright infringement.
+
+### Terms of Use
+
+By downloading, installing, or using this software, you agree to the following:
+
+1. **Personal Use Only**: This software is intended for downloading content you already own, have purchased, or have explicit permission to download. Downloading copyrighted material without authorization may violate laws in your jurisdiction.
+
+2. **Jurisdictional Compliance**: You are solely responsible for determining whether your use of this software complies with applicable laws in your country, state, or region. Some jurisdictions permit downloading copyrighted content for personal/backup purposes; others do not.
+
+3. **No Warranty**: This software is provided "as is" without warranty of any kind, express or implied. The developer makes no guarantees regarding functionality, reliability, or fitness for any particular purpose.
+
+4. **Limitation of Liability**: The developer shall not be held liable for any damages, legal consequences, or other liabilities arising from the use or misuse of this software. Users assume all risks associated with its use.
+
+5. **No Endorsement of Piracy**: This project does not endorse, encourage, or facilitate piracy or copyright infringement. It is designed as a technical demonstration and should be used responsibly and legally.
+
+### Fair Use & Research
+
+This project may be used for:
+- ✅ Downloading music you have purchased elsewhere for format-shifting
+- ✅ Creating personal backups of content you own
+- ✅ Educational research into API design and audio processing
+- ✅ Learning software development techniques
+- ❌ **NOT** for distributing copyrighted content
+- ❌ **NOT** for commercial purposes
+- ❌ **NOT** in jurisdictions where such downloads are prohibited
+
+### DMCA & Takedown Requests
+
+If you are a rights holder and believe this project infringes on your intellectual property, please contact `sunnypatel124555@gmail.com` with details, and I will respond promptly.
+
+### Security
+
+See [SECURITY.md](SECURITY.md) for reporting security vulnerabilities and [LICENSE](LICENSE) for license terms.
 
 <hr/>
 

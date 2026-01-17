@@ -1,15 +1,18 @@
 #
 """
-Copyright (C) Feb 2024 {Sunny Patel} <{sunnypatel124555@gmail.com}>
+Sunnify (Spotify Downloader)
+Copyright (C) 2024 Sunny Patel <sunnypatel124555@gmail.com>
 
-This file is part of the {Sunnify (Spotify Downloader)} project.
+EDUCATIONAL PROJECT DISCLAIMER:
+This software is a student portfolio project developed for educational purposes only.
+It is intended to demonstrate software engineering skills and is provided free of charge.
+Users are solely responsible for ensuring compliance with applicable laws in their jurisdiction.
+This software should only be used with content you own or have permission to download.
+See DISCLAIMER.md for full terms.
 
-The {Sunnify (Spotify Downloader)} project can not be copied, distributed, and/or modified without the express
-permission of {Sunny Patel} <{sunnypatel124555@gmail.com}>.
-
-For the program to work, the playlist URL pattern must be following the format of /playlist/abcdefghijklmnopqrstuvwxyz... (special chars)
-will not be registered in the URL as the regex does not specify that in the URL pattern. If the program stops working, email
-<{sunnypatel124555@gmail.com}> or open a fork req. in the repository.
+For the program to work, the playlist URL pattern must follow the format of
+/playlist/abcdefghijklmnopqrstuvwxyz... If the program stops working, email
+<sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
 __version__ = "2.0.0"
