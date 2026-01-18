@@ -26,7 +26,7 @@
 > - This tool should only be used with content you own or have explicit permission to download
 > - The developer assumes no liability for misuse of this software
 >
-> **See [full disclaimer](#-legal-disclaimer) below.**
+> **See [full disclaimer](#legal-disclaimer) below and read [DISCLAIMER.md](DISCLAIMER.md) for complete legal terms.**
 
 <p align="center">
     <a href="#table-of-contents">Jump to Table of Contents</a>
@@ -378,7 +378,12 @@ Coming soon:
 
 <hr/>
 
+<a name="legal-disclaimer"></a>
 ## ⚖️ Legal Disclaimer
+
+### ⚠️ THIS IS A STUDENT PORTFOLIO PROJECT - NOT A PIRACY TOOL
+
+> **IMPORTANT**: This software was developed solely as an educational demonstration of software engineering concepts. It exists to showcase technical skills for academic and portfolio purposes. **The developer does not condone, encourage, or support any form of copyright infringement or piracy.**
 
 ### Educational Purpose Statement
 
@@ -416,13 +421,27 @@ This project may be used for:
 - ❌ **NOT** for commercial purposes
 - ❌ **NOT** in jurisdictions where such downloads are prohibited
 
+### Acknowledgment of Responsibility
+
+By downloading, installing, or using this software, you acknowledge that:
+
+1. **You alone are responsible** for how you use this software
+2. **You will comply** with all applicable laws in your jurisdiction
+3. **You understand** that unauthorized downloading of copyrighted content may be illegal
+4. **You accept** that the developer bears no responsibility for your actions
+5. **You have read** and agree to the full terms in [DISCLAIMER.md](DISCLAIMER.md)
+
 ### DMCA & Takedown Requests
 
-If you are a rights holder and believe this project infringes on your intellectual property, please contact `sunnypatel124555@gmail.com` with details, and I will respond promptly.
+If you are a rights holder and believe this project infringes on your intellectual property, please contact `sunnypatel124555@gmail.com` with details, and I will respond promptly. **This project will comply with all valid takedown requests.**
 
 ### Security
 
 See [SECURITY.md](SECURITY.md) for reporting security vulnerabilities and [LICENSE](LICENSE) for license terms.
+
+### Final Note
+
+**If you are looking for a tool to pirate music, this is not it.** This project exists purely as a technical demonstration. The developer strongly encourages supporting artists by purchasing music through legitimate channels or using authorized streaming services. **Use this software responsibly and legally, or do not use it at all.**
 
 <hr/>
 

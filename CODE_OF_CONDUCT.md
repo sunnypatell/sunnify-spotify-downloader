@@ -1,5 +1,11 @@
 # Contributor Covenant Code of Conduct
 
+> **⚠️ Educational Project Notice**
+>
+> This Code of Conduct applies to the **Sunnify** repository, which is a **student portfolio project** created for educational and demonstration purposes only. This project does not condone, encourage, or facilitate copyright infringement or piracy. By participating in this community, you acknowledge the educational nature of this project and agree to use it only in compliance with applicable laws. See [DISCLAIMER.md](DISCLAIMER.md) for full legal terms.
+
+---
+
 ## My Pledge
 
 I, as a member, contributor, and leader, pledge to make participation in my community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.

@@ -230,9 +230,24 @@ cd web-app/sunnify-webclient && npx lint-staged
 
 ## Security and Legal
 
+> **⚠️ IMPORTANT: Educational Project Disclaimer**
+>
+> **Sunnify is a student portfolio project** developed for educational and demonstration purposes only. It exists to showcase software engineering skills including API integration, multi-threading, and cross-platform development.
+>
+> **By contributing to this project, you acknowledge that:**
+> - This project does not condone, encourage, or facilitate copyright infringement
+> - Contributions should focus on demonstrating technical concepts, not circumventing legal restrictions
+> - You will not submit code designed to evade detection, bypass DRM, or facilitate piracy
+> - The educational nature of this project must be preserved in all contributions
+>
+> **Do not submit contributions that:**
+> - Encourage or facilitate illegal use of the software
+> - Remove or weaken existing legal disclaimers
+> - Add features specifically designed for piracy purposes
+
 **Do not** open public issues for security vulnerabilities. Follow the process in [SECURITY.md](SECURITY.md).
 
-This project is for **educational use only**. See [LICENSE](LICENSE) for details.
+This project is for **educational use only**. See [LICENSE](LICENSE) and [DISCLAIMER.md](DISCLAIMER.md) for full legal terms.
 
 ---
 
