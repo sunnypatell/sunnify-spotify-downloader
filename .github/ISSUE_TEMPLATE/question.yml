@@ -21,7 +21,7 @@ body:
         - Desktop app setup/usage
         - Backend API setup/usage
         - Webclient setup/usage
-        - Provider strategy (Spotify API, mirrors, yt-dlp)
+        - Provider strategy (Spotify Embed API, yt-dlp)
         - Build/packaging
         - Contributing
         - Other

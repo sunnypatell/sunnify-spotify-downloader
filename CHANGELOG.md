@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added retry decorator with exponential backoff for network requests
 - User-friendly error messages in UI for common failure cases
 
-## [2.0.0] - 2025-01-15
+## [2.0.0] - 2026-01-15
 
 ### Added
 - Single track download support (not just playlists)

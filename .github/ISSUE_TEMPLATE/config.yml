@@ -6,6 +6,6 @@ contact_links:
   - name: Usage, setup, and troubleshooting guide
     url: https://github.com/sunnypatell/sunnify-spotify-downloader#readme
     about: Read the README for multi-path setup (desktop, backend, web), config, and diagnostics.
-  - name: API and mirror diagnostics
+  - name: API diagnostics
     url: https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/API_STATUS.md
-    about: Check external dependencies (Spotify Web API, mirrors, yt-dlp) and how to verify them.
+    about: Check external dependencies (Spotify Embed API, yt-dlp) and how to verify them.

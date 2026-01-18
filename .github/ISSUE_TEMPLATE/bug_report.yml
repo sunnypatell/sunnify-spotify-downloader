@@ -24,7 +24,7 @@ body:
     attributes:
       label: Version / Commit
       description: App version (see version.txt) and/or commit SHA
-      placeholder: e.g., 1.0.0, commit 0abc123
+      placeholder: e.g., 2.0.0, commit 0abc123
 
   - type: input
     id: os
@@ -49,14 +49,7 @@ body:
     attributes:
       label: API base used
       description: For webclient/backend issues, what API base is used?
-      placeholder: e.g., http://127.0.0.1:5000 or hosted Lambda URL
-
-  - type: input
-    id: mirrors
-    attributes:
-      label: SPOTIFYDOWN_BASE_URLS
-      description: If set, paste the exact value used (or state "default")
-      placeholder: https://api.spotifydown.com,https://spotimate.io/api
+      placeholder: e.g., http://127.0.0.1:5000 or hosted Render URL
 
   - type: textarea
     id: url_context

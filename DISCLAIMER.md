@@ -107,4 +107,4 @@ By downloading, installing, or using Sunnify, you confirm that you have read, un
 
 ---
 
-*Last updated: January 2025*
+*Last updated: January 2026*

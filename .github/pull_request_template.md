@@ -43,6 +43,7 @@ What changed and why? Include UX notes, endpoint changes, and config if relevant
 
 ```bash
 # examples
+pytest tests/ -v
 python scripts/check_api_status.py
 python Spotify_Downloader.py
 cd web-app/sunnify-backend && python app.py
@@ -68,6 +69,7 @@ Call out risk areas and how to revert if needed.
 - [ ] No new warnings introduced (or warnings are intentional and documented)
 
 ### Testing
+- [ ] I ran `pytest tests/ -v` and all tests pass
 - [ ] I ran `python scripts/check_api_status.py` or validated relevant endpoints
 - [ ] FFmpeg is on PATH (`ffmpeg -version`) and `yt-dlp` is up to date when desktop is affected
 - [ ] Tests or manual validation steps included
@@ -76,7 +78,8 @@ Call out risk areas and how to revert if needed.
 - [ ] Docs updated where behavior changed (README/CONTRIBUTING/etc.)
 - [ ] Backend changes documented in README or API docs
 
-### Security
-- [ ] I read the SECURITY and Legal sections to avoid adding risky functionality
+### Security and Legal
+- [ ] I read the SECURITY.md and Legal sections to avoid adding risky functionality
+- [ ] I understand this is an **educational project** and my contribution preserves that nature
 - [ ] Webclient changes use `NEXT_PUBLIC_API_BASE` instead of hardcoded URLs
 - [ ] No secrets, credentials, or sensitive data in the code
