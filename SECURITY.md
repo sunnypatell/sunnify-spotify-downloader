@@ -8,12 +8,13 @@
 
 ## Supported Versions
 
-We currently support the active development branch and the latest 1.x release line.
+We currently support the active development branch and the latest 2.x release line.
 
 | Version | Supported |
 | ------: | :-------: |
 | main    | ✅        |
-| 1.0.x   | ✅        |
+| 2.0.x   | ✅        |
+| 1.0.x   | ❌        |
 | < 1.0   | ❌        |
 
 ## Reporting a Vulnerability

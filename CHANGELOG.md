@@ -8,26 +8,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- GitHub Actions CI workflow for Python (ruff) and webclient (lint, typecheck, build)
-- CodeQL security scanning (weekly + on push/PR)
-- Stale issue/PR automation (60 days → stale, +7 → close)
-- Dependabot for automated dependency updates (pip, npm, github-actions)
-- CODEOWNERS for automatic review requests
-- EditorConfig for consistent editor settings
-- Pre-commit hooks for Python (ruff)
-- Husky + lint-staged for webclient pre-commit hooks
-- Prettier configuration for webclient
-- Question issue template
+- Unit test suite with pytest (43 tests covering API, downloader, backend)
+- Comprehensive legal disclaimers across all documentation
 
 ### Changed
-- Enhanced ESLint config with warning rules
-- Improved PR template with organized checklist sections
-- Modernized Python type annotations (dict vs Dict, X | None vs Optional)
-- Updated CONTRIBUTING.md with tooling setup instructions
+- Split CI workflow into separate tests.yml, lint.yml, webclient.yml for better visibility
+- Improved thread safety with cooperative cancellation (replaced unsafe terminate())
+- Added custom exception classes (NetworkError, ExtractionError, RateLimitError)
+- Added retry decorator with exponential backoff for network requests
+- User-friendly error messages in UI for common failure cases
+
+## [2.0.0] - 2025-01-15
+
+### Added
+- Single track download support (not just playlists)
+- Stop button for cancelling downloads mid-progress
+- Preview mode banner in webclient explaining desktop app requirement
+- Sponsor buttons in desktop app
+- Health check endpoint in backend API
+- Homebrew cask for macOS installation (`brew install --cask sunnypatell/tap/sunnify`)
+- Cross-platform release builds (Windows, macOS, Linux) via GitHub Actions
+- FFmpeg bundled with pre-built apps (zero-dependency install)
+- Redesigned webclient UI matching desktop app aesthetic
+- Cold start banner for free-tier backend delays
+
+### Changed
+- Switched from spotifydown mirrors to Spotify embed page API (more reliable)
+- Migrated backend from AWS Lambda to Render free tier
+- Improved FFmpeg detection (homebrew paths, system paths, bundled)
+- Modernized Python type annotations throughout codebase
+- Enhanced CI/CD with CodeQL scanning, Dependabot, stale automation
 
 ### Fixed
-- Bare except clauses replaced with specific exception types
-- Exception chaining added where missing
+- Read-only filesystem error on macOS app bundles
+- Threading crashes when stopping downloads
+- Meta tags timing issues
+- Cover URL extraction with playlist cover fallback
+- Cross-platform font compatibility
+
+### Technical
+- Python 3.9+ with modern type hints
+- Node 20+ for webclient
+- PyQt5 desktop app with PyInstaller packaging
+- Flask backend with SSE streaming
+- Next.js 14 + Tailwind + shadcn/ui webclient
 
 ## [1.0.0] - 2024-02-01
 
@@ -45,5 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/releases/tag/v1.0.0
