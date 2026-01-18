@@ -381,7 +381,7 @@ class Ui_MainWindow(object):
         self.label_7.setText(_translate("MainWindow", "Status   :"))
         self.PlaylistMsg_2.setText(_translate("MainWindow", "Spotify Song Name :"))
         self.Select_Home.setText(_translate("MainWindow", "Follow me on Linkedin"))
-        self.version.setText(_translate("MainWindow", "V2.0.0"))
+        self.version.setText(_translate("MainWindow", "V2.0.1"))
         self.label_10.setText(_translate("MainWindow", "Counter :"))
         self.CounterLabel.setText(_translate("MainWindow", "Songs downloaded 0"))
         self.showPreviewCheck.setText(_translate("MainWindow", "Show Preview"))
