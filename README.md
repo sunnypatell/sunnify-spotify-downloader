@@ -172,7 +172,11 @@ If you see "app is damaged" or "unidentified developer":
 ### Other Install Methods
 
 - **Python users**: `pip install -r req.txt` then `python Spotify_Downloader.py`
-- **Homebrew (macOS)**: `brew install --cask sunnypatell/sunnify-spotify-downloader/sunnify`
+- **Homebrew (macOS)**:
+  ```bash
+  brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader
+  brew install --cask sunnify
+  ```
 - **Web stack**: run the Flask backend and Next.js client under `web-app/`
 
 <hr/>

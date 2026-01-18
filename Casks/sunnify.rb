@@ -1,5 +1,7 @@
 # Homebrew Cask for Sunnify
-# Install: brew install --cask sunnypatell/sunnify-spotify-downloader/sunnify
+# Install:
+#   brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader
+#   brew install --cask sunnify
 
 cask "sunnify" do
   version "2.0.1"
