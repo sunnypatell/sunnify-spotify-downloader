@@ -15,7 +15,7 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 import os
 import sys

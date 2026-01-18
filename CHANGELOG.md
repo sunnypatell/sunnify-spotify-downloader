@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added retry decorator with exponential backoff for network requests
 - User-friendly error messages in UI for common failure cases
 
+## [2.0.1] - 2026-01-16
+
+### Fixed
+- Stop button now properly halts downloads mid-playlist
+- Resolved QThread crashes on rapid start/stop
+- Improved FFmpeg detection for Homebrew and system installs
+- Fixed meta tag writing timing issues
+- Fixed download prompt behavior
+
+### Added
+- Sponsor buttons to web app
+- Homebrew cask now declares FFmpeg dependency
+
+---
+
 ## [2.0.0] - 2026-01-15
 
 ### Added
@@ -69,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/releases/tag/v1.0.0
