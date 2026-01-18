@@ -180,3 +180,64 @@ jobs:
             artifacts/windows-build/Sunnify-Windows.exe
             artifacts/linux-build/Sunnify-Linux
             artifacts/macos-build/Sunnify-macOS.zip
+
+  update-homebrew:
+    name: Update Homebrew Cask
+    runs-on: ubuntu-latest
+    needs: [upload-release]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get macOS asset SHA256
+        id: get-sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Wait for release assets to be fully available
+          sleep 10
+
+          # Get the SHA256 from the release asset digest
+          SHA256=$(gh api repos/${{ github.repository }}/releases/tags/${{ github.event.inputs.tag }} \
+            --jq '.assets[] | select(.name == "Sunnify-macOS.zip") | .digest' | sed 's/sha256://')
+
+          if [ -z "$SHA256" ]; then
+            echo "Failed to get SHA256, calculating manually..."
+            gh release download ${{ github.event.inputs.tag }} --pattern "Sunnify-macOS.zip" --dir /tmp
+            SHA256=$(sha256sum /tmp/Sunnify-macOS.zip | cut -d' ' -f1)
+          fi
+
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA256"
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.tag }}"
+          VERSION="${VERSION#v}"  # Remove 'v' prefix
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Update cask file
+        run: |
+          # Update version
+          sed -i 's/version "[^"]*"/version "${{ steps.version.outputs.version }}"/' Casks/sunnify.rb
+
+          # Update SHA256
+          sed -i 's/sha256 "[^"]*"/sha256 "${{ steps.get-sha.outputs.sha256 }}"/' Casks/sunnify.rb
+
+          echo "Updated cask file:"
+          cat Casks/sunnify.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/sunnify.rb
+          git commit -m "chore(homebrew): auto-update cask to ${{ github.event.inputs.tag }}" || echo "No changes to commit"
+          git push origin main

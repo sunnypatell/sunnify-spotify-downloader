@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preview mode banner in webclient explaining desktop app requirement
 - Sponsor buttons in desktop app
 - Health check endpoint in backend API
-- Homebrew cask for macOS installation (`brew install --cask sunnypatell/tap/sunnify`)
+- Homebrew cask for macOS installation (`brew install --cask sunnypatell/sunnify-spotify-downloader/sunnify`)
 - Cross-platform release builds (Windows, macOS, Linux) via GitHub Actions
 - FFmpeg bundled with pre-built apps (zero-dependency install)
 - Redesigned webclient UI matching desktop app aesthetic
