@@ -427,9 +427,11 @@ export default function SunnifyApp() {
 
               <div className="mt-4 rounded-xl bg-black/40 p-3">
                 <p className="mb-1 text-xs font-semibold text-gray-500">Homebrew (macOS)</p>
-                <code className="text-xs text-green-400">
-                  brew install --cask sunnypatell/tap/sunnify
+                <code className="block text-xs text-green-400">
+                  brew tap sunnypatell/sunnify
+                  https://github.com/sunnypatell/sunnify-spotify-downloader
                 </code>
+                <code className="block text-xs text-green-400">brew install --cask sunnify</code>
               </div>
             </div>
           </div>
