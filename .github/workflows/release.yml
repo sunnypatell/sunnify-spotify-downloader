@@ -51,7 +51,7 @@ jobs:
           move dist\Sunnify.exe dist\Sunnify-Windows.exe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-build
           path: dist/Sunnify-Windows.exe
@@ -108,7 +108,7 @@ jobs:
           chmod +x dist/Sunnify-Linux
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-build
           path: dist/Sunnify-Linux
@@ -152,7 +152,7 @@ jobs:
           zip -r Sunnify-macOS.zip Sunnify.app
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-build
           path: dist/Sunnify-macOS.zip
