@@ -13,6 +13,7 @@ We currently support the active development branch and the latest 2.x release li
 | Version | Supported |
 | ------: | :-------: |
 | main    | ✅        |
+| 2.0.2   | ✅        |
 | 2.0.x   | ✅        |
 | 1.0.x   | ❌        |
 | < 1.0   | ❌        |

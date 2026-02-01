@@ -7,16 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-02-01
+
+### Fixed
+- resilient embed page extraction handles Spotify A/B testing structure changes (closes #27)
+- token extraction tries multiple JSON paths before giving up
+
 ### Added
-- Unit test suite with pytest (43 tests covering API, downloader, backend)
-- Comprehensive legal disclaimers across all documentation
+- `_deep_find()` and `_resolve_path()` helpers for flexible JSON traversal
+- comprehensive tests for alternative embed page structures
+- unit test suite with pytest (43+ tests covering API, downloader, backend)
+- comprehensive legal disclaimers across all documentation
 
 ### Changed
-- Split CI workflow into separate tests.yml, lint.yml, webclient.yml for better visibility
-- Improved thread safety with cooperative cancellation (replaced unsafe terminate())
-- Added custom exception classes (NetworkError, ExtractionError, RateLimitError)
-- Added retry decorator with exponential backoff for network requests
-- User-friendly error messages in UI for common failure cases
+- split CI workflow into separate tests.yml, lint.yml, webclient.yml for better visibility
+- improved thread safety with cooperative cancellation (replaced unsafe terminate())
+- added custom exception classes (NetworkError, ExtractionError, RateLimitError)
+- added retry decorator with exponential backoff for network requests
+- user-friendly error messages in UI for common failure cases
 
 ## [2.0.1] - 2026-01-16
 
@@ -84,7 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/releases/tag/v1.0.0

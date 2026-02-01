@@ -104,6 +104,78 @@ SAMPLE_TRACK_EMBED_HTML = """
 </html>
 """
 
+# Alternative structure: no "state" wrapper (Spotify A/B test variant)
+SAMPLE_EMBED_HTML_NO_STATE = """
+<!DOCTYPE html>
+<html>
+<head><title>Spotify Embed</title></head>
+<body>
+<script id="__NEXT_DATA__" type="application/json">
+{
+  "props": {
+    "pageProps": {
+      "data": {
+        "entity": {
+          "name": "Test Playlist",
+          "subtitle": "Test User",
+          "trackList": [
+            {
+              "uri": "spotify:track:abc123",
+              "title": "Test Song 1",
+              "subtitle": "Artist 1",
+              "duration": 180000
+            }
+          ]
+        }
+      },
+      "settings": {
+        "session": {
+          "accessToken": "token_no_state",
+          "accessTokenExpirationTimestampMs": 9999999999999
+        }
+      }
+    }
+  }
+}
+</script>
+</body>
+</html>
+"""
+
+# Alternative structure: entity directly under pageProps (flat)
+SAMPLE_EMBED_HTML_FLAT = """
+<!DOCTYPE html>
+<html>
+<head><title>Spotify Embed</title></head>
+<body>
+<script id="__NEXT_DATA__" type="application/json">
+{
+  "props": {
+    "pageProps": {
+      "entity": {
+        "name": "Flat Playlist",
+        "subtitle": "Flat User",
+        "trackList": [
+          {
+            "uri": "spotify:track:flat001",
+            "title": "Flat Song",
+            "subtitle": "Flat Artist",
+            "duration": 200000
+          }
+        ]
+      },
+      "session": {
+        "accessToken": "token_flat",
+        "accessTokenExpirationTimestampMs": 9999999999999
+      }
+    }
+  }
+}
+</script>
+</body>
+</html>
+"""
+
 # Sample spclient response for large playlists
 SAMPLE_SPCLIENT_RESPONSE = {
     "length": 150,
@@ -150,6 +222,18 @@ def sample_spclient_response():
 def sample_track_meta():
     """Return sample track metadata dict."""
     return dict(SAMPLE_TRACK_META)
+
+
+@pytest.fixture
+def sample_embed_html_no_state():
+    """Return sample embed HTML without 'state' wrapper."""
+    return SAMPLE_EMBED_HTML_NO_STATE
+
+
+@pytest.fixture
+def sample_embed_html_flat():
+    """Return sample embed HTML with flat entity structure."""
+    return SAMPLE_EMBED_HTML_FLAT
 
 
 @pytest.fixture

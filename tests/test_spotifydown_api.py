@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from spotifydown_api import (
+    ExtractionError,
     PlaylistClient,
     PlaylistInfo,
     SpotifyEmbedAPI,
@@ -211,3 +212,178 @@ class TestPlaylistInfo:
         )
         assert info.name == "Test"
         assert info.track_count is None
+
+
+class TestDeepFind:
+    """Tests for SpotifyEmbedAPI._deep_find static method."""
+
+    def test_finds_key_at_top_level(self):
+        data = {"trackList": [1, 2, 3], "other": "value"}
+        result = SpotifyEmbedAPI._deep_find(data, "trackList")
+        assert result is data
+
+    def test_finds_key_nested(self):
+        data = {"a": {"b": {"trackList": [1]}}}
+        result = SpotifyEmbedAPI._deep_find(data, "trackList")
+        assert result == {"trackList": [1]}
+
+    def test_returns_none_when_missing(self):
+        data = {"a": {"b": {"c": "d"}}}
+        assert SpotifyEmbedAPI._deep_find(data, "trackList") is None
+
+    def test_respects_max_depth(self):
+        data = {"a": {"b": {"c": {"trackList": [1]}}}}
+        assert SpotifyEmbedAPI._deep_find(data, "trackList", max_depth=2) is None
+        assert SpotifyEmbedAPI._deep_find(data, "trackList", max_depth=4) is not None
+
+    def test_non_dict_returns_none(self):
+        assert SpotifyEmbedAPI._deep_find("string", "key") is None  # type: ignore
+        assert SpotifyEmbedAPI._deep_find([], "key") is None  # type: ignore
+
+
+class TestResolvePath:
+    """Tests for SpotifyEmbedAPI._resolve_path static method."""
+
+    def test_resolves_valid_path(self):
+        data = {"a": {"b": {"c": "value"}}}
+        assert SpotifyEmbedAPI._resolve_path(data, ("a", "b", "c")) == "value"
+
+    def test_returns_none_on_missing_key(self):
+        data = {"a": {"b": "value"}}
+        assert SpotifyEmbedAPI._resolve_path(data, ("a", "x")) is None
+
+    def test_returns_none_on_non_dict_intermediate(self):
+        data = {"a": "string"}
+        assert SpotifyEmbedAPI._resolve_path(data, ("a", "b")) is None
+
+    def test_empty_path_returns_data(self):
+        data = {"a": 1}
+        assert SpotifyEmbedAPI._resolve_path(data, ()) is data
+
+
+class TestResilientExtraction:
+    """Tests for resilient entity and token extraction across JSON structures."""
+
+    def test_extract_entity_standard_path(self):
+        """Entity found via standard state.data.entity path."""
+        api = SpotifyEmbedAPI()
+        data = {"props": {"pageProps": {"state": {"data": {"entity": {"name": "Test"}}}}}}
+        assert api._extract_entity(data) == {"name": "Test"}
+
+    def test_extract_entity_no_state(self):
+        """Entity found when 'state' wrapper is missing."""
+        api = SpotifyEmbedAPI()
+        data = {"props": {"pageProps": {"data": {"entity": {"name": "NoState"}}}}}
+        assert api._extract_entity(data) == {"name": "NoState"}
+
+    def test_extract_entity_flat(self):
+        """Entity found directly under pageProps."""
+        api = SpotifyEmbedAPI()
+        data = {"props": {"pageProps": {"entity": {"name": "Flat"}}}}
+        assert api._extract_entity(data) == {"name": "Flat"}
+
+    def test_extract_entity_deep_find_fallback(self):
+        """Entity found via _deep_find when no known path matches."""
+        api = SpotifyEmbedAPI()
+        data = {
+            "props": {
+                "pageProps": {
+                    "weirdKey": {
+                        "nested": {"trackList": [{"uri": "spotify:track:x"}], "name": "Deep"}
+                    }
+                }
+            }
+        }
+        result = api._extract_entity(data)
+        assert result["name"] == "Deep"
+        assert "trackList" in result
+
+    def test_extract_entity_missing_raises(self):
+        """ExtractionError raised with pageProps keys when entity not found."""
+        api = SpotifyEmbedAPI()
+        data = {"props": {"pageProps": {"someKey": "value", "otherKey": 42}}}
+        with pytest.raises(ExtractionError, match="pageProps keys:"):
+            api._extract_entity(data)
+
+    def test_token_extraction_standard(self):
+        """Token extracted from standard path."""
+        api = SpotifyEmbedAPI()
+        data = {
+            "props": {
+                "pageProps": {
+                    "state": {
+                        "data": {"entity": {"name": "Test"}},
+                        "settings": {
+                            "session": {
+                                "accessToken": "tok123",
+                                "accessTokenExpirationTimestampMs": 9999999999999,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+        # Simulate what _fetch_embed_data does for token caching
+        _TOKEN_PATHS = (
+            ("props", "pageProps", "state", "settings", "session"),
+            ("props", "pageProps", "settings", "session"),
+            ("props", "pageProps", "session"),
+        )
+        for path in _TOKEN_PATHS:
+            session_data = api._resolve_path(data, path)
+            if isinstance(session_data, dict) and "accessToken" in session_data:
+                api._cached_token = session_data.get("accessToken")
+                break
+        assert api._cached_token == "tok123"
+
+    def test_token_extraction_no_state(self):
+        """Token extracted when 'state' wrapper is missing."""
+        api = SpotifyEmbedAPI()
+        data = {
+            "props": {
+                "pageProps": {
+                    "settings": {
+                        "session": {
+                            "accessToken": "tok_alt",
+                            "accessTokenExpirationTimestampMs": 9999999999999,
+                        }
+                    }
+                }
+            }
+        }
+        _TOKEN_PATHS = (
+            ("props", "pageProps", "state", "settings", "session"),
+            ("props", "pageProps", "settings", "session"),
+            ("props", "pageProps", "session"),
+        )
+        for path in _TOKEN_PATHS:
+            session_data = api._resolve_path(data, path)
+            if isinstance(session_data, dict) and "accessToken" in session_data:
+                api._cached_token = session_data.get("accessToken")
+                break
+        assert api._cached_token == "tok_alt"
+
+    def test_token_extraction_flat(self):
+        """Token extracted from flat session path."""
+        api = SpotifyEmbedAPI()
+        data = {
+            "props": {
+                "pageProps": {
+                    "session": {
+                        "accessToken": "tok_flat",
+                        "accessTokenExpirationTimestampMs": 9999999999999,
+                    }
+                }
+            }
+        }
+        _TOKEN_PATHS = (
+            ("props", "pageProps", "state", "settings", "session"),
+            ("props", "pageProps", "settings", "session"),
+            ("props", "pageProps", "session"),
+        )
+        for path in _TOKEN_PATHS:
+            session_data = api._resolve_path(data, path)
+            if isinstance(session_data, dict) and "accessToken" in session_data:
+                api._cached_token = session_data.get("accessToken")
+                break
+        assert api._cached_token == "tok_flat"

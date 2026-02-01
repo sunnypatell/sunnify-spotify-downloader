@@ -16,7 +16,7 @@ import re
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Callable, TypeVar
+from typing import Any, Callable, TypeVar
 
 import requests
 
@@ -129,6 +129,30 @@ class SpotifyEmbedAPI:
         self._cached_token: str | None = None
         self._token_expiry: float = 0
 
+    @staticmethod
+    def _deep_find(data: dict, key: str, max_depth: int = 6) -> dict | None:
+        """Recursively search for a dict containing the given key."""
+        if not isinstance(data, dict) or max_depth <= 0:
+            return None
+        if key in data:
+            return data
+        for v in data.values():
+            if isinstance(v, dict):
+                result = SpotifyEmbedAPI._deep_find(v, key, max_depth - 1)
+                if result is not None:
+                    return result
+        return None
+
+    @staticmethod
+    def _resolve_path(data: dict, path: tuple[str, ...]) -> Any:
+        """Traverse nested dicts along a key path, returning None on failure."""
+        result: Any = data
+        for key in path:
+            if not isinstance(result, dict):
+                return None
+            result = result.get(key)
+        return result
+
     def _headers(self) -> dict[str, str]:
         return {
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -170,23 +194,53 @@ class SpotifyEmbedAPI:
         except json.JSONDecodeError as exc:
             raise ExtractionError(f"Invalid JSON in __NEXT_DATA__: {exc}") from exc
 
-        # Cache the access token if present
-        try:
-            session_data = data["props"]["pageProps"]["state"]["settings"]["session"]
-            self._cached_token = session_data.get("accessToken")
-            expiry_ms = session_data.get("accessTokenExpirationTimestampMs", 0)
-            self._token_expiry = expiry_ms / 1000 if expiry_ms else 0
-        except (KeyError, TypeError):
-            pass
+        # Cache the access token if present (try multiple paths)
+        _TOKEN_PATHS = (
+            ("props", "pageProps", "state", "settings", "session"),
+            ("props", "pageProps", "settings", "session"),
+            ("props", "pageProps", "session"),
+        )
+        for path in _TOKEN_PATHS:
+            session_data = self._resolve_path(data, path)
+            if isinstance(session_data, dict) and "accessToken" in session_data:
+                self._cached_token = session_data.get("accessToken")
+                expiry_ms = session_data.get("accessTokenExpirationTimestampMs", 0)
+                self._token_expiry = expiry_ms / 1000 if expiry_ms else 0
+                break
 
         return data
 
+    _ENTITY_PATHS = (
+        ("props", "pageProps", "state", "data", "entity"),
+        ("props", "pageProps", "data", "entity"),
+        ("props", "pageProps", "entity"),
+    )
+
     def _extract_entity(self, data: dict) -> dict:
-        """Extract the entity data from __NEXT_DATA__."""
-        try:
-            return data["props"]["pageProps"]["state"]["data"]["entity"]
-        except (KeyError, TypeError) as exc:
-            raise ExtractionError(f"Unexpected embed page structure: {exc}") from exc
+        """Extract the entity data from __NEXT_DATA__.
+
+        Tries multiple known paths first, then falls back to recursive
+        search for dicts containing 'trackList' or a known entity 'type'.
+        This handles Spotify A/B testing different page structures.
+        """
+        for path in self._ENTITY_PATHS:
+            result = self._resolve_path(data, path)
+            if isinstance(result, dict):
+                return result
+
+        # Fallback: recursive search for entity-like dict
+        container = self._deep_find(data, "trackList")
+        if isinstance(container, dict) and "trackList" in container:
+            return container
+        container = self._deep_find(data, "type")
+        if isinstance(container, dict) and container.get("type") in ("playlist", "track"):
+            return container
+
+        page_props = self._resolve_path(data, ("props", "pageProps")) or {}
+        available_keys = list(page_props.keys())[:10] if isinstance(page_props, dict) else []
+        raise ExtractionError(
+            f"Could not find entity in embed page. pageProps keys: {available_keys}"
+        )
 
     def _get_access_token(self, playlist_id: str) -> str | None:
         """Get a valid access token, refreshing if needed."""
@@ -212,7 +266,7 @@ class SpotifyEmbedAPI:
         cover_art = entity.get("coverArt", {})
         sources = cover_art.get("sources", [])
         if sources:
-            cover_url = sources[-1].get("url") if sources else None
+            cover_url = sources[-1].get("url")
 
         # Get track count - try spclient for accurate count
         track_list = entity.get("trackList", [])
