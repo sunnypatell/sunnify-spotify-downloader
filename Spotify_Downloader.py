@@ -21,6 +21,9 @@ import os
 import sys
 import threading
 import webbrowser
+# Silenciar warnings de yt_dlp para una experiencia de usuario más limpia
+import logging
+logging.getLogger("yt_dlp").setLevel(logging.ERROR)
 
 import requests
 from mutagen.easyid3 import EasyID3
@@ -158,7 +161,6 @@ class MusicScraper(QThread):
         return playlist_folder
 
     def download_track_audio(self, search_query, destination):
-        # Check for FFmpeg first
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
             raise RuntimeError(
@@ -168,20 +170,29 @@ class MusicScraper(QThread):
 
         base, _ = os.path.splitext(destination)
         output_template = base + ".%(ext)s"
+
         ydl_opts = {
-            "format": "bestaudio/best",
+            "format": "bestaudio[ext=m4a]/bestaudio/best",  # m4a = menos recodificación
             "noplaylist": True,
             "quiet": True,
+            "no_warnings": True,                   # elimina JS runtime warnings
             "outtmpl": output_template,
             "ffmpeg_location": ffmpeg_path,
+            "socket_timeout": 15,                  # no cuelga si YouTube no responde
+            "retries": 2,                          # falla rápido en vez de reintentar 10 veces
+            "fragment_retries": 2,
+            "concurrent_fragment_downloads": 4,    # descarga el audio en 4 fragmentos paralelos
+            "http_chunk_size": 10485760,           # chunks de 10MB, más eficiente
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
-                    "preferredquality": "192",
+                    "preferredquality": "320",     # 320 kbps máxima calidad
                 }
             ],
+            "geo_bypass": True,                    # evita bloqueos regionales
         }
+
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
             if info.get("entries"):
