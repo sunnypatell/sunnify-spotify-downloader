@@ -9,20 +9,18 @@ It is intended to demonstrate software engineering skills and is provided free o
 Users are solely responsible for ensuring compliance with applicable laws in their jurisdiction.
 This software should only be used with content you own or have permission to download.
 See DISCLAIMER.md for full terms.
-
-For the program to work, the playlist URL pattern must follow the format of
-/playlist/abcdefghijklmnopqrstuvwxyz... If the program stops working, email
-<sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
 __version__ = "2.0.2"
 
+import json
+import logging
 import os
 import sys
 import threading
 import webbrowser
-# Silenciar warnings de yt_dlp para una experiencia de usuario más limpia
-import logging
+
+# Silenciar warnings de yt_dlp
 logging.getLogger("yt_dlp").setLevel(logging.ERROR)
 
 import requests
@@ -34,6 +32,7 @@ from PyQt5.QtCore import (
     QSize,
     Qt,
     QThread,
+    QTimer,
     pyqtSignal,
     pyqtSlot,
 )
@@ -60,39 +59,57 @@ from spotifydown_api import (
 )
 from Template import Ui_MainWindow
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Persistencia de configuración en disco (JSON simple, sin dependencias extra)
+# Guarda en: %APPDATA%\Sunnify\config.json  (Windows)
+#            ~/.config/Sunnify/config.json  (Linux/macOS)
+# ─────────────────────────────────────────────────────────────────────────────
+def _get_config_path() -> str:
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
+    config_dir = os.path.join(base, "Sunnify")
+    os.makedirs(config_dir, exist_ok=True)
+    return os.path.join(config_dir, "config.json")
+
+
+def load_config() -> dict:
+    path = _get_config_path()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_config(data: dict) -> None:
+    path = _get_config_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass  # No critical if save fails
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 def get_ffmpeg_path():
-    """Get path to FFmpeg - checks bundled first, then system paths."""
-    # Check bundled FFmpeg first (for PyInstaller builds)
     if getattr(sys, "frozen", False):
         base_path = sys._MEIPASS
-        if sys.platform == "win32":
-            ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg.exe")
-        else:
-            ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg")
+        ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
         if os.path.exists(ffmpeg):
             return os.path.join(base_path, "ffmpeg")
 
-    # Check common system paths (for homebrew/system installs)
     ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    common_paths = [
-        "/opt/homebrew/bin",  # macOS ARM homebrew
-        "/usr/local/bin",  # macOS Intel homebrew / Linux
-        "/usr/bin",  # Linux system
-    ]
-
-    for path in common_paths:
-        ffmpeg = os.path.join(path, ffmpeg_name)
-        if os.path.exists(ffmpeg):
+    for path in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]:
+        if os.path.exists(os.path.join(path, ffmpeg_name)):
             return path
 
-    # Check if ffmpeg is in PATH
     import shutil
-
-    ffmpeg_in_path = shutil.which("ffmpeg")
-    if ffmpeg_in_path:
-        return os.path.dirname(ffmpeg_in_path)
-
+    found = shutil.which("ffmpeg")
+    if found:
+        return os.path.dirname(found)
     return None
 
 
@@ -102,25 +119,23 @@ class MusicScraper(QThread):
     song_Album = pyqtSignal(str)
     song_meta = pyqtSignal(dict)
     add_song_meta = pyqtSignal(dict)
-    count_updated = pyqtSignal(int)
+    count_updated = pyqtSignal(int, int)   # (descargadas, total)   ← CAMBIO
     dlprogress_signal = pyqtSignal(int)
     Resetprogress_signal = pyqtSignal(int)
-    error_signal = pyqtSignal(str)  # Signal for error messages to UI
+    error_signal = pyqtSignal(str)
 
     def __init__(self, cancel_event: threading.Event | None = None):
         super().__init__()
-        self.counter = 0  # Initialize counter to zero
+        self.counter = 0
         self.session = requests.Session()
         self.spotifydown_api = None
         self._cancel_event = cancel_event or threading.Event()
-        self._failed_tracks: list[str] = []  # Track failed downloads
+        self._failed_tracks: list[str] = []
 
     def is_cancelled(self) -> bool:
-        """Check if cancellation has been requested."""
         return self._cancel_event.is_set()
 
     def _get_user_friendly_error(self, error: Exception, track_title: str = "") -> str:
-        """Convert exception to user-friendly error message."""
         if isinstance(error, RateLimitError):
             return "Rate limited by Spotify - waiting..."
         if isinstance(error, NetworkError):
@@ -139,7 +154,6 @@ class MusicScraper(QThread):
         return self.spotifydown_api
 
     def sanitize_text(self, text):
-        """Sanitize text for filename usage."""
         return sanitize_filename(text, allow_spaces=True)
 
     def format_playlist_name(self, metadata: PlaylistInfo):
@@ -147,15 +161,10 @@ class MusicScraper(QThread):
         return f"{metadata.name} - {owner}".strip(" -")
 
     def prepare_playlist_folder(self, base_folder, playlist_name):
-        if not os.path.exists(base_folder):
-            os.makedirs(base_folder)
+        os.makedirs(base_folder, exist_ok=True)
         safe_name = "".join(
-            character
-            for character in playlist_name
-            if character.isalnum() or character in [" ", "_"]
-        ).strip()
-        if not safe_name:
-            safe_name = "Sunnify Playlist"
+            c for c in playlist_name if c.isalnum() or c in [" ", "_"]
+        ).strip() or "Sunnify Playlist"
         playlist_folder = os.path.join(base_folder, safe_name)
         os.makedirs(playlist_folder, exist_ok=True)
         return playlist_folder
@@ -163,82 +172,58 @@ class MusicScraper(QThread):
     def download_track_audio(self, search_query, destination):
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
-            raise RuntimeError(
-                "FFmpeg not found! Install via: brew install ffmpeg (macOS) "
-                "or apt install ffmpeg (Linux)"
-            )
+            raise RuntimeError("FFmpeg not found!")
 
         base, _ = os.path.splitext(destination)
-        output_template = base + ".%(ext)s"
-
         ydl_opts = {
-            "format": "bestaudio[ext=m4a]/bestaudio/best",  # m4a = menos recodificación
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
             "noplaylist": True,
             "quiet": True,
-            "no_warnings": True,                   # elimina JS runtime warnings
-            "outtmpl": output_template,
+            "no_warnings": True,
+            "outtmpl": base + ".%(ext)s",
             "ffmpeg_location": ffmpeg_path,
-            "socket_timeout": 15,                  # no cuelga si YouTube no responde
-            "retries": 2,                          # falla rápido en vez de reintentar 10 veces
+            "socket_timeout": 15,
+            "retries": 2,
             "fragment_retries": 2,
-            "concurrent_fragment_downloads": 4,    # descarga el audio en 4 fragmentos paralelos
-            "http_chunk_size": 10485760,           # chunks de 10MB, más eficiente
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "320",     # 320 kbps máxima calidad
-                }
-            ],
-            "geo_bypass": True,                    # evita bloqueos regionales
+            "concurrent_fragment_downloads": 4,
+            "http_chunk_size": 10485760,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "320",
+            }],
+            "geo_bypass": True,
         }
-
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
             if info.get("entries"):
                 info = info["entries"][0]
-            expected_path = base + ".mp3"
-            if os.path.exists(expected_path):
-                return expected_path
+            expected = base + ".mp3"
+            if os.path.exists(expected):
+                return expected
             fallback = ydl.prepare_filename(info)
             if os.path.exists(fallback):
                 return fallback
         return base + ".mp3"
 
-    def download_http_file(self, url, destination):
-        response = self.session.get(url, stream=True, timeout=60)
-        response.raise_for_status()
-        total = int(response.headers.get("content-length", 0))
-        downloaded = 0
-        os.makedirs(os.path.dirname(destination), exist_ok=True)
-        with open(destination, "wb") as handle:
-            for chunk in response.iter_content(chunk_size=8192):
-                if not chunk:
-                    continue
-                handle.write(chunk)
-                downloaded += len(chunk)
-                if total:
-                    progress = int(downloaded / total * 100)
-                    self.dlprogress_signal.emit(progress)
-        return destination
-
     def scrape_playlist(self, spotify_playlist_link, music_folder):
-        playlist_id = self.returnSPOT_ID(spotify_playlist_link)
+        playlist_id = extract_playlist_id(spotify_playlist_link)
         self.PlaylistID.emit(playlist_id)
 
-        try:
-            spotify_api = self.ensure_spotifydown_api()
-        except SpotifyDownAPIError as exc:
-            raise RuntimeError(str(exc)) from exc
-
+        spotify_api = self.ensure_spotifydown_api()
         metadata = spotify_api.get_playlist_metadata(playlist_id)
         playlist_display_name = self.format_playlist_name(metadata)
         self.song_Album.emit(playlist_display_name)
 
         playlist_folder_path = self.prepare_playlist_folder(music_folder, playlist_display_name)
 
-        for track in spotify_api.iter_playlist_tracks(playlist_id):
-            # Check for cancellation before each track
+        # ── Obtener total de tracks ──────────────────────────────────────────
+        all_tracks = list(spotify_api.iter_playlist_tracks(playlist_id))
+        total = len(all_tracks)
+        # Emitir 0/total para que el contador aparezca desde el inicio
+        self.count_updated.emit(0, total)
+
+        for track in all_tracks:
             if self.is_cancelled():
                 self.PlaylistCompleted.emit("Download cancelled")
                 return
@@ -247,143 +232,107 @@ class MusicScraper(QThread):
 
             track_title = track.title
             artists = track.artists
-            sanitized_title = self.sanitize_text(track_title)
-            sanitized_artists = self.sanitize_text(artists)
-            filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+            filename = f"{self.sanitize_text(track_title)} - {self.sanitize_text(artists)}.mp3"
             filepath = os.path.join(playlist_folder_path, filename)
-
-            album_name = track.album or ""
-            release_date = track.release_date or ""
-            cover_url = track.cover_url or metadata.cover_url
 
             song_meta = {
                 "title": track_title,
                 "artists": artists,
-                "album": album_name,
-                "releaseDate": release_date,
-                "cover": cover_url or "",
+                "album": track.album or "",
+                "releaseDate": track.release_date or "",
+                "cover": track.cover_url or metadata.cover_url or "",
                 "file": filepath,
             }
-
             self.song_meta.emit(dict(song_meta))
 
             if os.path.exists(filepath):
                 self.add_song_meta.emit(song_meta)
-                self.increment_counter()
+                self.increment_counter(total)
                 continue
 
-            # Download via YouTube search (spotifydown mirrors are dead)
             search_query = f"ytsearch1:{track_title} {artists} audio"
             try:
                 final_path = self.download_track_audio(search_query, filepath)
-            except Exception as error_status:
-                error_msg = self._get_user_friendly_error(error_status, track_title)
-                self.error_signal.emit(error_msg)
-                print(f"[*] Error downloading '{track_title}': {error_status}")
+            except Exception as e:
+                self.error_signal.emit(self._get_user_friendly_error(e, track_title))
                 self._failed_tracks.append(track_title)
                 continue
 
             if not final_path or not os.path.exists(final_path):
-                self.error_signal.emit(f"'{track_title}' - download failed")
-                print(f"[*] Download did not produce an audio file for: {track_title}")
                 self._failed_tracks.append(track_title)
                 continue
 
             song_meta["file"] = final_path
             self.add_song_meta.emit(song_meta)
-            self.increment_counter()
+            self.increment_counter(total)
             self.dlprogress_signal.emit(100)
 
-        # Report completion with failed track count
         if self._failed_tracks:
-            self.PlaylistCompleted.emit(f"Done! {len(self._failed_tracks)} track(s) failed")
+            self.PlaylistCompleted.emit(f"Listo  ({len(self._failed_tracks)} fallaron)")
         else:
-            self.PlaylistCompleted.emit("Download Complete!")
-
-    def returnSPOT_ID(self, link):
-        """Extract playlist ID from Spotify URL."""
-        return extract_playlist_id(link)
+            self.PlaylistCompleted.emit("¡Listo!")
 
     def scrape_track(self, spotify_track_link, music_folder):
-        """Download a single track from Spotify."""
         url_type, track_id = detect_spotify_url_type(spotify_track_link)
         if url_type != "track":
             raise ValueError("Expected a track URL")
 
-        try:
-            spotify_api = self.ensure_spotifydown_api()
-        except SpotifyDownAPIError as exc:
-            raise RuntimeError(str(exc)) from exc
-
+        spotify_api = self.ensure_spotifydown_api()
         track = spotify_api.get_track(track_id)
         self.song_Album.emit("Single Track Download")
-
-        if not os.path.exists(music_folder):
-            os.makedirs(music_folder)
-
+        os.makedirs(music_folder, exist_ok=True)
         self.Resetprogress_signal.emit(0)
+        self.count_updated.emit(0, 1)
 
         track_title = track.title
         artists = track.artists
-        sanitized_title = self.sanitize_text(track_title)
-        sanitized_artists = self.sanitize_text(artists)
-        filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+        filename = f"{self.sanitize_text(track_title)} - {self.sanitize_text(artists)}.mp3"
         filepath = os.path.join(music_folder, filename)
-
-        album_name = track.album or ""
-        release_date = track.release_date or ""
-        cover_url = track.cover_url
 
         song_meta = {
             "title": track_title,
             "artists": artists,
-            "album": album_name,
-            "releaseDate": release_date,
-            "cover": cover_url or "",
+            "album": track.album or "",
+            "releaseDate": track.release_date or "",
+            "cover": track.cover_url or "",
             "file": filepath,
         }
-
         self.song_meta.emit(dict(song_meta))
 
         if os.path.exists(filepath):
             self.add_song_meta.emit(song_meta)
-            self.increment_counter()
-            self.PlaylistCompleted.emit("Track already exists!")
+            self.increment_counter(1)
+            self.PlaylistCompleted.emit("¡Listo!")
             return
 
-        # Download via YouTube search
         search_query = f"ytsearch1:{track_title} {artists} audio"
         try:
             final_path = self.download_track_audio(search_query, filepath)
-        except Exception as error_status:
-            error_msg = self._get_user_friendly_error(error_status, track_title)
-            print(f"[*] Error downloading '{track_title}': {error_status}")
-            self.PlaylistCompleted.emit(error_msg)
+        except Exception as e:
+            self.PlaylistCompleted.emit(self._get_user_friendly_error(e, track_title))
             return
 
         if not final_path or not os.path.exists(final_path):
-            print(f"[*] Download did not produce an audio file for: {track_title}")
-            self.PlaylistCompleted.emit("Download failed - no audio file produced")
+            self.PlaylistCompleted.emit("Download failed")
             return
 
         song_meta["file"] = final_path
         self.add_song_meta.emit(song_meta)
-        self.increment_counter()
+        self.increment_counter(1)
         self.dlprogress_signal.emit(100)
-        self.PlaylistCompleted.emit("Download Complete!")
+        self.PlaylistCompleted.emit("¡Listo!")
 
-    def increment_counter(self):
+    def increment_counter(self, total: int):
         self.counter += 1
-        self.count_updated.emit(self.counter)  # Emit the signal with the updated count
+        self.count_updated.emit(self.counter, total)
 
 
-# Scraper Thread
+# ─────────────────────────────────────────────────────────────────────────────
+
 class ScraperThread(QThread):
     progress_update = pyqtSignal(str)
 
-    def __init__(
-        self, spotify_link, music_folder=None, cancel_event: threading.Event | None = None
-    ):
+    def __init__(self, spotify_link, music_folder=None, cancel_event=None):
         super().__init__()
         self.spotify_link = spotify_link
         self.music_folder = music_folder or os.path.join(os.getcwd(), "music")
@@ -391,13 +340,11 @@ class ScraperThread(QThread):
         self.scraper = MusicScraper(cancel_event=self._cancel_event)
 
     def request_cancel(self):
-        """Request cancellation of the download."""
         self._cancel_event.set()
 
     def run(self):
         self.progress_update.emit("Scraping started...")
         try:
-            # Detect URL type and handle accordingly
             url_type, _ = detect_spotify_url_type(self.spotify_link)
             if url_type == "track":
                 self.scraper.scrape_track(self.spotify_link, self.music_folder)
@@ -408,7 +355,6 @@ class ScraperThread(QThread):
             self.progress_update.emit(f"{e}")
 
 
-# Download Song Cover Thread
 class DownloadCover(QThread):
     albumCover = pyqtSignal(object)
 
@@ -422,7 +368,6 @@ class DownloadCover(QThread):
             self.albumCover.emit(response.content)
 
 
-# Scraper Thread
 class WritingMetaTagsThread(QThread):
     tags_success = pyqtSignal(str)
 
@@ -430,19 +375,16 @@ class WritingMetaTagsThread(QThread):
         super().__init__()
         self.tags = tags
         self.filename = filename
-        self._cover_thread = None  # Keep reference to prevent GC
+        self._cover_thread = None
 
     def run(self):
         try:
-            print("[*] FileName : ", self.filename)
             audio = EasyID3(self.filename)
             audio["title"] = self.tags.get("title", "")
             audio["artist"] = self.tags.get("artists", "")
             audio["album"] = self.tags.get("album", "")
             audio["date"] = self.tags.get("releaseDate", "")
             audio.save()
-
-            # Only download cover if URL exists
             cover_url = self.tags.get("cover", "")
             if cover_url:
                 self._cover_thread = DownloadCover(cover_url)
@@ -465,7 +407,7 @@ class WritingMetaTagsThread(QThread):
 
 
 class DownloadThumbnail(QThread):
-    thumbnail_ready = pyqtSignal(bytes)  # Signal to safely update UI from main thread
+    thumbnail_ready = pyqtSignal(bytes)
 
     def __init__(self, url, main_UI):
         super().__init__()
@@ -481,53 +423,102 @@ class DownloadThumbnail(QThread):
             if response.status_code == 200:
                 self.thumbnail_ready.emit(response.content)
         except Exception:
-            pass  # Silently fail for thumbnails
+            pass
 
     def _update_ui(self, data):
-        """Update UI from main thread via signal."""
         pic = QImage()
         pic.loadFromData(data)
         self.main_UI.CoverImg.setPixmap(QPixmap(pic))
         self.main_UI.CoverImg.show()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Main Window
+# ─────────────────────────────────────────────────────────────────────────────
+
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
-        """MainWindow constructor"""
         super().__init__()
         self.setupUi(self)
 
-        # Default download path - use user's Music folder, not cwd (which is / on macOS bundles)
-        self.download_path = self._get_default_download_path()
-        self._download_path_set = False  # Track if user has explicitly chosen a path
-        self._active_threads = []  # Keep references to running threads to prevent GC crashes
-        self._is_downloading = False  # Track download state for stop button
-        self._cancel_event = threading.Event()  # Event for cooperative thread cancellation
+        # ── Cargar configuración guardada ──────────────────────────────────
+        self._config = load_config()
+        saved_path = self._config.get("download_path", "")
+        if saved_path and os.path.isdir(os.path.dirname(saved_path)):
+            self.download_path = saved_path
+            self._download_path_set = True
+        else:
+            self.download_path = self._get_default_download_path()
+            self._download_path_set = False
+
+        self._active_threads = []
+        self._is_downloading = False
+        self._cancel_event = threading.Event()
+
+        # ── Timer para animación de puntos suspensivos ─────────────────────
+        self._dot_count = 0
+        self._dot_timer = QTimer(self)
+        self._dot_timer.setInterval(400)
+        self._dot_timer.timeout.connect(self._tick_dots)
+        self._dot_base_msg = ""
+
+        # ── Cronómetro de descarga ─────────────────────────────────────────
+        self._elapsed_seconds = 0
+        self._chrono_timer = QTimer(self)
+        self._chrono_timer.setInterval(1000)      # cada segundo
+        self._chrono_timer.timeout.connect(self._tick_chrono)
 
         self.SONGINFORMATION.setGraphicsEffect(
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
         )
         self.PlaylistLink.returnPressed.connect(self.on_returnButton)
         self.DownloadBtn.clicked.connect(self.on_returnButton)
-
         self.showPreviewCheck.stateChanged.connect(self.show_preview)
-
         self.Closed.clicked.connect(self.exitprogram)
         self.Select_Home.clicked.connect(self.Linkedin)
         self.SettingsBtn.clicked.connect(self.open_settings)
 
+    # ── Animación de puntos en Status ─────────────────────────────────────
+    def _start_dots(self, base_msg: str):
+        self._dot_base_msg = base_msg
+        self._dot_count = 0
+        self._dot_timer.start()
+
+    def _stop_dots(self):
+        self._dot_timer.stop()
+
+    def _tick_dots(self):
+        self._dot_count = (self._dot_count % 3) + 1
+        self.statusMsg.setText(self._dot_base_msg + "." * self._dot_count)
+
+    # ── Cronómetro ────────────────────────────────────────────────────────
+    def _start_chrono(self):
+        self._elapsed_seconds = 0
+        self.timeLabel.setText("00:00:00")
+        self._chrono_timer.start()
+
+    def _stop_chrono(self):
+        self._chrono_timer.stop()
+
+    def _tick_chrono(self):
+        self._elapsed_seconds += 1
+        h = self._elapsed_seconds // 3600
+        m = (self._elapsed_seconds % 3600) // 60
+        s = self._elapsed_seconds % 60
+        self.timeLabel.setText(f"{h:02d}:{m:02d}:{s:02d}")
+
+    # ── Persistencia ──────────────────────────────────────────────────────
+    def _save_download_path(self):
+        self._config["download_path"] = self.download_path
+        save_config(self._config)
+
+    # ── Paths ──────────────────────────────────────────────────────────────
     def _get_default_download_path(self):
-        """Get a sensible default download path that's writable."""
-        # Try user's Music folder first
         home = os.path.expanduser("~")
         music_folder = os.path.join(home, "Music", "Sunnify")
-
-        # On Windows, Music might be in a different location
         if sys.platform == "win32":
             try:
                 import winreg
-
                 key = winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
@@ -535,15 +526,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 music_folder = os.path.join(winreg.QueryValueEx(key, "My Music")[0], "Sunnify")
                 winreg.CloseKey(key)
             except Exception:
-                music_folder = os.path.join(home, "Music", "Sunnify")
-
+                pass
         return music_folder
 
     def _ensure_download_path(self):
-        """Ensure download path exists and is writable. Returns True if valid."""
         try:
             os.makedirs(self.download_path, exist_ok=True)
-            # Test write access
             test_file = os.path.join(self.download_path, ".sunnify_test")
             with open(test_file, "w") as f:
                 f.write("test")
@@ -553,40 +541,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return False
 
     def _prompt_download_location(self):
-        """Prompt user to select download location. Returns True if selected."""
         folder = QFileDialog.getExistingDirectory(
-            self,
-            "Select Download Folder",
-            os.path.expanduser("~"),
+            self, "Select Download Folder", os.path.expanduser("~"),
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
         if folder:
-            # Create Sunnify subfolder so downloads don't splatter everywhere
             self.download_path = os.path.join(folder, "Sunnify")
             self._download_path_set = True
+            self._save_download_path()        # ← guardar inmediatamente
             return True
         return False
 
     def open_settings(self):
-        """Open settings dialog to choose download location."""
         folder = QFileDialog.getExistingDirectory(
-            self,
-            "Select Download Folder",
+            self, "Select Download Folder",
             self.download_path if os.path.exists(self.download_path) else os.path.expanduser("~"),
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
         if folder:
             self.download_path = os.path.join(folder, "Sunnify")
             self._download_path_set = True
+            self._save_download_path()        # ← guardar al cambiar en settings
             QMessageBox.information(
-                self,
-                "Settings Updated",
+                self, "Settings Updated",
                 f"Download location set to:\n{self.download_path}",
             )
 
+    # ── Botón Download / Stop ──────────────────────────────────────────────
     @pyqtSlot()
     def on_returnButton(self):
-        # If already downloading, stop the download
         if self._is_downloading:
             self._stop_download()
             return
@@ -596,33 +579,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.statusMsg.setText("Please enter a Spotify URL")
             return
 
-        # ALWAYS prompt for download location on first download
         if not self._download_path_set:
             self.statusMsg.setText("Select download location...")
             if not self._prompt_download_location():
                 self.statusMsg.setText("Download cancelled - no folder selected")
                 return
 
-        # Verify the selected path is still writable
         if not self._ensure_download_path():
             self.statusMsg.setText("Cannot write to download folder")
             QMessageBox.warning(
-                self,
-                "Invalid Download Location",
+                self, "Invalid Download Location",
                 f"Cannot write to:\n{self.download_path}\n\nPlease select a different folder.",
             )
             if not self._prompt_download_location():
                 return
 
         try:
-            # Validate URL type
             url_type, _ = detect_spotify_url_type(spotify_url)
             self.statusMsg.setText(f"Detected: {url_type}")
 
-            # Reset cancel event and set downloading state
             self._cancel_event = threading.Event()
             self._is_downloading = True
             self.DownloadBtn.setText("Stop")
+            self._start_chrono()                  # ← arranca el cronómetro
 
             self.scraper_thread = ScraperThread(
                 spotify_url, self.download_path, cancel_event=self._cancel_event
@@ -634,12 +613,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.scraper_thread.scraper.add_song_meta.connect(self.add_song_META)
             self.scraper_thread.scraper.dlprogress_signal.connect(self.update_song_progress)
             self.scraper_thread.scraper.Resetprogress_signal.connect(self.Reset_song_progress)
-            self.scraper_thread.scraper.PlaylistCompleted.connect(
-                lambda x: self.statusMsg.setText(x)
-            )
+            self.scraper_thread.scraper.PlaylistCompleted.connect(self.on_playlist_completed)
             self.scraper_thread.scraper.error_signal.connect(lambda x: self.statusMsg.setText(x))
-
-            # Connect the count_updated signal to the update_counter slot
             self.scraper_thread.scraper.count_updated.connect(self.update_counter)
 
             self.scraper_thread.start()
@@ -650,38 +625,48 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.DownloadBtn.setText("Download")
 
     def _stop_download(self):
-        """Stop the current download gracefully using cooperative cancellation."""
+        self._stop_dots()
+        self._stop_chrono()                       # ← detiene cronómetro
         self.statusMsg.setText("Stopping download...")
-
-        # Signal cancellation via event (thread checks this periodically)
         self._cancel_event.set()
-
-        # Wait for thread to finish gracefully
         if hasattr(self, "scraper_thread") and self.scraper_thread.isRunning():
             self.scraper_thread.request_cancel()
-            # Give thread time to finish current operation and exit cleanly
-            if not self.scraper_thread.wait(3000):  # Wait up to 3 seconds
-                # Only terminate as last resort if thread doesn't respond
+            if not self.scraper_thread.wait(3000):
                 self.scraper_thread.terminate()
                 self.scraper_thread.wait(1000)
-
         self._is_downloading = False
         self.DownloadBtn.setText("Download")
         self.statusMsg.setText("Download stopped")
 
     def thread_finished(self):
-        """Reset UI state when download thread finishes."""
         self._is_downloading = False
         self.DownloadBtn.setText("Download")
         if hasattr(self, "scraper_thread"):
-            self.scraper_thread.deleteLater()  # Clean up the thread properly
+            self.scraper_thread.deleteLater()
 
+    # ── Slots de UI ───────────────────────────────────────────────────────
     def update_progress(self, message):
+        self.statusMsg.setText(message)
+
+    @pyqtSlot(int, int)
+    def update_counter(self, count: int, total: int):
+        """Counter muestra solo el número X/total. Status muestra Descargando..."""
+        if total > 0:
+            self.CounterLabel.setText(f"{count}/{total}")
+            # Arrancar puntos solo al inicio (count==0) o mantenerlos si ya corren
+            if not self._dot_timer.isActive():
+                self._start_dots("Descargando")
+        else:
+            self.CounterLabel.setText(str(count))
+
+    @pyqtSlot(str)
+    def on_playlist_completed(self, message: str):
+        self._stop_dots()
+        self._stop_chrono()                       # ← detiene cronómetro al terminar
         self.statusMsg.setText(message)
 
     @pyqtSlot(dict)
     def update_song_META(self, song_meta):
-        """Update UI with current track info (called BEFORE download starts)."""
         if self.showPreviewCheck.isChecked():
             cover_url = song_meta.get("cover", "")
             if cover_url:
@@ -693,9 +678,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.AlbumText.setText(song_meta.get("album", ""))
             self.SongName.setText(song_meta.get("title", ""))
             self.YearText.setText(song_meta.get("releaseDate", ""))
-
-        self.MainSongName.setText(song_meta.get("title", "") + " - " + song_meta.get("artists", ""))
-        # NOTE: Meta tags are written in add_song_META (after file exists), not here
+        self.MainSongName.setText(
+            song_meta.get("title", "") + " - " + song_meta.get("artists", "")
+        )
 
     @pyqtSlot(dict)
     def add_song_META(self, song_meta):
@@ -707,17 +692,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             meta_thread.start()
 
     def _cleanup_thread(self, thread):
-        """Remove finished thread from active list."""
         if thread in self._active_threads:
             self._active_threads.remove(thread)
 
     @pyqtSlot(str)
     def update_AlbumName(self, AlbumName):
         self.AlbumName.setText("Playlist Name : " + AlbumName)
-
-    @pyqtSlot(int)
-    def update_counter(self, count):
-        self.CounterLabel.setText("Songs downloaded " + str(count))
 
     @pyqtSlot(int)
     def update_song_progress(self, progress):
@@ -729,7 +709,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SongDownloadprogressBar.setValue(0)
         self.SongDownloadprogress.setValue(0)
 
-    # DRAGGLESS INTERFACE
+    # ── Drag sin barra de título ───────────────────────────────────────────
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.m_drag = True
@@ -764,7 +744,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.animation.start()
 
     def show_preview(self, state):
-        if state == 2:  # 2 corresponds to checked state
+        if state == 2:
             self.preview_window = self.OpenSongInformation()
         else:
             self.CloseSongInformation()
@@ -776,7 +756,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         webbrowser.open("https://www.linkedin.com/in/sunny-patel-30b460204/")
 
 
-# Main
+# ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     Screen = MainWindow()
@@ -784,6 +764,5 @@ if __name__ == "__main__":
     Screen.setFixedWidth(825)
     Screen.setWindowFlags(Qt.FramelessWindowHint)
     Screen.setAttribute(Qt.WA_TranslucentBackground)
-    # Screen.setWindowTitle("Sunnify")
     Screen.show()
     sys.exit(app.exec())
