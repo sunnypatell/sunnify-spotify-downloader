@@ -14,353 +14,385 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(750, 500)
-        MainWindow.setStyleSheet("QFrame#frame, #SONGINFORMATION{\n"
-"    background-color: qlineargradient(spread:pad, x1:1.072045, y1:0.124, x2:0.368, y2:1, stop:0.227273 rgba(80, 214, 255, 155), stop:0.806818 rgba(112, 32,213,191));\n"
-"    border-radius:10px;\n"
-"}\n"
-"QPushButton#Closed{\n"
-"    background-color: rgba(0, 0,0, 0);\n"
-"    color:rgba(10,15,155,255);\n"
-"    \n"
-"    border-radius:5px;\n"
-"}\n"
-"QPushButton#Closed:hover{\n"
-"    color:rgba(250,223,11,255);\n"
-"}\n"
-"QPushButton#Closed:pressed{\n"
-"    padding-left:1px;\n"
-"    padding-top:1px;\n"
-"    background-color:rgba(150,123,111,255);\n"
-"}\n"
-"QLineEdit#PlaylistLink{\n"
-"    background-color:rgba(0,0,0,0);\n"
-"    border:2px solid rgba(0,0,0,0);\n"
-"    border-bottom-color: rgba(1,100,100,255);\n"
-"    color:rgb(0,0,0);\n"
-"    padding-bottom:7px;\n"
-"}\n"
-"\n"
-"\n"
-"QPushButton#Select_Home{\n"
-"    background-color: rgba(0, 0,0, 0);\n"
-"    color:rgba(10,15,155,255);\n"
-"    border-radius:5px;\n"
-"}\n"
-"\n"
-"QPushButton#Select_Home:hover{\n"
-"    color:rgba(250,223,11,255);\n"
-"}\n"
-"\n"
-"QPushButton#Select_Home:pressed{\n"
-"    padding-left:1px;\n"
-"    padding-top:1px;\n"
-"    background-color:rgba(150,123,111,255);\n"
-"}\n"
-"QPushButton#SettingsBtn{\n"
-"    background-color: rgba(0, 0,0, 0);\n"
-"    color:rgba(10,15,155,255);\n"
-"    border-radius:5px;\n"
-"}\n"
-"QPushButton#SettingsBtn:hover{\n"
-"    color:rgba(250,223,11,255);\n"
-"}\n"
-"QPushButton#SettingsBtn:pressed{\n"
-"    padding-left:1px;\n"
-"    padding-top:1px;\n"
-"    background-color:rgba(150,123,111,255);\n"
-"}\n"
-"QPushButton#DownloadBtn{\n"
-"    background-color: rgba(30, 215, 96, 200);\n"
-"    color: white;\n"
-"    border-radius: 5px;\n"
-"    font-weight: bold;\n"
-"}\n"
-"QPushButton#DownloadBtn:hover{\n"
-"    background-color: rgba(30, 215, 96, 255);\n"
-"}\n"
-"QPushButton#DownloadBtn:pressed{\n"
-"    padding-left:1px;\n"
-"    padding-top:1px;\n"
-"    background-color: rgba(20, 180, 80, 255);\n"
-"}\n"
-"")
+        MainWindow.resize(825, 550)
+
+        MainWindow.setStyleSheet("""
+            /* ── Panel izquierdo ── */
+            QFrame#frame {
+                background-color: #181818;
+                border-radius: 12px;
+                border: 1px solid #282828;
+            }
+
+            /* ── Panel derecho ── */
+            QFrame#SONGINFORMATION {
+                background-color: #1a1a1a;
+                border-radius: 12px;
+                border: 1px solid #282828;
+            }
+
+            /* ── Botón cerrar ── */
+            QPushButton#Closed {
+                background-color: #282828;
+                color: #b3b3b3;
+                border-radius: 10px;
+                font-weight: bold;
+            }
+            QPushButton#Closed:hover {
+                background-color: #E53935;
+                color: #ffffff;
+            }
+            QPushButton#Closed:pressed {
+                background-color: #c62828;
+            }
+
+            /* ── Botón settings ── */
+            QPushButton#SettingsBtn {
+                background-color: #282828;
+                color: #b3b3b3;
+                border-radius: 10px;
+            }
+            QPushButton#SettingsBtn:hover {
+                background-color: #1DB954;
+                color: #000000;
+            }
+            QPushButton#SettingsBtn:pressed {
+                background-color: #17a349;
+            }
+
+            /* ── Input URL ── */
+            QLineEdit#PlaylistLink {
+                background-color: #282828;
+                border: 2px solid #383838;
+                border-radius: 8px;
+                color: #ffffff;
+                padding: 4px 10px;
+                selection-background-color: #1DB954;
+            }
+            QLineEdit#PlaylistLink:focus {
+                border-color: #1DB954;
+                background-color: #2a2a2a;
+            }
+
+            /* ── Botón Download / Stop ── */
+            QPushButton#DownloadBtn {
+                background-color: #1DB954;
+                color: #000000;
+                border-radius: 8px;
+                font-weight: 700;
+            }
+            QPushButton#DownloadBtn:hover {
+                background-color: #1ed760;
+            }
+            QPushButton#DownloadBtn:pressed {
+                background-color: #17a349;
+                padding-top: 1px;
+            }
+
+            /* ── Botón LinkedIn ── */
+            QPushButton#Select_Home {
+                background-color: transparent;
+                color: #535353;
+                border: 1px solid #282828;
+                border-radius: 6px;
+            }
+            QPushButton#Select_Home:hover {
+                color: #1DB954;
+                border-color: #1DB954;
+            }
+
+            /* ── Labels ── */
+            QLabel {
+                color: #b3b3b3;
+                background-color: transparent;
+            }
+
+            /* ── Checkboxes ── */
+            QCheckBox {
+                color: #b3b3b3;
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 2px solid #535353;
+                background-color: #282828;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #1DB954;
+                border-color: #1DB954;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #1DB954;
+            }
+
+            /* ── Progress bars ── */
+            QProgressBar {
+                background-color: #282828;
+                border-radius: 2px;
+                border: none;
+            }
+            QProgressBar::chunk {
+                background-color: #1DB954;
+                border-radius: 2px;
+            }
+        """)
+        # ── Central widget ───────────────────────────────────────────────────
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.frame = QtWidgets.QFrame(self.centralwidget)
-        self.frame.setGeometry(QtCore.QRect(30, 20, 320, 460))
+        self.frame.setGeometry(QtCore.QRect(33, 22, 352, 506))
         self.frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame.setObjectName("frame")
+        self.version = QtWidgets.QLabel(self.frame)
+        self.version.setGeometry(QtCore.QRect(11, 11, 55, 22))
+        self.version.setFont(QtGui.QFont("Consolas", 9))
+        self.version.setStyleSheet("color: #535353;")
+        self.version.setObjectName("version")
+        # ── Título ──
         self.title = QtWidgets.QLabel(self.frame)
-        self.title.setGeometry(QtCore.QRect(60, 10, 200, 35))
-        self.title.setMaximumSize(QtCore.QSize(16777204, 16777215))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(16)
-        font.setBold(True)
-        font.setWeight(75)
-        self.title.setFont(font)
-        self.title.setScaledContents(True)
+        self.title.setGeometry(QtCore.QRect(66, 11, 220, 38))
+        font_title = QtGui.QFont("Segoe UI", 18)
+        font_title.setBold(True)
+        self.title.setFont(font_title)
         self.title.setAlignment(QtCore.Qt.AlignCenter)
+        self.title.setStyleSheet("color: #1DB954; letter-spacing: 2px;")
+        self.title.setScaledContents(True)
         self.title.setObjectName("title")
-        self.Closed = QtWidgets.QPushButton(self.frame)
-        self.Closed.setGeometry(QtCore.QRect(290, 10, 20, 20))
-        self.Closed.setMaximumSize(QtCore.QSize(20, 20))
-        font = QtGui.QFont()
-        font.setPointSize(10)
-        self.Closed.setFont(font)
-        self.Closed.setObjectName("Closed")
+        # ── Botón Settings ──
         self.SettingsBtn = QtWidgets.QPushButton(self.frame)
-        self.SettingsBtn.setGeometry(QtCore.QRect(265, 10, 20, 20))
-        self.SettingsBtn.setMaximumSize(QtCore.QSize(20, 20))
-        font = QtGui.QFont()
-        font.setPointSize(10)
-        self.SettingsBtn.setFont(font)
+        self.SettingsBtn.setGeometry(QtCore.QRect(292, 11, 22, 22))
+        self.SettingsBtn.setMaximumSize(QtCore.QSize(22, 22))
+        self.SettingsBtn.setFont(QtGui.QFont("Segoe UI", 11))
         self.SettingsBtn.setObjectName("SettingsBtn")
+        # ── Botón Cerrar ──
+        self.Closed = QtWidgets.QPushButton(self.frame)
+        self.Closed.setGeometry(QtCore.QRect(319, 11, 22, 22))
+        self.Closed.setMaximumSize(QtCore.QSize(22, 22))
+        self.Closed.setFont(QtGui.QFont("Segoe UI", 9, QtGui.QFont.Bold))
+        self.Closed.setObjectName("Closed")
+        # ── Autor ──
+        self.author = QtWidgets.QLabel(self.frame)
+        self.author.setGeometry(QtCore.QRect(33, 42, 286, 22))
+        self.author.setFont(QtGui.QFont("Segoe UI", 8))
+        self.author.setAlignment(QtCore.Qt.AlignCenter)
+        self.author.setStyleSheet("color: #535353;")
+        self.author.setObjectName("author")
+        # ── Separador ──
+        sep1 = QtWidgets.QFrame(self.frame)
+        sep1.setGeometry(QtCore.QRect(22, 68, 308, 1))
+        sep1.setStyleSheet("background-color: #282828;")
+        sep1.setFrameShape(QtWidgets.QFrame.HLine)
+        # ── Input URL ──
         self.PlaylistLink = QtWidgets.QLineEdit(self.frame)
-        self.PlaylistLink.setGeometry(QtCore.QRect(20, 65, 200, 40))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        font.setKerning(False)
-        self.PlaylistLink.setFont(font)
-        self.PlaylistLink.setMouseTracking(False)
-        self.PlaylistLink.setAcceptDrops(False)
-        self.PlaylistLink.setWhatsThis("Enter Spotify playlist Link")
-        self.PlaylistLink.setStyleSheet("")
-        self.PlaylistLink.setText("")
-        self.PlaylistLink.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignVCenter)
+        self.PlaylistLink.setGeometry(QtCore.QRect(22, 77, 220, 44))
+        self.PlaylistLink.setFont(QtGui.QFont("Segoe UI", 11))
         self.PlaylistLink.setClearButtonEnabled(True)
         self.PlaylistLink.setObjectName("PlaylistLink")
+        # ── Botón Download ──
         self.DownloadBtn = QtWidgets.QPushButton(self.frame)
-        self.DownloadBtn.setGeometry(QtCore.QRect(225, 70, 75, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(10)
-        font.setBold(True)
-        self.DownloadBtn.setFont(font)
+        self.DownloadBtn.setGeometry(QtCore.QRect(248, 77, 83, 44))
+        font_dl = QtGui.QFont("Segoe UI", 10)
+        font_dl.setBold(True)
+        self.DownloadBtn.setFont(font_dl)
         self.DownloadBtn.setObjectName("DownloadBtn")
+        # ── Separador ──
+        sep2 = QtWidgets.QFrame(self.frame)
+        sep2.setGeometry(QtCore.QRect(22, 127, 308, 1))
+        sep2.setStyleSheet("background-color: #282828;")
+        sep2.setFrameShape(QtWidgets.QFrame.HLine)
+        # ── Playlist Name ──
         self.AlbumName = QtWidgets.QLabel(self.frame)
-        self.AlbumName.setGeometry(QtCore.QRect(20, 115, 280, 25))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(10)
-        self.AlbumName.setFont(font)
+        self.AlbumName.setGeometry(QtCore.QRect(22, 132, 308, 28))
+        self.AlbumName.setFont(QtGui.QFont("Segoe UI", 10))
+        self.AlbumName.setStyleSheet("color: #ffffff;")
         self.AlbumName.setWordWrap(True)
         self.AlbumName.setObjectName("AlbumName")
-        self.author = QtWidgets.QLabel(self.frame)
-        self.author.setGeometry(QtCore.QRect(30, 38, 260, 20))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(8)
-        self.author.setFont(font)
-        self.author.setObjectName("author")
-        self.MainSongName = QtWidgets.QLabel(self.frame)
-        self.MainSongName.setGeometry(QtCore.QRect(20, 175, 280, 37))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.MainSongName.setFont(font)
-        self.MainSongName.setText("")
-        self.MainSongName.setScaledContents(True)
-        self.MainSongName.setAlignment(QtCore.Qt.AlignCenter)
-        self.MainSongName.setWordWrap(True)
-        self.MainSongName.setObjectName("MainSongName")
-        self.horizontalLayoutWidget_3 = QtWidgets.QWidget(self.frame)
-        self.horizontalLayoutWidget_3.setGeometry(QtCore.QRect(20, 280, 280, 27))
-        self.horizontalLayoutWidget_3.setObjectName("horizontalLayoutWidget_3")
-        self.horizontalLayout_3 = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget_3)
-        self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout_3.setSpacing(5)
-        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
-        self.label_7 = QtWidgets.QLabel(self.horizontalLayoutWidget_3)
-        self.label_7.setMinimumSize(QtCore.QSize(50, 0))
-        self.label_7.setMaximumSize(QtCore.QSize(60, 16777215))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.label_7.setFont(font)
-        self.label_7.setObjectName("label_7")
-        self.horizontalLayout_3.addWidget(self.label_7)
-        self.statusMsg = QtWidgets.QLabel(self.horizontalLayoutWidget_3)
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(10)
-        self.statusMsg.setFont(font)
-        self.statusMsg.setText("")
-        self.statusMsg.setObjectName("statusMsg")
-        self.horizontalLayout_3.addWidget(self.statusMsg)
+        # ── Spotify Song Name label ──
         self.PlaylistMsg_2 = QtWidgets.QLabel(self.frame)
-        self.PlaylistMsg_2.setGeometry(QtCore.QRect(20, 145, 280, 25))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(10)
-        self.PlaylistMsg_2.setFont(font)
+        self.PlaylistMsg_2.setGeometry(QtCore.QRect(22, 161, 308, 22))
+        self.PlaylistMsg_2.setFont(QtGui.QFont("Segoe UI", 10))
+        self.PlaylistMsg_2.setStyleSheet("color: #535353;")
         self.PlaylistMsg_2.setWordWrap(True)
         self.PlaylistMsg_2.setObjectName("PlaylistMsg_2")
-        self.Select_Home = QtWidgets.QPushButton(self.frame)
-        self.Select_Home.setGeometry(QtCore.QRect(20, 420, 280, 25))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.Select_Home.sizePolicy().hasHeightForWidth())
-        self.Select_Home.setSizePolicy(sizePolicy)
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.Select_Home.setFont(font)
-        self.Select_Home.setFocusPolicy(QtCore.Qt.StrongFocus)
-        self.Select_Home.setObjectName("Select_Home")
-        self.version = QtWidgets.QLabel(self.frame)
-        self.version.setGeometry(QtCore.QRect(10, 10, 50, 20))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(9)
-        self.version.setFont(font)
-        self.version.setObjectName("version")
+        # ── Nombre canción actual ──
+        self.MainSongName = QtWidgets.QLabel(self.frame)
+        self.MainSongName.setGeometry(QtCore.QRect(22, 183, 308, 41))
+        font_song = QtGui.QFont("Segoe UI", 11)
+        font_song.setBold(True)
+        self.MainSongName.setFont(font_song)
+        self.MainSongName.setText("")
+        self.MainSongName.setAlignment(QtCore.Qt.AlignCenter)
+        self.MainSongName.setWordWrap(True)
+        self.MainSongName.setStyleSheet("color: #ffffff;")
+        self.MainSongName.setObjectName("MainSongName")
+        # ── Checkboxes ──
+        self.horizontalLayoutWidget_5 = QtWidgets.QWidget(self.frame)
+        self.horizontalLayoutWidget_5.setGeometry(QtCore.QRect(22, 236, 308, 30))
+        self.horizontalLayoutWidget_5.setObjectName("horizontalLayoutWidget_5")
+        self.Options = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget_5)
+        self.Options.setContentsMargins(0, 0, 0, 0)
+        self.Options.setSpacing(22)
+        self.Options.setObjectName("Options")
+        font_chk = QtGui.QFont("Segoe UI", 10)
+        self.showPreviewCheck = QtWidgets.QCheckBox(self.horizontalLayoutWidget_5)
+        self.showPreviewCheck.setFont(font_chk)
+        self.showPreviewCheck.setObjectName("showPreviewCheck")
+        self.Options.addWidget(self.showPreviewCheck)
+
+        self.AddMetaDataCheck = QtWidgets.QCheckBox(self.horizontalLayoutWidget_5)
+        self.AddMetaDataCheck.setFont(font_chk)
+        self.AddMetaDataCheck.setObjectName("AddMetaDataCheck")
+        self.Options.addWidget(self.AddMetaDataCheck)
+        self.Options.addStretch()
+        # ── Counter row ──
         self.horizontalLayoutWidget_4 = QtWidgets.QWidget(self.frame)
-        self.horizontalLayoutWidget_4.setGeometry(QtCore.QRect(20, 250, 280, 27))
+        self.horizontalLayoutWidget_4.setGeometry(QtCore.QRect(22, 275, 308, 30))
         self.horizontalLayoutWidget_4.setObjectName("horizontalLayoutWidget_4")
         self.counterBox = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget_4)
         self.counterBox.setContentsMargins(0, 0, 0, 0)
         self.counterBox.setSpacing(5)
         self.counterBox.setObjectName("counterBox")
         self.label_10 = QtWidgets.QLabel(self.horizontalLayoutWidget_4)
-        self.label_10.setMinimumSize(QtCore.QSize(60, 0))
-        self.label_10.setMaximumSize(QtCore.QSize(70, 16777215))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.label_10.setFont(font)
+        self.label_10.setMinimumSize(QtCore.QSize(66, 0))
+        self.label_10.setMaximumSize(QtCore.QSize(77, 16777215))
+        self.label_10.setFont(QtGui.QFont("Segoe UI", 11))
+        self.label_10.setStyleSheet("color: #1DB954;")
         self.label_10.setObjectName("label_10")
         self.counterBox.addWidget(self.label_10)
         self.CounterLabel = QtWidgets.QLabel(self.horizontalLayoutWidget_4)
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(10)
-        self.CounterLabel.setFont(font)
+        self.CounterLabel.setFont(QtGui.QFont("Segoe UI", 10))
+        self.CounterLabel.setStyleSheet("color: #ffffff;")
         self.CounterLabel.setObjectName("CounterLabel")
         self.counterBox.addWidget(self.CounterLabel)
-        self.horizontalLayoutWidget_5 = QtWidgets.QWidget(self.frame)
-        self.horizontalLayoutWidget_5.setGeometry(QtCore.QRect(20, 220, 280, 27))
-        self.horizontalLayoutWidget_5.setObjectName("horizontalLayoutWidget_5")
-        self.Options = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget_5)
-        self.Options.setContentsMargins(0, 0, 0, 0)
-        self.Options.setSpacing(20)
-        self.Options.setObjectName("Options")
-        self.showPreviewCheck = QtWidgets.QCheckBox(self.horizontalLayoutWidget_5)
-        self.showPreviewCheck.setObjectName("showPreviewCheck")
-        self.Options.addWidget(self.showPreviewCheck)
-        self.AddMetaDataCheck = QtWidgets.QCheckBox(self.horizontalLayoutWidget_5)
-        self.AddMetaDataCheck.setObjectName("AddMetaDataCheck")
-        self.Options.addWidget(self.AddMetaDataCheck)
+        # ── Status row ──
+        self.horizontalLayoutWidget_3 = QtWidgets.QWidget(self.frame)
+        self.horizontalLayoutWidget_3.setGeometry(QtCore.QRect(22, 308, 308, 30))
+        self.horizontalLayoutWidget_3.setObjectName("horizontalLayoutWidget_3")
+        self.horizontalLayout_3 = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget_3)
+        self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
+        self.horizontalLayout_3.setSpacing(5)
+        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
+        self.label_7 = QtWidgets.QLabel(self.horizontalLayoutWidget_3)
+        self.label_7.setMinimumSize(QtCore.QSize(55, 0))
+        self.label_7.setMaximumSize(QtCore.QSize(66, 16777215))
+        self.label_7.setFont(QtGui.QFont("Segoe UI", 11))
+        self.label_7.setStyleSheet("color: #1DB954;")
+        self.label_7.setObjectName("label_7")
+        self.horizontalLayout_3.addWidget(self.label_7)
+        self.statusMsg = QtWidgets.QLabel(self.horizontalLayoutWidget_3)
+        self.statusMsg.setFont(QtGui.QFont("Segoe UI", 10))
+        self.statusMsg.setText("")
+        self.statusMsg.setStyleSheet("color: #b3b3b3;")
+        self.statusMsg.setObjectName("statusMsg")
+        self.horizontalLayout_3.addWidget(self.statusMsg)
+        # ── Progress bar principal ──
         self.SongDownloadprogress = QtWidgets.QProgressBar(self.frame)
-        self.SongDownloadprogress.setGeometry(QtCore.QRect(20, 410, 280, 5))
-        font = QtGui.QFont()
-        font.setPointSize(1)
-        self.SongDownloadprogress.setFont(font)
+        self.SongDownloadprogress.setGeometry(QtCore.QRect(22, 451, 308, 5))
+        self.SongDownloadprogress.setFont(QtGui.QFont("Segoe UI", 1))
         self.SongDownloadprogress.setProperty("value", 0)
         self.SongDownloadprogress.setTextVisible(False)
         self.SongDownloadprogress.setObjectName("SongDownloadprogress")
+        # ── Botón LinkedIn ──
+        self.Select_Home = QtWidgets.QPushButton(self.frame)
+        self.Select_Home.setGeometry(QtCore.QRect(22, 462, 308, 28))
+        self.Select_Home.setSizePolicy(
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        )
+        self.Select_Home.setFont(QtGui.QFont("Segoe UI", 11))
+        self.Select_Home.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self.Select_Home.setObjectName("Select_Home")
+        # ══════════════════════════════════════════════════════════════════════
+        # PANEL DERECHO  — empieza colapsado (ancho=0)
+        # Posición: x=380, y=22
+        # Tamaño abierto: 413 x 506  (original 375x460 +10%)
+        # ══════════════════════════════════════════════════════════════════════
         self.SONGINFORMATION = QtWidgets.QFrame(self.centralwidget)
-        self.SONGINFORMATION.setGeometry(QtCore.QRect(345, 30, 0, 440))
-        self.SONGINFORMATION.setStyleSheet("")
+        self.SONGINFORMATION.setGeometry(QtCore.QRect(380, 22, 0, 506))
         self.SONGINFORMATION.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.SONGINFORMATION.setFrameShadow(QtWidgets.QFrame.Raised)
         self.SONGINFORMATION.setObjectName("SONGINFORMATION")
+        # ── "Song Information" title ──
         self.label_3 = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.label_3.setGeometry(QtCore.QRect(45, 10, 190, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(15)
-        font.setBold(False)
-        font.setItalic(False)
-        font.setUnderline(True)
-        font.setWeight(50)
-        self.label_3.setFont(font)
-        self.label_3.setToolTipDuration(0)
-        self.label_3.setStyleSheet("")
+        self.label_3.setGeometry(QtCore.QRect(50, 11, 209, 33))
+        font_si = QtGui.QFont("Segoe UI", 15)
+        font_si.setUnderline(True)
+        self.label_3.setFont(font_si)
+        self.label_3.setStyleSheet("color: #ffffff;")
         self.label_3.setAlignment(QtCore.Qt.AlignCenter)
-        self.label_3.setIndent(0)
         self.label_3.setObjectName("label_3")
-        self.label_6 = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.label_6.setGeometry(QtCore.QRect(10, 210, 75, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.label_6.setFont(font)
-        self.label_6.setObjectName("label_6")
-        self.label_11 = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.label_11.setGeometry(QtCore.QRect(10, 240, 75, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.label_11.setFont(font)
-        self.label_11.setObjectName("label_11")
-        self.label_8 = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.label_8.setGeometry(QtCore.QRect(10, 270, 75, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.label_8.setFont(font)
-        self.label_8.setObjectName("label_8")
-        self.YearText = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.YearText.setGeometry(QtCore.QRect(90, 210, 180, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.YearText.setFont(font)
-        self.YearText.setWordWrap(True)
-        self.YearText.setObjectName("YearText")
-        self.ArtistNameText = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.ArtistNameText.setGeometry(QtCore.QRect(90, 240, 180, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.ArtistNameText.setFont(font)
-        self.ArtistNameText.setWordWrap(True)
-        self.ArtistNameText.setObjectName("ArtistNameText")
-        self.AlbumText = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.AlbumText.setGeometry(QtCore.QRect(90, 270, 180, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.AlbumText.setFont(font)
-        self.AlbumText.setWordWrap(True)
-        self.AlbumText.setObjectName("AlbumText")
-        self.SongDownloadprogressBar = QtWidgets.QProgressBar(self.SONGINFORMATION)
-        self.SongDownloadprogressBar.setGeometry(QtCore.QRect(23, 313, 230, 4))
-        font = QtGui.QFont()
-        font.setPointSize(1)
-        self.SongDownloadprogressBar.setFont(font)
-        self.SongDownloadprogressBar.setProperty("value", 0)
-        self.SongDownloadprogressBar.setTextVisible(False)
-        self.SongDownloadprogressBar.setObjectName("SongDownloadprogressBar")
+        # ── Cover art ──
         self.CoverImg = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.CoverImg.setGeometry(QtCore.QRect(78, 53, 120, 120))
+        self.CoverImg.setGeometry(QtCore.QRect(86, 58, 132, 132))
         self.CoverImg.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.CoverImg.setFrameShadow(QtWidgets.QFrame.Raised)
         self.CoverImg.setLineWidth(2)
         self.CoverImg.setText("")
         self.CoverImg.setScaledContents(True)
-        self.CoverImg.setIndent(-1)
+        self.CoverImg.setStyleSheet("border-radius: 8px; border: 2px solid #282828;")
         self.CoverImg.setObjectName("CoverImg")
+        # ── Metadata rows ──
+        font_lbl = QtGui.QFont("Segoe UI", 11)
+        font_val = QtGui.QFont("Segoe UI", 11)
+        # Song
+        self.label_9 = QtWidgets.QLabel(self.SONGINFORMATION)
+        self.label_9.setGeometry(QtCore.QRect(11, 198, 83, 33))
+        self.label_9.setFont(font_lbl)
+        self.label_9.setStyleSheet("color: #1DB954;")
+        self.label_9.setObjectName("label_9")
         self.SongName = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.SongName.setGeometry(QtCore.QRect(90, 180, 180, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.SongName.setFont(font)
+        self.SongName.setGeometry(QtCore.QRect(99, 198, 198, 33))
+        self.SongName.setFont(font_val)
+        self.SongName.setStyleSheet("color: #ffffff;")
         self.SongName.setWordWrap(True)
         self.SongName.setObjectName("SongName")
-        self.label_9 = QtWidgets.QLabel(self.SONGINFORMATION)
-        self.label_9.setGeometry(QtCore.QRect(10, 180, 75, 30))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(11)
-        self.label_9.setFont(font)
-        self.label_9.setObjectName("label_9")
+        # Released
+        self.label_6 = QtWidgets.QLabel(self.SONGINFORMATION)
+        self.label_6.setGeometry(QtCore.QRect(11, 231, 83, 33))
+        self.label_6.setFont(font_lbl)
+        self.label_6.setStyleSheet("color: #1DB954;")
+        self.label_6.setObjectName("label_6")
+        self.YearText = QtWidgets.QLabel(self.SONGINFORMATION)
+        self.YearText.setGeometry(QtCore.QRect(99, 231, 198, 33))
+        self.YearText.setFont(font_val)
+        self.YearText.setStyleSheet("color: #ffffff;")
+        self.YearText.setWordWrap(True)
+        self.YearText.setObjectName("YearText")
+        # Artist
+        self.label_11 = QtWidgets.QLabel(self.SONGINFORMATION)
+        self.label_11.setGeometry(QtCore.QRect(11, 264, 83, 33))
+        self.label_11.setFont(font_lbl)
+        self.label_11.setStyleSheet("color: #1DB954;")
+        self.label_11.setObjectName("label_11")
+
+        self.ArtistNameText = QtWidgets.QLabel(self.SONGINFORMATION)
+        self.ArtistNameText.setGeometry(QtCore.QRect(99, 264, 198, 33))
+        self.ArtistNameText.setFont(font_val)
+        self.ArtistNameText.setStyleSheet("color: #ffffff;")
+        self.ArtistNameText.setWordWrap(True)
+        self.ArtistNameText.setObjectName("ArtistNameText")
+        # Album
+        self.label_8 = QtWidgets.QLabel(self.SONGINFORMATION)
+        self.label_8.setGeometry(QtCore.QRect(11, 297, 83, 33))
+        self.label_8.setFont(font_lbl)
+        self.label_8.setStyleSheet("color: #1DB954;")
+        self.label_8.setObjectName("label_8")
+
+        self.AlbumText = QtWidgets.QLabel(self.SONGINFORMATION)
+        self.AlbumText.setGeometry(QtCore.QRect(99, 297, 198, 33))
+        self.AlbumText.setFont(font_val)
+        self.AlbumText.setStyleSheet("color: #ffffff;")
+        self.AlbumText.setWordWrap(True)
+        self.AlbumText.setObjectName("AlbumText")
+        # ── Progress bar panel derecho ──
+        self.SongDownloadprogressBar = QtWidgets.QProgressBar(self.SONGINFORMATION)
+        self.SongDownloadprogressBar.setGeometry(QtCore.QRect(25, 344, 253, 4))
+        self.SongDownloadprogressBar.setFont(QtGui.QFont("Segoe UI", 1))
+        self.SongDownloadprogressBar.setProperty("value", 0)
+        self.SongDownloadprogressBar.setTextVisible(False)
+        self.SongDownloadprogressBar.setObjectName("SongDownloadprogressBar")
         self.SONGINFORMATION.raise_()
         self.frame.raise_()
         MainWindow.setCentralWidget(self.centralwidget)

@@ -752,14 +752,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def CloseSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(250)
-        self.animation.setEndValue(QSize(0, 440))
+        self.animation.setEndValue(QSize(0, 506))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.start()
 
     def OpenSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(1000)
-        self.animation.setEndValue(QSize(350, 440))
+        self.animation.setEndValue(QSize(413, 506))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.start()
 
@@ -780,9 +780,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     Screen = MainWindow()
-    Screen.setFixedHeight(500)
-    Screen.setFixedWidth(750)
+    Screen.setFixedHeight(550)
+    Screen.setFixedWidth(825)
     Screen.setWindowFlags(Qt.FramelessWindowHint)
     Screen.setAttribute(Qt.WA_TranslucentBackground)
+    # Screen.setWindowTitle("Sunnify")
     Screen.show()
     sys.exit(app.exec())
