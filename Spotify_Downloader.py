@@ -174,6 +174,10 @@ class MusicScraper(QThread):
             "quiet": True,
             "outtmpl": output_template,
             "ffmpeg_location": ffmpeg_path,
+            "retries": 10,
+            "concurrent_fragment_downloads": 4,
+            "http_chunk_size": 1048576,
+            "socket_timeout": 15,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
