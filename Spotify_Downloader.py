@@ -1,4 +1,3 @@
-#
 """
 Sunnify (Spotify Downloader)
 Copyright (C) 2024 Sunny Patel <sunnypatel124555@gmail.com>
@@ -24,7 +23,7 @@ import webbrowser
 
 import requests
 from mutagen.easyid3 import EasyID3
-from mutagen.id3 import APIC, ID3
+from mutagen.id3 import APIC, ID3, ID3NoHeaderError
 from PyQt5.QtCore import (
     QEasingCurve,
     QPropertyAnimation,
@@ -74,10 +73,9 @@ def get_ffmpeg_path():
     ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
     common_paths = [
         "/opt/homebrew/bin",  # macOS ARM homebrew
-        "/usr/local/bin",  # macOS Intel homebrew / Linux
-        "/usr/bin",  # Linux system
+        "/usr/local/bin",     # macOS Intel homebrew / Linux
+        "/usr/bin",           # Linux system
     ]
-
     for path in common_paths:
         ffmpeg = os.path.join(path, ffmpeg_name)
         if os.path.exists(ffmpeg):
@@ -85,7 +83,6 @@ def get_ffmpeg_path():
 
     # Check if ffmpeg is in PATH
     import shutil
-
     ffmpeg_in_path = shutil.which("ffmpeg")
     if ffmpeg_in_path:
         return os.path.dirname(ffmpeg_in_path)
@@ -168,6 +165,7 @@ class MusicScraper(QThread):
 
         base, _ = os.path.splitext(destination)
         output_template = base + ".%(ext)s"
+
         ydl_opts = {
             "format": "bestaudio/best",
             "noplaylist": True,
@@ -182,16 +180,20 @@ class MusicScraper(QThread):
                 }
             ],
         }
+
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
             if info.get("entries"):
                 info = info["entries"][0]
-            expected_path = base + ".mp3"
-            if os.path.exists(expected_path):
-                return expected_path
-            fallback = ydl.prepare_filename(info)
-            if os.path.exists(fallback):
-                return fallback
+
+        expected_path = base + ".mp3"
+        if os.path.exists(expected_path):
+            return expected_path
+
+        fallback = ydl.prepare_filename(info)
+        if os.path.exists(fallback):
+            return fallback
+
         return base + ".mp3"
 
     def download_http_file(self, url, destination):
@@ -397,7 +399,7 @@ class ScraperThread(QThread):
             self.progress_update.emit(f"{e}")
 
 
-# Download Song Cover Thread
+# Download Song Cover Thread (used for the preview panel only)
 class DownloadCover(QThread):
     albumCover = pyqtSignal(object)
 
@@ -411,7 +413,18 @@ class DownloadCover(QThread):
             self.albumCover.emit(response.content)
 
 
-# Scraper Thread
+# -----------------------------------------------------------------------
+# FIX: WritingMetaTagsThread
+#
+# Original bug: cover art was fetched by spawning a *nested* DownloadCover
+# QThread inside WritingMetaTagsThread.run(). Once run() returned, the
+# event loop died, so DownloadCover's albumCover signal was never delivered
+# to setPIC — meaning cover art (and sometimes the status confirmation for
+# basic ID3 tags) was silently dropped.
+#
+# Fix: fetch the cover synchronously with requests.get() inside run() so
+# everything completes before the thread exits.
+# -----------------------------------------------------------------------
 class WritingMetaTagsThread(QThread):
     tags_success = pyqtSignal(str)
 
@@ -419,26 +432,40 @@ class WritingMetaTagsThread(QThread):
         super().__init__()
         self.tags = tags
         self.filename = filename
-        self._cover_thread = None  # Keep reference to prevent GC
 
     def run(self):
         try:
             print("[*] FileName : ", self.filename)
-            audio = EasyID3(self.filename)
+            try:
+                audio = EasyID3(self.filename)
+            except ID3NoHeaderError:
+                # ffmpeg sometimes produces MP3s with no ID3 header (common for
+                # older/converted tracks). Create an empty header then re-open.
+                ID3().save(self.filename)
+                audio = EasyID3(self.filename)
             audio["title"] = self.tags.get("title", "")
             audio["artist"] = self.tags.get("artists", "")
             audio["album"] = self.tags.get("album", "")
             audio["date"] = self.tags.get("releaseDate", "")
             audio.save()
 
-            # Only download cover if URL exists
             cover_url = self.tags.get("cover", "")
             if cover_url:
-                self._cover_thread = DownloadCover(cover_url)
-                self._cover_thread.albumCover.connect(self.setPIC)
-                self._cover_thread.start()
+                # Fetch cover synchronously — spawning a second QThread here
+                # causes a race condition where the signal never arrives.
+                try:
+                    response = requests.get(cover_url, timeout=15)
+                    response.raise_for_status()
+                    self.setPIC(response.content)
+                except Exception as cover_err:
+                    print(f"[*] Cover download failed: {cover_err}")
+                    self.tags_success.emit("Tags saved, cover download failed")
+            else:
+                self.tags_success.emit("Tags added successfully (no cover URL)")
+
         except Exception as e:
             print(f"[*] Error writing meta tags: {e}")
+            self.tags_success.emit(f"Error writing tags: {e}")
 
     def setPIC(self, data):
         if data is None:
@@ -497,26 +524,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SONGINFORMATION.setGraphicsEffect(
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
         )
+
         self.PlaylistLink.returnPressed.connect(self.on_returnButton)
         self.DownloadBtn.clicked.connect(self.on_returnButton)
-
         self.showPreviewCheck.stateChanged.connect(self.show_preview)
-
         self.Closed.clicked.connect(self.exitprogram)
         self.Select_Home.clicked.connect(self.Linkedin)
         self.SettingsBtn.clicked.connect(self.open_settings)
 
     def _get_default_download_path(self):
         """Get a sensible default download path that's writable."""
-        # Try user's Music folder first
         home = os.path.expanduser("~")
         music_folder = os.path.join(home, "Music", "Sunnify")
 
-        # On Windows, Music might be in a different location
         if sys.platform == "win32":
             try:
                 import winreg
-
                 key = winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
@@ -532,7 +555,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """Ensure download path exists and is writable. Returns True if valid."""
         try:
             os.makedirs(self.download_path, exist_ok=True)
-            # Test write access
             test_file = os.path.join(self.download_path, ".sunnify_test")
             with open(test_file, "w") as f:
                 f.write("test")
@@ -550,7 +572,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
         if folder:
-            # Create Sunnify subfolder so downloads don't splatter everywhere
             self.download_path = os.path.join(folder, "Sunnify")
             self._download_path_set = True
             return True
@@ -604,11 +625,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 return
 
         try:
-            # Validate URL type
             url_type, _ = detect_spotify_url_type(spotify_url)
             self.statusMsg.setText(f"Detected: {url_type}")
 
-            # Reset cancel event and set downloading state
             self._cancel_event = threading.Event()
             self._is_downloading = True
             self.DownloadBtn.setText("Stop")
@@ -627,10 +646,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 lambda x: self.statusMsg.setText(x)
             )
             self.scraper_thread.scraper.error_signal.connect(lambda x: self.statusMsg.setText(x))
-
-            # Connect the count_updated signal to the update_counter slot
             self.scraper_thread.scraper.count_updated.connect(self.update_counter)
-
             self.scraper_thread.start()
 
         except ValueError as e:
@@ -641,16 +657,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _stop_download(self):
         """Stop the current download gracefully using cooperative cancellation."""
         self.statusMsg.setText("Stopping download...")
-
-        # Signal cancellation via event (thread checks this periodically)
         self._cancel_event.set()
 
-        # Wait for thread to finish gracefully
         if hasattr(self, "scraper_thread") and self.scraper_thread.isRunning():
             self.scraper_thread.request_cancel()
-            # Give thread time to finish current operation and exit cleanly
-            if not self.scraper_thread.wait(3000):  # Wait up to 3 seconds
-                # Only terminate as last resort if thread doesn't respond
+            if not self.scraper_thread.wait(3000):
                 self.scraper_thread.terminate()
                 self.scraper_thread.wait(1000)
 
@@ -663,7 +674,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._is_downloading = False
         self.DownloadBtn.setText("Download")
         if hasattr(self, "scraper_thread"):
-            self.scraper_thread.deleteLater()  # Clean up the thread properly
+            self.scraper_thread.deleteLater()
 
     def update_progress(self, message):
         self.statusMsg.setText(message)
@@ -678,11 +689,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self._active_threads.append(thumb_thread)
                 thumb_thread.finished.connect(lambda: self._cleanup_thread(thumb_thread))
                 thumb_thread.start()
-            self.ArtistNameText.setText(song_meta.get("artists", ""))
-            self.AlbumText.setText(song_meta.get("album", ""))
-            self.SongName.setText(song_meta.get("title", ""))
-            self.YearText.setText(song_meta.get("releaseDate", ""))
 
+        self.ArtistNameText.setText(song_meta.get("artists", ""))
+        self.AlbumText.setText(song_meta.get("album", ""))
+        self.SongName.setText(song_meta.get("title", ""))
+        self.YearText.setText(song_meta.get("releaseDate", ""))
         self.MainSongName.setText(song_meta.get("title", "") + " - " + song_meta.get("artists", ""))
         # NOTE: Meta tags are written in add_song_META (after file exists), not here
 

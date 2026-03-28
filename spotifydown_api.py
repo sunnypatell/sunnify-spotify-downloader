@@ -15,7 +15,7 @@ import json
 import re
 import time
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, TypeVar
 
 import requests
@@ -293,32 +293,100 @@ class SpotifyEmbedAPI:
             track_count=track_count,
         )
 
+    @staticmethod
+    def _album_id_from_raw(raw: dict) -> str:
+        """Extract album ID from a raw trackList entry, or '' if not present."""
+        album = raw.get("album")
+        if isinstance(album, dict):
+            uri = album.get("uri", "")
+            if uri.startswith("spotify:album:"):
+                return uri.split(":")[-1]
+        return ""
+
+    def _fetch_cover_cached(
+        self,
+        track_id: str,
+        raw: dict,
+        album_cover_cache: dict[str, str],
+    ) -> str | None:
+        """Return cover URL for a track, using album-level cache.
+
+        Fetches via track embed page on first encounter of an album.
+        Failures are NOT cached so every track gets its own attempt.
+        """
+        cache_key = self._album_id_from_raw(raw) or track_id
+
+        # Reuse a previously found cover for this album
+        if cache_key in album_cover_cache:
+            return album_cover_cache[cache_key]
+
+        # Primary: track embed page with retry on rate limits
+        cover: str | None = None
+        for attempt in range(3):
+            try:
+                fetched = self._fetch_track_metadata(track_id)
+                if fetched and fetched.cover_url:
+                    cover = fetched.cover_url
+                break
+            except RateLimitError:
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))  # 2s, then 4s
+            except Exception:
+                break
+
+        # Fallback: oEmbed — simple GET, no auth, always returns thumbnail_url
+        if not cover:
+            try:
+                resp = self._session.get(
+                    self._OEMBED_URL,
+                    params={"url": f"https://open.spotify.com/track/{track_id}"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    cover = resp.json().get("thumbnail_url")
+            except Exception:
+                pass
+
+        if cover:
+            album_cover_cache[cache_key] = cover  # Only cache successes
+
+        return cover
+
     def iter_playlist_tracks(self, playlist_id: str) -> Iterator[TrackInfo]:
         """Iterate over playlist tracks with fallback for large playlists.
 
-        For playlists with <=100 tracks: Uses embed page (fast).
-        For playlists with >100 tracks: Uses spclient for URIs + individual
-        track embeds for metadata on remaining tracks.
+        Yields each track immediately with cover art fetched lazily (one
+        embed-page request per unique album, interleaved with audio downloads).
+        For playlists >100 tracks, uses spclient for the remaining URIs.
         """
         url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
         data = self._fetch_embed_data(url)
         entity = self._extract_entity(data)
 
         track_list = entity.get("trackList", [])
-        embed_track_ids: set[str] = set()
+        embed_track_ids: list[str] = []
+        basic_tracks: dict[str, TrackInfo] = {}
 
-        # Yield tracks from embed page (up to ~100)
         for track in track_list:
             if not isinstance(track, dict):
                 continue
-
             uri = track.get("uri", "")
             track_id = uri.split(":")[-1] if uri.startswith("spotify:track:") else ""
             if not track_id:
                 continue
+            embed_track_ids.append(track_id)
+            basic_tracks[track_id] = self._parse_track(track, track_id)
 
-            embed_track_ids.add(track_id)
-            yield self._parse_track(track, track_id)
+        # Yield tracks one-by-one; cover art is fetched lazily (not all-at-once
+        # upfront) to avoid rate-limit bursts and to start audio downloads sooner.
+        album_cover_cache: dict[str, str] = {}
+        for track_id in embed_track_ids:
+            t = basic_tracks[track_id]
+            if not t.cover_url:
+                cover = self._fetch_cover_cached(track_id, t.raw, album_cover_cache)
+                if cover:
+                    t = replace(t, cover_url=cover)
+            yield t
 
         # Check if there are more tracks via spclient
         token = self._cached_token
@@ -335,11 +403,11 @@ class SpotifyEmbedAPI:
 
             spc_data = resp.json()
             total_tracks = spc_data.get("length", 0)
+            embed_id_set = set(embed_track_ids)
 
-            if total_tracks <= len(embed_track_ids):
+            if total_tracks <= len(embed_id_set):
                 return  # All tracks already yielded
 
-            # Get remaining track URIs from spclient
             contents = spc_data.get("contents", {})
             items = contents.get("items", [])
 
@@ -347,18 +415,15 @@ class SpotifyEmbedAPI:
                 uri = item.get("uri", "")
                 if not uri.startswith("spotify:track:"):
                     continue
-
                 track_id = uri.split(":")[-1]
-                if track_id in embed_track_ids:
-                    continue  # Already yielded
+                if track_id in embed_id_set:
+                    continue
 
-                # Fetch individual track metadata
                 try:
                     track_info = self._fetch_track_metadata(track_id)
                     if track_info:
                         yield track_info
                 except Exception:
-                    # If individual fetch fails, yield minimal info
                     yield TrackInfo(
                         id=track_id,
                         title=f"Track {track_id}",
@@ -368,7 +433,7 @@ class SpotifyEmbedAPI:
                         cover_url=None,
                         duration_ms=None,
                         preview_url=None,
-                        raw={"uri": uri},
+                        raw={"uri": f"spotify:track:{track_id}"},
                     )
 
         except Exception:
@@ -389,14 +454,29 @@ class SpotifyEmbedAPI:
 
         duration_ms = track.get("duration")
 
+        # Extract album name (can be a dict or a string)
+        album_data = track.get("album")
+        if isinstance(album_data, dict):
+            album = album_data.get("name")
+        elif isinstance(album_data, str):
+            album = album_data
+        else:
+            album = None
+
+        # Extract release date (can be a dict with isoString or a plain string)
+        release_date = None
+        rd = track.get("releaseDate")
+        if isinstance(rd, dict):
+            release_date = rd.get("isoString", "")[:10]
+        elif isinstance(rd, str):
+            release_date = rd
+
         return TrackInfo(
             id=track_id,
             title=str(title),
             artists=str(artists),
-            album=track.get("album", {}).get("name")
-            if isinstance(track.get("album"), dict)
-            else None,
-            release_date=track.get("releaseDate"),
+            album=album,
+            release_date=release_date,
             cover_url=None,
             duration_ms=int(duration_ms) if duration_ms else None,
             preview_url=preview_url,
@@ -410,6 +490,8 @@ class SpotifyEmbedAPI:
         try:
             data = self._fetch_embed_data(url)
             entity = self._extract_entity(data)
+        except RateLimitError:
+            raise  # Let caller handle rate limits with backoff
         except SpotifyDownAPIError:
             return None
 
@@ -427,17 +509,23 @@ class SpotifyEmbedAPI:
         if isinstance(audio_preview, dict):
             preview_url = audio_preview.get("url")
 
-        # Extract cover URL from visualIdentity.image
+        # Extract cover URL — try visualIdentity.image first, then coverArt.sources
         cover_url = None
         visual_identity = entity.get("visualIdentity", {})
         images = visual_identity.get("image", [])
         if images:
-            # Get the largest image (usually last or highest resolution)
             for img in images:
                 if isinstance(img, dict) and img.get("url"):
                     cover_url = img.get("url")
-                    if img.get("maxWidth", 0) >= 300:
+                    if img.get("maxWidth", 0) >= 300 or img.get("width", 0) >= 300:
                         break  # Use 300px+ image
+
+        if not cover_url:
+            cover_art = entity.get("coverArt", {})
+            if isinstance(cover_art, dict):
+                sources = cover_art.get("sources", [])
+                if sources:
+                    cover_url = sources[-1].get("url") or sources[0].get("url")
 
         # Extract release date properly
         release_date = None
