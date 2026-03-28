@@ -186,15 +186,17 @@ class MusicScraper(QThread):
             if info.get("entries"):
                 info = info["entries"][0]
 
+        thumbnail_url = info.get("thumbnail", "") if isinstance(info, dict) else ""
+
         expected_path = base + ".mp3"
         if os.path.exists(expected_path):
-            return expected_path
+            return expected_path, thumbnail_url
 
         fallback = ydl.prepare_filename(info)
         if os.path.exists(fallback):
-            return fallback
+            return fallback, thumbnail_url
 
-        return base + ".mp3"
+        return base + ".mp3", thumbnail_url
 
     def download_http_file(self, url, destination):
         response = self.session.get(url, stream=True, timeout=60)
@@ -251,7 +253,12 @@ class MusicScraper(QThread):
                 "title": track_title,
                 "artists": artists,
                 "album": album_name,
+                "albumArtist": track.album_artist or "",
                 "releaseDate": release_date,
+                "trackNumber": track.track_number,
+                "totalTracks": track.total_tracks,
+                "discNumber": track.disc_number,
+                "totalDiscs": track.total_discs,
                 "cover": cover_url or "",
                 "file": filepath,
             }
@@ -266,7 +273,7 @@ class MusicScraper(QThread):
             # Download via YouTube search (spotifydown mirrors are dead)
             search_query = f"ytsearch1:{track_title} {artists} audio"
             try:
-                final_path = self.download_track_audio(search_query, filepath)
+                final_path, yt_thumbnail = self.download_track_audio(search_query, filepath)
             except Exception as error_status:
                 error_msg = self._get_user_friendly_error(error_status, track_title)
                 self.error_signal.emit(error_msg)
@@ -281,6 +288,17 @@ class MusicScraper(QThread):
                 continue
 
             song_meta["file"] = final_path
+
+            # If the cover URL fell back to the playlist image because the
+            # per-track fetch was rate-limited at playlist start, retry now —
+            # the audio download just gave Spotify's rate limit time to reset.
+            if not track.cover_url:
+                retried = spotify_api.get_track_cover(track.id)
+                if retried:
+                    song_meta["cover"] = retried
+                elif yt_thumbnail:
+                    song_meta["cover"] = yt_thumbnail
+
             self.add_song_meta.emit(song_meta)
             self.increment_counter()
             self.dlprogress_signal.emit(100)
@@ -329,7 +347,12 @@ class MusicScraper(QThread):
             "title": track_title,
             "artists": artists,
             "album": album_name,
+            "albumArtist": track.album_artist or "",
             "releaseDate": release_date,
+            "trackNumber": track.track_number,
+            "totalTracks": track.total_tracks,
+            "discNumber": track.disc_number,
+            "totalDiscs": track.total_discs,
             "cover": cover_url or "",
             "file": filepath,
         }
@@ -345,7 +368,7 @@ class MusicScraper(QThread):
         # Download via YouTube search
         search_query = f"ytsearch1:{track_title} {artists} audio"
         try:
-            final_path = self.download_track_audio(search_query, filepath)
+            final_path, yt_thumbnail = self.download_track_audio(search_query, filepath)
         except Exception as error_status:
             error_msg = self._get_user_friendly_error(error_status, track_title)
             print(f"[*] Error downloading '{track_title}': {error_status}")
@@ -358,6 +381,8 @@ class MusicScraper(QThread):
             return
 
         song_meta["file"] = final_path
+        if not cover_url and yt_thumbnail:
+            song_meta["cover"] = yt_thumbnail
         self.add_song_meta.emit(song_meta)
         self.increment_counter()
         self.dlprogress_signal.emit(100)
@@ -447,6 +472,25 @@ class WritingMetaTagsThread(QThread):
             audio["artist"] = self.tags.get("artists", "")
             audio["album"] = self.tags.get("album", "")
             audio["date"] = self.tags.get("releaseDate", "")
+
+            album_artist = self.tags.get("albumArtist", "")
+            if album_artist:
+                audio["albumartist"] = album_artist
+
+            track_num = self.tags.get("trackNumber")
+            if track_num:
+                total = self.tags.get("totalTracks")
+                audio["tracknumber"] = f"{track_num}/{total}" if total else str(track_num)
+
+            disc_num = self.tags.get("discNumber")
+            if disc_num:
+                total_discs = self.tags.get("totalDiscs")
+                audio["discnumber"] = (
+                    f"{disc_num}/{total_discs}"
+                    if total_discs and int(total_discs) > 1
+                    else str(disc_num)
+                )
+
             audio.save()
 
             cover_url = self.tags.get("cover", "")
@@ -655,23 +699,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.DownloadBtn.setText("Download")
 
     def _stop_download(self):
-        """Stop the current download gracefully using cooperative cancellation."""
-        self.statusMsg.setText("Stopping download...")
+        """Signal cancellation and return immediately — never block the main thread."""
         self._cancel_event.set()
-
         if hasattr(self, "scraper_thread") and self.scraper_thread.isRunning():
             self.scraper_thread.request_cancel()
-            if not self.scraper_thread.wait(3000):
-                self.scraper_thread.terminate()
-                self.scraper_thread.wait(1000)
-
-        self._is_downloading = False
-        self.DownloadBtn.setText("Download")
-        self.statusMsg.setText("Download stopped")
+        # Disable the button so the user can't trigger another action while the
+        # background thread winds down. thread_finished() re-enables it.
+        self.DownloadBtn.setEnabled(False)
+        self.statusMsg.setText("Stopping download...")
 
     def thread_finished(self):
         """Reset UI state when download thread finishes."""
         self._is_downloading = False
+        self.DownloadBtn.setEnabled(True)
         self.DownloadBtn.setText("Download")
         if hasattr(self, "scraper_thread"):
             self.scraper_thread.deleteLater()

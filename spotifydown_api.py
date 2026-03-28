@@ -97,6 +97,11 @@ class TrackInfo:
     duration_ms: int | None
     preview_url: str | None
     raw: dict[str, object]
+    track_number: int | None = None
+    disc_number: int | None = None
+    album_artist: str | None = None
+    total_tracks: int | None = None
+    total_discs: int | None = None
 
     @property
     def spotify_id(self) -> str:
@@ -120,14 +125,19 @@ class SpotifyEmbedAPI:
 
     _EMBED_PLAYLIST_URL = "https://open.spotify.com/embed/playlist/{playlist_id}"
     _EMBED_TRACK_URL = "https://open.spotify.com/embed/track/{track_id}"
+    _EMBED_ALBUM_URL = "https://open.spotify.com/embed/album/{album_id}"
     _OEMBED_URL = "https://open.spotify.com/oembed"
     _SPCLIENT_URL = "https://spclient.wg.spotify.com/playlist/v2/playlist/{playlist_id}"
+    _SPCLIENT_TRACK_URL = "https://spclient.wg.spotify.com/metadata/4/track/{hex_id}"
+    # Spotify's base62 alphabet: digits, lowercase, THEN uppercase (used for GID conversion)
+    _B62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     _NEXT_DATA_PATTERN = re.compile(r'<script id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
 
     def __init__(self, *, session: requests.Session | None = None) -> None:
         self._session = session or requests.Session()
         self._cached_token: str | None = None
         self._token_expiry: float = 0
+        self._embed_page_cache: dict[str, dict] = {}  # URL → parsed __NEXT_DATA__
 
     @staticmethod
     def _deep_find(data: dict, key: str, max_depth: int = 6) -> dict | None:
@@ -161,14 +171,21 @@ class SpotifyEmbedAPI:
         }
 
     @retry_on_network_error(max_attempts=3, backoff_factor=1.0)
-    def _fetch_embed_data(self, url: str) -> dict:
+    def _fetch_embed_data(self, url: str, *, use_cache: bool = False) -> dict:
         """Fetch and parse __NEXT_DATA__ from any embed page.
+
+        use_cache=True returns a cached result for the same URL (used so that
+        get_playlist_metadata and iter_playlist_tracks don't hit the same
+        playlist embed URL twice in rapid succession and trigger rate limiting).
 
         Raises:
             NetworkError: For connection issues (retryable)
             RateLimitError: When rate limited by Spotify (retryable with backoff)
             ExtractionError: When page structure is unexpected (not retryable)
         """
+        if use_cache and url in self._embed_page_cache:
+            return self._embed_page_cache[url]
+
         try:
             response = self._session.get(url, headers=self._headers(), timeout=30)
         except (requests.Timeout, requests.ConnectionError) as exc:
@@ -207,6 +224,9 @@ class SpotifyEmbedAPI:
                 expiry_ms = session_data.get("accessTokenExpirationTimestampMs", 0)
                 self._token_expiry = expiry_ms / 1000 if expiry_ms else 0
                 break
+
+        if use_cache:
+            self._embed_page_cache[url] = data
 
         return data
 
@@ -255,7 +275,7 @@ class SpotifyEmbedAPI:
     def get_playlist_metadata(self, playlist_id: str) -> PlaylistInfo:
         """Get playlist metadata from the embed page."""
         url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
-        data = self._fetch_embed_data(url)
+        data = self._fetch_embed_data(url, use_cache=True)
         entity = self._extract_entity(data)
 
         name = entity.get("name") or entity.get("title") or "Unknown Playlist"
@@ -352,6 +372,195 @@ class SpotifyEmbedAPI:
 
         return cover
 
+    @staticmethod
+    def _to_hex(spotify_id: str) -> str:
+        """Convert a Spotify base62 track/album ID to 32-char hex for spclient."""
+        n = 0
+        for c in spotify_id:
+            n = n * 62 + SpotifyEmbedAPI._B62.index(c)
+        return format(n, "032x")
+
+    def _fetch_spclient_track(self, track_id: str) -> dict:
+        """Fetch full track metadata from spclient, including album info.
+
+        Uses the anonymous bearer token obtained from embed pages.
+        Returns the raw JSON dict, or {} on any failure.
+        """
+        token = self._cached_token
+        if not token:
+            return {}
+        try:
+            hex_id = self._to_hex(track_id)
+        except (ValueError, IndexError):
+            return {}
+        url = self._SPCLIENT_TRACK_URL.format(hex_id=hex_id)
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        try:
+            resp = self._session.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        return {}
+
+    def _fetch_album_data(self, album_id: str, cache: dict) -> dict:
+        """Fetch and parse an album embed page, returning metadata for all tracks.
+
+        Result is cached by album_id. Returns empty dict on any failure.
+        Cached result structure:
+          {
+            "album_name": str | None,
+            "album_artist": str | None,
+            "total_tracks": int | None,
+            "total_discs": int | None,
+            "tracks": { track_id: {"track_number": int, "disc_number": int} }
+          }
+        """
+        if album_id in cache:
+            return cache[album_id]
+
+        url = self._EMBED_ALBUM_URL.format(album_id=album_id)
+        entity = None
+        for attempt in range(3):
+            try:
+                data = self._fetch_embed_data(url)
+                entity = self._extract_entity(data)
+                break
+            except RateLimitError:
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+            except Exception:
+                break
+
+        if entity is None:
+            cache[album_id] = {}
+            return {}
+
+        # Album name
+        album_name = entity.get("name") or entity.get("title")
+
+        # Album artists (TPE2 — may differ from track artists on compilations)
+        artists_raw = entity.get("artists", [])
+        if isinstance(artists_raw, list):
+            album_artist = ", ".join(
+                a.get("name", "") for a in artists_raw if isinstance(a, dict) and a.get("name")
+            ) or None
+        else:
+            album_artist = None
+
+        # Parse trackList for per-track numbering
+        track_list = entity.get("trackList", [])
+        total_tracks = (
+            entity.get("totalTracks")
+            or entity.get("numberOfTracks")
+            or len(track_list)
+            or None
+        )
+        total_discs = entity.get("numberOfDiscs") or entity.get("discCount") or 1
+
+        tracks: dict[str, dict] = {}
+        for item in track_list:
+            if not isinstance(item, dict):
+                continue
+            uri = item.get("uri", "")
+            if not uri.startswith("spotify:track:"):
+                continue
+            tid = uri.split(":")[-1]
+            # Spotify uses "trackNumber" in album embeds; fall back to "number"
+            tn = item.get("trackNumber") or item.get("number")
+            dn = item.get("discNumber") or item.get("disc") or 1
+            tracks[tid] = {
+                "track_number": int(tn) if tn else None,
+                "disc_number": int(dn) if dn else None,
+            }
+
+        result = {
+            "album_name": str(album_name) if album_name else None,
+            "album_artist": album_artist,
+            "total_tracks": int(total_tracks) if total_tracks else None,
+            "total_discs": int(total_discs) if total_discs else None,
+            "tracks": tracks,
+        }
+        cache[album_id] = result
+        return result
+
+    def _enrich_track(
+        self,
+        track_id: str,
+        raw: dict,
+        cover_cache: dict,
+    ) -> dict:
+        """Fetch cover art and album metadata for a single track.
+
+        Cover art: track embed page (with oEmbed fallback), cached per album.
+        Album metadata: spclient metadata API (album name, artist, track/disc numbers).
+        """
+        cache_key = self._album_id_from_raw(raw) or track_id
+        cover = cover_cache.get(cache_key)
+
+        # --- Cover art (track embed page) ---
+        if not cover:
+            for attempt in range(3):
+                try:
+                    fetched = self._fetch_track_metadata(track_id)
+                    if fetched and fetched.cover_url:
+                        cover = fetched.cover_url
+                    break
+                except RateLimitError:
+                    if attempt < 2:
+                        time.sleep(2 * (attempt + 1))
+                except Exception:
+                    break
+
+            if not cover:
+                try:
+                    resp = self._session.get(
+                        self._OEMBED_URL,
+                        params={"url": f"https://open.spotify.com/track/{track_id}"},
+                        timeout=10,
+                    )
+                    if resp.status_code == 200:
+                        cover = resp.json().get("thumbnail_url")
+                except Exception:
+                    pass
+
+            if cover:
+                cover_cache[cache_key] = cover
+
+        # --- Album metadata (spclient) ---
+        spc = self._fetch_spclient_track(track_id)
+        album = spc.get("album", {})
+
+        album_name: str | None = album.get("name") or None
+
+        artists_raw = album.get("artist", [])
+        album_artist: str | None = (
+            ", ".join(a["name"] for a in artists_raw if isinstance(a, dict) and a.get("name"))
+            or None
+        )
+
+        track_number: int | None = spc.get("number") or None
+        disc_number: int | None = spc.get("disc_number") or None
+
+        # Total tracks = size of this disc's track list
+        discs = album.get("disc", [])
+        total_discs: int | None = len(discs) or None
+        total_tracks: int | None = None
+        for disc in discs:
+            if isinstance(disc, dict) and disc.get("number") == disc_number:
+                total_tracks = len(disc.get("track", [])) or None
+                break
+
+        return {
+            "cover_url": cover,
+            "album_name": album_name,
+            "album_artist": album_artist,
+            "track_number": track_number,
+            "disc_number": disc_number,
+            "total_tracks": total_tracks,
+            "total_discs": total_discs,
+        }
+
     def iter_playlist_tracks(self, playlist_id: str) -> Iterator[TrackInfo]:
         """Iterate over playlist tracks with fallback for large playlists.
 
@@ -360,7 +569,7 @@ class SpotifyEmbedAPI:
         For playlists >100 tracks, uses spclient for the remaining URIs.
         """
         url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
-        data = self._fetch_embed_data(url)
+        data = self._fetch_embed_data(url, use_cache=True)  # reuses cached page from get_playlist_metadata
         entity = self._extract_entity(data)
 
         track_list = entity.get("trackList", [])
@@ -377,15 +586,22 @@ class SpotifyEmbedAPI:
             embed_track_ids.append(track_id)
             basic_tracks[track_id] = self._parse_track(track, track_id)
 
-        # Yield tracks one-by-one; cover art is fetched lazily (not all-at-once
-        # upfront) to avoid rate-limit bursts and to start audio downloads sooner.
-        album_cover_cache: dict[str, str] = {}
+        # Yield tracks one-by-one; metadata is fetched lazily per track/album
+        # to avoid rate-limit bursts and to start audio downloads sooner.
+        cover_cache: dict[str, str] = {}
         for track_id in embed_track_ids:
             t = basic_tracks[track_id]
-            if not t.cover_url:
-                cover = self._fetch_cover_cached(track_id, t.raw, album_cover_cache)
-                if cover:
-                    t = replace(t, cover_url=cover)
+            enrichment = self._enrich_track(track_id, t.raw, cover_cache)
+            t = replace(
+                t,
+                cover_url=enrichment["cover_url"] or t.cover_url,
+                album=enrichment["album_name"] or t.album,
+                album_artist=enrichment["album_artist"],
+                track_number=enrichment["track_number"],
+                disc_number=enrichment["disc_number"],
+                total_tracks=enrichment["total_tracks"],
+                total_discs=enrichment["total_discs"],
+            )
             yield t
 
         # Check if there are more tracks via spclient
@@ -669,6 +885,14 @@ class PlaylistClient:
         """Quick validation that a playlist exists."""
         return self._embed_api.validate_playlist(playlist_id)
 
+    def get_track_cover(self, track_id: str) -> str | None:
+        """Fetch cover art for a single track using a fresh (uncached) lookup.
+
+        Used as a post-download retry for tracks whose cover fetch failed
+        during the initial burst of requests at playlist start.
+        """
+        return self._embed_api._fetch_cover_cached(track_id, {}, {})
+
     def get_track_download_link(self, track_id: str) -> str | None:
         """No longer available - spotifydown is dead.
 
@@ -684,15 +908,27 @@ class PlaylistClient:
         return None
 
     def get_track(self, track_id: str) -> TrackInfo:
-        """Get metadata for a single track.
-
-        Args:
-            track_id: Spotify track ID
-
-        Returns:
-            TrackInfo with track metadata
-        """
-        return self._embed_api.get_track(track_id)
+        """Get fully enriched metadata for a single track including album info."""
+        track_info = self._embed_api.get_track(track_id)
+        # Enrich with album metadata (track number, disc, album artist, album name)
+        album_id: str | None = None
+        rel = track_info.raw.get("relatedEntityUri", "")
+        if isinstance(rel, str) and rel.startswith("spotify:album:"):
+            album_id = rel.split(":")[-1]
+        if album_id:
+            album_cache: dict = {}
+            album_data = self._embed_api._fetch_album_data(album_id, album_cache)
+            track_meta = album_data.get("tracks", {}).get(track_id, {})
+            track_info = replace(
+                track_info,
+                album=album_data.get("album_name") or track_info.album,
+                album_artist=album_data.get("album_artist"),
+                track_number=track_meta.get("track_number"),
+                disc_number=track_meta.get("disc_number"),
+                total_tracks=album_data.get("total_tracks"),
+                total_discs=album_data.get("total_discs"),
+            )
+        return track_info
 
 
 # Utility functions shared across desktop app and web backend
