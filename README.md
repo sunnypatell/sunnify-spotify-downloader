@@ -112,7 +112,7 @@ root
 **Pre-built apps**: No dependencies required. FFmpeg is bundled.
 
 **Building from source**:
-- Python 3.8 or newer
+- Python 3.9 or newer
 - FFmpeg on PATH (for MP3 conversion)
 - Node.js 18+ (for web client only)
 - Internet access to `open.spotify.com` and YouTube

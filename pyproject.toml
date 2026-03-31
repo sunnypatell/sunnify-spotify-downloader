@@ -1,6 +1,6 @@
 [project]
 name = "sunnify-spotify-downloader"
-version = "1.0.0"
+version = "2.0.3"
 description = "Spotify playlist downloader with PyQt5 GUI, Flask backend, and Next.js web client"
 readme = "README.md"
 requires-python = ">=3.9"
