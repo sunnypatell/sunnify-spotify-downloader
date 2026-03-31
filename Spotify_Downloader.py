@@ -15,7 +15,7 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 
 import os
 import sys
@@ -174,6 +174,9 @@ class MusicScraper(QThread):
             "quiet": True,
             "outtmpl": output_template,
             "ffmpeg_location": ffmpeg_path,
+            "retries": 5,
+            "socket_timeout": 15,
+            "concurrent_fragment_downloads": 4,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -419,7 +422,6 @@ class WritingMetaTagsThread(QThread):
         super().__init__()
         self.tags = tags
         self.filename = filename
-        self._cover_thread = None  # Keep reference to prevent GC
 
     def run(self):
         try:
@@ -431,26 +433,29 @@ class WritingMetaTagsThread(QThread):
             audio["date"] = self.tags.get("releaseDate", "")
             audio.save()
 
-            # Only download cover if URL exists
+            # Download and embed cover art synchronously (nested QThreads lose
+            # their signal delivery once this run() method returns, so a
+            # synchronous fetch is the correct approach here)
             cover_url = self.tags.get("cover", "")
             if cover_url:
-                self._cover_thread = DownloadCover(cover_url)
-                self._cover_thread.albumCover.connect(self.setPIC)
-                self._cover_thread.start()
+                try:
+                    resp = requests.get(cover_url, timeout=15)
+                    if resp.status_code == 200 and resp.content:
+                        audio = ID3(self.filename)
+                        audio["APIC"] = APIC(
+                            encoding=3,
+                            mime="image/jpeg",
+                            type=3,
+                            desc="Cover",
+                            data=resp.content,
+                        )
+                        audio.save()
+                except (requests.RequestException, OSError) as e:
+                    print(f"[*] Error adding cover art: {e}")
+
+            self.tags_success.emit("Tags added successfully")
         except Exception as e:
             print(f"[*] Error writing meta tags: {e}")
-
-    def setPIC(self, data):
-        if data is None:
-            self.tags_success.emit("Cover Not Added..!")
-        else:
-            try:
-                audio = ID3(self.filename)
-                audio["APIC"] = APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=data)
-                audio.save()
-                self.tags_success.emit("Tags added successfully")
-            except Exception as e:
-                self.tags_success.emit(f"Error adding cover: {e}")
 
 
 class DownloadThumbnail(QThread):
@@ -641,27 +646,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _stop_download(self):
         """Stop the current download gracefully using cooperative cancellation."""
         self.statusMsg.setText("Stopping download...")
+        self.DownloadBtn.setEnabled(False)
 
         # Signal cancellation via event (thread checks this periodically)
         self._cancel_event.set()
 
-        # Wait for thread to finish gracefully
         if hasattr(self, "scraper_thread") and self.scraper_thread.isRunning():
             self.scraper_thread.request_cancel()
-            # Give thread time to finish current operation and exit cleanly
-            if not self.scraper_thread.wait(3000):  # Wait up to 3 seconds
-                # Only terminate as last resort if thread doesn't respond
-                self.scraper_thread.terminate()
-                self.scraper_thread.wait(1000)
-
-        self._is_downloading = False
-        self.DownloadBtn.setText("Download")
-        self.statusMsg.setText("Download stopped")
+            # Thread will finish current track and exit; UI resets via thread_finished signal
 
     def thread_finished(self):
         """Reset UI state when download thread finishes."""
         self._is_downloading = False
         self.DownloadBtn.setText("Download")
+        self.DownloadBtn.setEnabled(True)
         if hasattr(self, "scraper_thread"):
             self.scraper_thread.deleteLater()  # Clean up the thread properly
 

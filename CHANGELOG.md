@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-03-31
+
+### Fixed
+- cover art now embeds reliably by fetching synchronously in the meta tag writer thread (nested QThread signal delivery was silently failing)
+- stop button no longer calls `terminate()`, uses fully cooperative cancellation via cancel event and disables the button during wind-down to prevent double-clicks
+
+### Added
+- yt-dlp download resilience: 5 retries, 15s socket timeout, 4 concurrent fragment downloads
+- tests for yt-dlp perf options, synchronous cover art fetch, cover art failure handling, and cooperative cancellation
+
+### Changed
+- `WritingMetaTagsThread` fetches cover art synchronously with `requests.get()` instead of spawning a nested `DownloadCover` QThread (fixes signal delivery race condition)
+- stop button disables during wind-down and re-enables via `thread_finished` signal
+
 ## [2.0.2] - 2026-02-01
 
 ### Fixed
@@ -92,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...HEAD
+[2.0.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v1.0.0...v2.0.0
