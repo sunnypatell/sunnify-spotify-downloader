@@ -22,6 +22,39 @@ block_cipher = None
 is_mac = sys.platform == 'darwin'
 is_windows = sys.platform == 'win32'
 
+# Windows version info (shows in Properties > Details)
+win_version_info = None
+if is_windows:
+    from PyInstaller.utils.win32.versioninfo import (
+        VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct, VarFileInfo, VarStruct,
+    )
+    win_version_info = VSVersionInfo(
+        ffi=FixedFileInfo(
+            filevers=(2, 0, 3, 0),
+            prodvers=(2, 0, 3, 0),
+            mask=0x3F,
+            flags=0x0,
+            OS=0x40004,       # VOS_NT_WINDOWS32
+            fileType=0x1,     # VFT_APP
+            subtype=0x0,
+        ),
+        kids=[
+            StringFileInfo([
+                StringTable('040904B0', [
+                    StringStruct('CompanyName', 'Sunny Jayendra Patel'),
+                    StringStruct('FileDescription', 'Sunnify - Spotify Playlist Downloader'),
+                    StringStruct('FileVersion', '2.0.3.0'),
+                    StringStruct('InternalName', 'Sunnify'),
+                    StringStruct('LegalCopyright', 'Copyright (C) 2026 Sunny Jayendra Patel'),
+                    StringStruct('OriginalFilename', 'Sunnify.exe'),
+                    StringStruct('ProductName', 'Sunnify'),
+                    StringStruct('ProductVersion', '2.0.3.0'),
+                ]),
+            ]),
+            VarFileInfo([VarStruct('Translation', [0x0409, 0x04B0])]),
+        ],
+    )
+
 # Icon files
 if is_mac:
     icon_file = 'app.icns'
@@ -136,4 +169,5 @@ else:
         codesign_identity=None,
         entitlements_file=None,
         icon=icon_file if icon_file else None,
+        version=win_version_info,
     )
