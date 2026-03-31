@@ -400,21 +400,6 @@ class ScraperThread(QThread):
             self.progress_update.emit(f"{e}")
 
 
-# Download Song Cover Thread
-class DownloadCover(QThread):
-    albumCover = pyqtSignal(object)
-
-    def __init__(self, url):
-        super().__init__()
-        self.url = url
-
-    def run(self):
-        response = requests.get(self.url, stream=True)
-        if response.status_code == 200:
-            self.albumCover.emit(response.content)
-
-
-# Scraper Thread
 class WritingMetaTagsThread(QThread):
     tags_success = pyqtSignal(str)
 
