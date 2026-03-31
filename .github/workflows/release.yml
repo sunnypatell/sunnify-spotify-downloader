@@ -228,8 +228,9 @@ jobs:
           # Update version
           sed -i 's/version "[^"]*"/version "${{ steps.version.outputs.version }}"/' Casks/sunnify.rb
 
-          # Update SHA256
+          # Update SHA256 (handles both quoted strings and :no_check symbol)
           sed -i 's/sha256 "[^"]*"/sha256 "${{ steps.get-sha.outputs.sha256 }}"/' Casks/sunnify.rb
+          sed -i 's/sha256 :no_check/sha256 "${{ steps.get-sha.outputs.sha256 }}"/' Casks/sunnify.rb
 
           echo "Updated cask file:"
           cat Casks/sunnify.rb
