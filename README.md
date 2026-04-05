@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1>Sunnify (Spotify Downloader)</h1>
+<h1>vibes music (Spotify Downloader)</h1>
 
 <a href="https://github.com/sunnypatell/sunnify-spotify-downloader/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/sunnypatell/sunnify-spotify-downloader?style=social"></a>
 <a href="https://github.com/sunnypatell/sunnify-spotify-downloader/issues"><img alt="Issues" src="https://img.shields.io/github/issues/sunnypatell/sunnify-spotify-downloader"></a>
@@ -56,7 +56,7 @@
 
 ## Overview
 
-Sunnify is built to be resilient, fast, and simple:
+vibes music is built to be resilient, fast, and simple:
 
 - Uses Spotify's embed page API to fetch playlist/track metadata without credentials.
 - Downloads audio via YouTube search using `yt-dlp` with FFmpeg.
@@ -80,17 +80,17 @@ root
 ├─ scripts/
 │  └─ check_api_status.py         (Diagnostics for embed API and yt-dlp)
 ├─ dist/
-│  └─ Sunnify (Spotify Downloader).exe   (Prebuilt Windows executable)
+│  └─ vibes music (Spotify Downloader).exe   (Prebuilt Windows executable)
 ├─ web-app/
-│  ├─ sunnify-backend/            (Flask API: SSE + JSON responses)
+│  ├─ vibes_music-backend/            (Flask API: SSE + JSON responses)
 │  │  ├─ app.py                   (/api/scrape-playlist, /api/download)
 │  │  ├─ requirements.txt         (Backend dependencies)
 │  │  └─ Procfile                 (gunicorn entry)
-│  └─ sunnify-webclient/          (Next.js 14 + Tailwind + shadcn/ui)
-│     ├─ app/page.tsx             (Renders <SunnifyApp />)
+│  └─ vibes_music-webclient/          (Next.js 14 + Tailwind + shadcn/ui)
+│     ├─ app/page.tsx             (Renders <VibesApp />)
 │     └─ components/sunnify-app.tsx  (Main UI + API integration)
 ├─ req.txt                        (Desktop app Python deps)
-├─ Sunnify (Spotify Downloader).spec  (PyInstaller build spec)
+├─ vibes music (Spotify Downloader).spec  (PyInstaller build spec)
 └─ README.md
 ```
 
