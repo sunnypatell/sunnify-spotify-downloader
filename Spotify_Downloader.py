@@ -1,6 +1,6 @@
 #
 """
-Sunnify (Spotify Downloader)
+vibes music (Spotify Downloader)
 Copyright (C) 2024 Sunny Patel <sunnypatel124555@gmail.com>
 
 EDUCATIONAL PROJECT DISCLAIMER:
