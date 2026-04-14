@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-04-13
+
+### Fixed
+- sequential-mode progress bar now resets between tracks (was stuck at 100% on track 2+ after the v2.1.0 refactor moved `Resetprogress_signal` outside the loop)
+- cancel event is checked before iter_playlist_tracks materialization so large playlists don't do expensive spclient + per-track metadata work when the user already clicked stop
+- `_parallel_mode` is now reset after the executor context manager exits rather than inside a `finally` block, closing a race where workers still running after a break could observe `False` and emit sequential-only UI signals
+
+### Changed
+- `test_parallel_worker_count_caps_at_track_count` was renamed and split into two focused tests: one asserting small playlists stay sequential (no pool), one using a `threading.Barrier` to prove the pool actually spawns `MAX_WORKERS` concurrent threads
+
 ## [2.1.0] - 2026-04-13
 
 ### Added
@@ -14,12 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MusicScraper.MAX_WORKERS` constant documenting the measured sweet spot
 - thread-safe counter and `_failed_tracks` mutation via `threading.Lock`
 - `MusicScraper._download_one_track()` extracted as the per-track worker function
-- 8 new tests covering worker count bounds, counter/append atomicity, exception isolation, generator materialization thread-safety, and cancel-before-pool-start behavior
+- 12 new tests covering worker count bounds, counter/append atomicity, exception isolation, generator materialization thread-safety, filename collision handling, parallel-mode UI suppression, aggregate progress monotonicity, and cancel-before-pool-start behavior
 
 ### Changed
 - `scrape_playlist` materializes the track generator upfront before threading (`iter_playlist_tracks` is a generator and generators are not thread-safe)
 - small playlists (under 3 tracks) stay on the single-worker path to preserve single-track UI feel
-- cooperative cancel now checks at multiple points: before generator materialization, at the top of each worker, and between future completions; queued workers are cancelled immediately, in-flight downloads finish their current track
+- cooperative cancel checks at the top of each worker and between future completions; queued workers are cancelled immediately, in-flight downloads finish their current track
 
 ### Performance
 - measured speedup on Apple Silicon (M-class): 4x sequential wall-clock time on 12-track playlists
@@ -124,7 +134,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...v2.1.0
 [2.0.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...v2.0.2

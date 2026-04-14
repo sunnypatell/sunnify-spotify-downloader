@@ -15,7 +15,7 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 import concurrent.futures
 import os
@@ -344,6 +344,14 @@ class MusicScraper(QThread):
         playlist_id = self.returnSPOT_ID(spotify_playlist_link)
         self.PlaylistID.emit(playlist_id)
 
+        # Check cancel before doing any network work. Large playlists can
+        # spend real time inside iter_playlist_tracks doing spclient + per
+        # track embed fetches; if the user already clicked stop we shouldn't
+        # bother.
+        if self.is_cancelled():
+            self.PlaylistCompleted.emit("Download cancelled")
+            return
+
         try:
             spotify_api = self.ensure_spotifydown_api()
         except SpotifyDownAPIError as exc:
@@ -376,20 +384,26 @@ class MusicScraper(QThread):
             for track in tracks:
                 if self.is_cancelled():
                     break
+                # Reset the per-track progress bar at the top of each iteration
+                # so the single-track UI behaves the way it always has.
+                self.Resetprogress_signal.emit(0)
                 self._download_one_track(track, playlist_folder_path, metadata.cover_url)
         else:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
-                futures = [
-                    executor.submit(
-                        self._download_one_track, track, playlist_folder_path, metadata.cover_url
-                    )
-                    for track in tracks
-                ]
-                try:
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+                    futures = [
+                        executor.submit(
+                            self._download_one_track,
+                            track,
+                            playlist_folder_path,
+                            metadata.cover_url,
+                        )
+                        for track in tracks
+                    ]
                     for future in concurrent.futures.as_completed(futures):
                         if self.is_cancelled():
-                            # Cancel remaining futures that haven't started yet.
-                            # In-flight downloads will check is_cancelled at
+                            # Cancel remaining futures that haven't started
+                            # yet. In-flight downloads check is_cancelled at
                             # their own top and return early.
                             for f in futures:
                                 f.cancel()
@@ -404,8 +418,13 @@ class MusicScraper(QThread):
                             msg = f"Unexpected worker error: {exc}"
                             print(f"[*] {msg}")
                             self.error_signal.emit(msg)
-                finally:
-                    self._parallel_mode = False
+            finally:
+                # Reset parallel_mode only after the executor has fully shut
+                # down (context manager exit waits on in-flight workers). If
+                # we reset inside the `with`, workers that are still running
+                # after a break would observe False and start emitting
+                # single-track UI signals.
+                self._parallel_mode = False
 
         if self.is_cancelled():
             self.PlaylistCompleted.emit("Download cancelled")

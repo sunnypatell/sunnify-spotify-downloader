@@ -151,7 +151,7 @@ def index():
     return jsonify(
         {
             "name": "Sunnify API",
-            "version": "2.1.0",
+            "version": "2.1.1",
             "mode": "metadata-only",
             "description": "Fetches Spotify metadata. For MP3 downloads, use the desktop app.",
             "endpoints": {

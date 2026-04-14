@@ -456,12 +456,11 @@ class TestParallelDownloads:
 
         assert len(scraper._failed_tracks) == n
 
-    def test_parallel_worker_count_caps_at_track_count(self, tmp_path):
-        """Playlists smaller than MAX_WORKERS don't over-allocate workers."""
+    def test_small_playlist_stays_sequential(self, tmp_path):
+        """Playlists under the parallel threshold (3 tracks) run on one thread."""
         from Spotify_Downloader import MusicScraper
 
         scraper = MusicScraper()
-        # Stub all signals so we don't need a QApplication
         for sig in (
             "song_meta",
             "add_song_meta",
@@ -476,32 +475,78 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(2)]
-        download_calls = []
-        seen_workers = []
+        seen_workers: set[str] = set()
 
-        def fake_download(*args, **kwargs):
-            seen_workers.append(threading.current_thread().name)
-            download_calls.append(args[0])
-            # Create a dummy mp3 so the path check passes
-            dest = args[1]
+        def fake_download(query, dest):
+            seen_workers.add(threading.current_thread().name)
             open(dest, "wb").close()
             return dest
 
         scraper.download_track_audio = fake_download
-        # Mock api to return our fake tracks
         mock_api = MagicMock()
-        mock_api.get_playlist_metadata.return_value = MagicMock(
-            name="Test", owner="Owner", cover_url=None
-        )
+        meta = MagicMock()
+        meta.name = "T"
+        meta.owner = "O"
+        meta.cover_url = None
+        mock_api.get_playlist_metadata.return_value = meta
         mock_api.iter_playlist_tracks.return_value = iter(tracks)
-        mock_api.get_playlist_metadata.return_value.name = "TestPlaylist"
         scraper.ensure_spotifydown_api = MagicMock(return_value=mock_api)
-        scraper.format_playlist_name = lambda _m: "TestPlaylist"
+        scraper.format_playlist_name = lambda _m: "T"
 
         scraper.scrape_playlist("https://open.spotify.com/playlist/abc123", str(tmp_path))
-        # 2 tracks < 3 threshold means we stay sequential (1 worker). Assert at
-        # least that downloads happened on whatever thread(s).
-        assert len(download_calls) == 2
+
+        # All 2 downloads happened on the main test thread — no pool spawned
+        assert seen_workers == {threading.current_thread().name}
+        assert scraper._parallel_mode is False
+
+    def test_parallel_playlist_uses_max_workers_threads(self, tmp_path):
+        """Playlists >= threshold actually spawn MAX_WORKERS distinct threads."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+        tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(8)]
+        seen_workers: set[str] = set()
+        barrier = threading.Barrier(MusicScraper.MAX_WORKERS, timeout=5)
+
+        def fake_download(query, dest):
+            seen_workers.add(threading.current_thread().name)
+            # Block until MAX_WORKERS threads have arrived concurrently. Proves
+            # the pool really spawned that many threads in parallel.
+            with contextlib.suppress(threading.BrokenBarrierError):
+                barrier.wait()
+            open(dest, "wb").close()
+            return dest
+
+        scraper.download_track_audio = fake_download
+        mock_api = MagicMock()
+        meta = MagicMock()
+        meta.name = "T"
+        meta.owner = "O"
+        meta.cover_url = None
+        mock_api.get_playlist_metadata.return_value = meta
+        mock_api.iter_playlist_tracks.return_value = iter(tracks)
+        scraper.ensure_spotifydown_api = MagicMock(return_value=mock_api)
+        scraper.format_playlist_name = lambda _m: "T"
+
+        scraper.scrape_playlist("https://open.spotify.com/playlist/abc123", str(tmp_path))
+
+        # With 8 tracks and MAX_WORKERS=4, exactly 4 unique worker threads ran
+        assert len(seen_workers) == MusicScraper.MAX_WORKERS
+        # Main test thread did not participate in downloads (pool ran them all)
+        assert threading.current_thread().name not in seen_workers
 
     def test_exception_in_one_worker_does_not_abort_others(self, tmp_path):
         """A failure on one track must not prevent other tracks from finishing."""
