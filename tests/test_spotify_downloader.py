@@ -573,7 +573,7 @@ class TestParallelDownloads:
                 iter_threads.append(threading.get_ident())
                 yield self._make_track(f"id{i}", f"Song {i}")
 
-        scraper.download_track_audio = lambda _q, d: (open(d, "wb").close() or d)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
         mock_api = MagicMock()
         meta = MagicMock()
         meta.name = "T"
@@ -712,7 +712,7 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track("id1", "Song A")]
-        scraper.download_track_audio = lambda _q, d: (open(d, "wb").close() or d)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
         mock_api = MagicMock()
         meta = MagicMock()
         meta.name = "T"
@@ -823,7 +823,7 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        scraper.download_track_audio = lambda _q, d: (open(d, "wb").close() or d)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         meta = MagicMock()
@@ -865,7 +865,7 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        scraper.download_track_audio = lambda _q, d: (open(d, "wb").close() or d)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         meta = MagicMock()
