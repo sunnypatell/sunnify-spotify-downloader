@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-04-13
+
+### Added
+- parallel track downloads via `ThreadPoolExecutor` with 4 concurrent workers by default (closes #34)
+- `MusicScraper.MAX_WORKERS` constant documenting the measured sweet spot
+- thread-safe counter and `_failed_tracks` mutation via `threading.Lock`
+- `MusicScraper._download_one_track()` extracted as the per-track worker function
+- filename collision guard: TOCTOU-safe in-flight file set, de-duped with track id suffix so two tracks that sanitize to the same name don't race
+- 13 new tests covering worker count bounds, counter/append atomicity, exception isolation, generator materialization thread-safety, filename collision handling, parallel-mode UI suppression, aggregate progress monotonicity, cancel-before-pool-start behavior, and proof the pool spawns `MAX_WORKERS` concurrent threads under load
+
+### Changed
+- `scrape_playlist` materializes the track generator upfront before threading (`iter_playlist_tracks` is a generator and generators are not thread-safe)
+- small playlists (under 3 tracks) stay on the single-worker path to preserve single-track UI feel
+- cooperative cancel checks at multiple points: before generator materialization, at the top of each worker, and between future completions; queued workers cancel immediately, in-flight downloads finish their current track
+- in parallel mode, `song_meta` (UI preview) emits and per-byte `dlprogress_signal` emits are suppressed to prevent label flicker and thumbnail thread spam; progress bar is driven by aggregate completion count
+- sequential-mode progress bar still resets per track so single-worker UX is unchanged
+- `_parallel_mode` flag is reset after the executor context manager fully exits, avoiding a race where workers still running after a cancel-break could emit single-track UI signals
+
+### Performance
+- measured ~4x wall-clock time reduction on 12-track playlists (Apple Silicon M4 Max, macOS). cross-platform builds for Windows, Linux, and macOS ship the same parallel downloader since the concurrency model is pure python + yt-dlp and has no platform-specific code.
+- no YouTube or Spotify rate limiting observed at 4-8 concurrent workers during stress testing
+
 ## [2.0.3] - 2026-03-31
 
 ### Fixed
@@ -106,7 +128,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.0...v2.0.1

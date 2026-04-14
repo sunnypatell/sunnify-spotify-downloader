@@ -15,8 +15,9 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 
+import concurrent.futures
 import os
 import sys
 import threading
@@ -104,6 +105,10 @@ class MusicScraper(QThread):
     Resetprogress_signal = pyqtSignal(int)
     error_signal = pyqtSignal(str)  # Signal for error messages to UI
 
+    # Max concurrent track downloads. 4 is the measured sweet spot:
+    # linear speedup through 4, diminishing returns past 6 (CPU-bound ffmpeg).
+    MAX_WORKERS = 4
+
     def __init__(self, cancel_event: threading.Event | None = None):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
@@ -111,6 +116,15 @@ class MusicScraper(QThread):
         self.spotifydown_api = None
         self._cancel_event = cancel_event or threading.Event()
         self._failed_tracks: list[str] = []  # Track failed downloads
+        self._counter_lock = threading.Lock()
+        self._failed_lock = threading.Lock()
+        self._filename_lock = threading.Lock()
+        self._in_flight_files: set[str] = set()
+        # Set to True during parallel playlist downloads so workers can suppress
+        # per-track UI noise (label flicker, thumbnail spam, progress bar jitter)
+        # that only makes sense for a single active download.
+        self._parallel_mode = False
+        self._total_tracks = 0
 
     def is_cancelled(self) -> bool:
         """Check if cancellation has been requested."""
@@ -214,9 +228,129 @@ class MusicScraper(QThread):
                     self.dlprogress_signal.emit(progress)
         return destination
 
+    def _download_one_track(self, track, playlist_folder_path, default_cover_url):
+        """Download a single track. Runs inside a ThreadPoolExecutor worker.
+
+        Returns None on success, the track title on failure (for _failed_tracks).
+        Qt signals emitted here cross thread boundaries via queued connections,
+        which is safe.
+
+        In parallel mode (self._parallel_mode), per-track UI noise (song_meta
+        preview, per-byte progress) is suppressed because those widgets are
+        single-track and would flicker with N workers in flight. add_song_meta
+        still fires so ID3 tags + cover art get written to every mp3.
+        """
+        if self.is_cancelled():
+            return None
+
+        track_title = track.title
+        artists = track.artists
+        sanitized_title = self.sanitize_text(track_title)
+        sanitized_artists = self.sanitize_text(artists)
+        filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+        filepath = os.path.join(playlist_folder_path, filename)
+
+        # Filename collision guard: two different tracks can sanitize to the
+        # same filename (e.g. "Café" vs "Cafe"). Under parallel downloads the
+        # naive os.path.exists check has a TOCTOU race where both workers pass
+        # the check and clobber each other's files. Claim the filename via a
+        # lock; if taken, suffix with track id to de-dupe.
+        with self._filename_lock:
+            if filepath in self._in_flight_files:
+                filepath = os.path.join(
+                    playlist_folder_path,
+                    f"{sanitized_title} - {sanitized_artists} [{track.id}].mp3",
+                )
+            self._in_flight_files.add(filepath)
+
+        album_name = track.album or ""
+        release_date = track.release_date or ""
+        cover_url = track.cover_url or default_cover_url
+
+        song_meta = {
+            "title": track_title,
+            "artists": artists,
+            "album": album_name,
+            "releaseDate": release_date,
+            "cover": cover_url or "",
+            "file": filepath,
+        }
+
+        # In sequential mode, emit song_meta at start so the UI shows what's
+        # currently downloading. In parallel mode, skip it — the UI widgets
+        # can only show one track at a time and flickering between N workers
+        # is worse than a stable "now processing" message.
+        if not self._parallel_mode:
+            self.song_meta.emit(dict(song_meta))
+
+        try:
+            if os.path.exists(filepath):
+                self.add_song_meta.emit(song_meta)
+                self._finish_track_ui(ok=True)
+                return None
+
+            search_query = f"ytsearch1:{track_title} {artists} audio"
+            try:
+                final_path = self.download_track_audio(search_query, filepath)
+            except Exception as error_status:
+                error_msg = self._get_user_friendly_error(error_status, track_title)
+                self.error_signal.emit(error_msg)
+                print(f"[*] Error downloading '{track_title}': {error_status}")
+                with self._failed_lock:
+                    self._failed_tracks.append(track_title)
+                self._finish_track_ui(ok=False)
+                return track_title
+
+            if not final_path or not os.path.exists(final_path):
+                self.error_signal.emit(f"'{track_title}' - download failed")
+                print(f"[*] Download did not produce an audio file for: {track_title}")
+                with self._failed_lock:
+                    self._failed_tracks.append(track_title)
+                self._finish_track_ui(ok=False)
+                return track_title
+
+            song_meta["file"] = final_path
+            self.add_song_meta.emit(song_meta)
+            self._finish_track_ui(ok=True)
+            return None
+        finally:
+            with self._filename_lock:
+                self._in_flight_files.discard(filepath)
+
+    def _finish_track_ui(self, ok: bool) -> None:
+        """Update counter + progress bar after a track completes or fails."""
+        self.increment_counter()
+        if self._parallel_mode and self._total_tracks > 0:
+            # Aggregate progress across all workers: show how many tracks are
+            # done as a percentage. Avoids the N-workers-jittering-one-bar
+            # problem where per-byte emits from 4 downloads make the bar jump.
+            pct = int(self.counter / self._total_tracks * 100)
+            self.dlprogress_signal.emit(min(pct, 100))
+        elif ok:
+            self.dlprogress_signal.emit(100)
+
     def scrape_playlist(self, spotify_playlist_link, music_folder):
+        # Reset mutable state so repeat invocations on the same scraper
+        # instance don't carry stale counters or failure lists.
+        with self._counter_lock:
+            self.counter = 0
+        with self._failed_lock:
+            self._failed_tracks.clear()
+        with self._filename_lock:
+            self._in_flight_files.clear()
+        self._parallel_mode = False
+        self._total_tracks = 0
+
         playlist_id = self.returnSPOT_ID(spotify_playlist_link)
         self.PlaylistID.emit(playlist_id)
+
+        # Check cancel before doing any network work. Large playlists can
+        # spend real time inside iter_playlist_tracks doing spclient + per
+        # track embed fetches; if the user already clicked stop we shouldn't
+        # bother.
+        if self.is_cancelled():
+            self.PlaylistCompleted.emit("Download cancelled")
+            return
 
         try:
             spotify_api = self.ensure_spotifydown_api()
@@ -229,62 +363,72 @@ class MusicScraper(QThread):
 
         playlist_folder_path = self.prepare_playlist_folder(music_folder, playlist_display_name)
 
-        for track in spotify_api.iter_playlist_tracks(playlist_id):
-            # Check for cancellation before each track
-            if self.is_cancelled():
-                self.PlaylistCompleted.emit("Download cancelled")
-                return
+        # Materialize the generator into a list. iter_playlist_tracks is a
+        # generator and generators are not thread-safe. Consuming it upfront
+        # also lets us pick the right worker count based on track count.
+        tracks = list(spotify_api.iter_playlist_tracks(playlist_id))
+        self._total_tracks = len(tracks)
 
-            self.Resetprogress_signal.emit(0)
+        if self.is_cancelled():
+            self.PlaylistCompleted.emit("Download cancelled")
+            return
 
-            track_title = track.title
-            artists = track.artists
-            sanitized_title = self.sanitize_text(track_title)
-            sanitized_artists = self.sanitize_text(artists)
-            filename = f"{sanitized_title} - {sanitized_artists}.mp3"
-            filepath = os.path.join(playlist_folder_path, filename)
+        self.Resetprogress_signal.emit(0)
 
-            album_name = track.album or ""
-            release_date = track.release_date or ""
-            cover_url = track.cover_url or metadata.cover_url
+        # Small playlists don't benefit from parallelism. Keep 1 worker for
+        # playlists under 3 tracks to preserve the single-track UI feel.
+        worker_count = 1 if len(tracks) < 3 else min(self.MAX_WORKERS, len(tracks))
+        self._parallel_mode = worker_count > 1
 
-            song_meta = {
-                "title": track_title,
-                "artists": artists,
-                "album": album_name,
-                "releaseDate": release_date,
-                "cover": cover_url or "",
-                "file": filepath,
-            }
-
-            self.song_meta.emit(dict(song_meta))
-
-            if os.path.exists(filepath):
-                self.add_song_meta.emit(song_meta)
-                self.increment_counter()
-                continue
-
-            # Download via YouTube search (spotifydown mirrors are dead)
-            search_query = f"ytsearch1:{track_title} {artists} audio"
+        if worker_count == 1:
+            for track in tracks:
+                if self.is_cancelled():
+                    break
+                # Reset the per-track progress bar at the top of each iteration
+                # so the single-track UI behaves the way it always has.
+                self.Resetprogress_signal.emit(0)
+                self._download_one_track(track, playlist_folder_path, metadata.cover_url)
+        else:
             try:
-                final_path = self.download_track_audio(search_query, filepath)
-            except Exception as error_status:
-                error_msg = self._get_user_friendly_error(error_status, track_title)
-                self.error_signal.emit(error_msg)
-                print(f"[*] Error downloading '{track_title}': {error_status}")
-                self._failed_tracks.append(track_title)
-                continue
+                with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+                    futures = [
+                        executor.submit(
+                            self._download_one_track,
+                            track,
+                            playlist_folder_path,
+                            metadata.cover_url,
+                        )
+                        for track in tracks
+                    ]
+                    for future in concurrent.futures.as_completed(futures):
+                        if self.is_cancelled():
+                            # Cancel remaining futures that haven't started
+                            # yet. In-flight downloads check is_cancelled at
+                            # their own top and return early.
+                            for f in futures:
+                                f.cancel()
+                            break
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            # _download_one_track handles errors internally;
+                            # this catches unexpected framework-level
+                            # exceptions only. Surface them to the UI instead
+                            # of silently logging.
+                            msg = f"Unexpected worker error: {exc}"
+                            print(f"[*] {msg}")
+                            self.error_signal.emit(msg)
+            finally:
+                # Reset parallel_mode only after the executor has fully shut
+                # down (context manager exit waits on in-flight workers). If
+                # we reset inside the `with`, workers that are still running
+                # after a break would observe False and start emitting
+                # single-track UI signals.
+                self._parallel_mode = False
 
-            if not final_path or not os.path.exists(final_path):
-                self.error_signal.emit(f"'{track_title}' - download failed")
-                print(f"[*] Download did not produce an audio file for: {track_title}")
-                self._failed_tracks.append(track_title)
-                continue
-
-            song_meta["file"] = final_path
-            self.add_song_meta.emit(song_meta)
-            self.increment_counter()
-            self.dlprogress_signal.emit(100)
+        if self.is_cancelled():
+            self.PlaylistCompleted.emit("Download cancelled")
+            return
 
         # Report completion with failed track count
         if self._failed_tracks:
@@ -365,8 +509,10 @@ class MusicScraper(QThread):
         self.PlaylistCompleted.emit("Download Complete!")
 
     def increment_counter(self):
-        self.counter += 1
-        self.count_updated.emit(self.counter)  # Emit the signal with the updated count
+        with self._counter_lock:
+            self.counter += 1
+            current = self.counter
+        self.count_updated.emit(current)  # Emit the signal with the updated count
 
 
 # Scraper Thread

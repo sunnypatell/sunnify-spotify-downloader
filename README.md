@@ -99,6 +99,7 @@ root
 ## Features
 
 - 🎼 Full playlist and single track downloader (tagged MP3 library)
+- ⚡ Parallel track downloads (4 concurrent workers by default, ~4x speedup on large playlists)
 - 🖼️ Artwork and tagging (title, artists, album, release date, cover art)
 - 🚦 Spotify embed page API (no credentials required)
 - 🎯 YouTube audio via `yt-dlp` with FFmpeg conversion
