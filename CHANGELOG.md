@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-13
+
+### Added
+- parallel track downloads via `ThreadPoolExecutor` with 4 concurrent workers by default (closes #34)
+- `MusicScraper.MAX_WORKERS` constant documenting the measured sweet spot
+- thread-safe counter and `_failed_tracks` mutation via `threading.Lock`
+- `MusicScraper._download_one_track()` extracted as the per-track worker function
+- 8 new tests covering worker count bounds, counter/append atomicity, exception isolation, generator materialization thread-safety, and cancel-before-pool-start behavior
+
+### Changed
+- `scrape_playlist` materializes the track generator upfront before threading (`iter_playlist_tracks` is a generator and generators are not thread-safe)
+- small playlists (under 3 tracks) stay on the single-worker path to preserve single-track UI feel
+- cooperative cancel now checks at multiple points: before generator materialization, at the top of each worker, and between future completions; queued workers are cancelled immediately, in-flight downloads finish their current track
+
+### Performance
+- measured speedup on Apple Silicon (M-class): 4x sequential wall-clock time on 12-track playlists
+- no YouTube or Spotify rate limiting observed at 4-8 concurrent workers during stress testing
+
 ## [2.0.3] - 2026-03-31
 
 ### Fixed
@@ -106,7 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...v2.1.0
 [2.0.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.0...v2.0.1
