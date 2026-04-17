@@ -198,14 +198,17 @@ def open_folder_in_file_manager(path: str) -> None:
         print(f"[*] Could not open folder: {exc}")
 
 
-_SPOTIFY_URL_PATTERN = re.compile(r"https://open\.spotify\.com/(playlist|track|album)/[a-zA-Z0-9]+")
+_SPOTIFY_URL_PATTERN = re.compile(
+    r"(?:https?://open\.spotify\.com/(?:intl-[a-z]{2,}/)?(?:playlist|track|album)/[a-zA-Z0-9]+"
+    r"|spotify:(?:playlist|track|album):[a-zA-Z0-9]+)"
+)
 
 
 def extract_spotify_url_from_text(text: str) -> str | None:
-    """Find the first Spotify playlist/track/album URL in a text blob.
+    """Find the first Spotify playlist/track/album URL or URI in a text blob.
 
     Used for clipboard auto-detect and drag-and-drop payload parsing.
-    Returns the matched URL (stripped of query params) or None.
+    Accepts canonical URLs, /intl-xx/ locale URLs, and spotify: URIs.
     """
     if not text:
         return None
@@ -443,11 +446,14 @@ class MusicScraper(QThread):
                 )
             self._in_flight_files.add(filepath)
 
-        # Per-track cover enrichment. Playlist embed trackList omits cover
-        # URLs entirely so every track needs a separate /embed/track/{id}
-        # fetch to get the real album art. This runs inside the worker so it
-        # overlaps with the YouTube search time (no added wall-clock cost).
+        # Per-track cover + release_date enrichment. Playlist embed trackList
+        # omits cover URLs and release dates entirely, so every track needs a
+        # separate /embed/track/{id} fetch. Runs synchronously inside each
+        # worker before the YouTube search, so it adds ~100-300ms per track
+        # in sequential mode; in parallel mode that cost overlaps with
+        # downloads happening in other workers.
         cover_url = track.cover_url
+        release_date = track.release_date or ""
         if (
             enrich_cover
             and not cover_url
@@ -457,14 +463,16 @@ class MusicScraper(QThread):
         ):
             try:
                 enriched = self.spotifydown_api.get_track(track.id)
-                if enriched and enriched.cover_url:
-                    cover_url = enriched.cover_url
+                if enriched:
+                    if enriched.cover_url:
+                        cover_url = enriched.cover_url
+                    if not release_date and enriched.release_date:
+                        release_date = enriched.release_date
             except SpotifyDownAPIError:
                 pass  # Fall through to default
 
         cover_url = cover_url or default_cover_url
         album_name = track.album or ""
-        release_date = track.release_date or ""
 
         song_meta = {
             "title": track_title,
@@ -473,6 +481,7 @@ class MusicScraper(QThread):
             "releaseDate": release_date,
             "cover": cover_url or "",
             "file": filepath,
+            "trackNumber": track_num,
         }
 
         # In sequential mode, emit song_meta at start so the UI shows what's
@@ -746,6 +755,7 @@ class MusicScraper(QThread):
             "releaseDate": release_date,
             "cover": cover_url or "",
             "file": filepath,
+            "trackNumber": 1,
         }
 
         self.song_meta.emit(dict(song_meta))
@@ -848,6 +858,9 @@ def _write_metadata_mp3(filename: str, tags: dict, cover_bytes: bytes | None) ->
     audio["artist"] = tags.get("artists", "")
     audio["album"] = tags.get("album", "")
     audio["date"] = tags.get("releaseDate", "")
+    track_num = tags.get("trackNumber") or 0
+    if track_num:
+        audio["tracknumber"] = str(track_num)
     audio.save()
     if cover_bytes:
         id3 = ID3(filename)
@@ -866,6 +879,9 @@ def _write_metadata_m4a(filename: str, tags: dict, cover_bytes: bytes | None) ->
     date = tags.get("releaseDate", "")
     if date:
         audio["\xa9day"] = date
+    track_num = tags.get("trackNumber") or 0
+    if track_num:
+        audio["trkn"] = [(int(track_num), 0)]
     if cover_bytes:
         audio["covr"] = [MP4Cover(cover_bytes, imageformat=MP4Cover.FORMAT_JPEG)]
     audio.save()
@@ -882,6 +898,9 @@ def _write_metadata_flac(filename: str, tags: dict, cover_bytes: bytes | None) -
     date = tags.get("releaseDate", "")
     if date:
         audio["date"] = date
+    track_num = tags.get("trackNumber") or 0
+    if track_num:
+        audio["tracknumber"] = str(track_num)
     if cover_bytes:
         pic = Picture()
         pic.type = 3  # Front cover

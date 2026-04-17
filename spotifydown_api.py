@@ -692,11 +692,44 @@ class PlaylistClient:
 # Utility functions shared across desktop app and web backend
 
 
+# Accepts all three real-world input shapes Spotify ships:
+#   1. Canonical:       https://open.spotify.com/{type}/{id}
+#   2. Locale-prefixed: https://open.spotify.com/intl-en/{type}/{id}
+#   3. URI:             spotify:{type}:{id}
+# Optional trailing ?si=... and other query params are tolerated.
+_SPOTIFY_ID_RE = re.compile(
+    r"(?:https?://open\.spotify\.com/(?:intl-[a-z]{2,}/)?|spotify:)"
+    r"(?P<type>playlist|track|album)[/:](?P<id>[a-zA-Z0-9]+)"
+)
+
+
+def _match_spotify(url: str, expected_type: str | None = None) -> tuple[str, str]:
+    """Return (type, id) for the first Spotify entity in the input.
+
+    Accepts https URLs (canonical or locale-prefixed) as well as spotify:
+    URIs. If expected_type is given, a mismatch raises ValueError so callers
+    like extract_track_id preserve their strict semantics.
+    """
+    if not url:
+        raise ValueError("Empty Spotify URL.")
+    match = _SPOTIFY_ID_RE.search(url)
+    if not match:
+        raise ValueError("Invalid Spotify URL.")
+    url_type = match.group("type")
+    if expected_type and url_type != expected_type:
+        raise ValueError(f"Invalid Spotify {expected_type} URL.")
+    return url_type, match.group("id")
+
+
 def extract_playlist_id(url: str) -> str:
-    """Extract playlist ID from a Spotify URL.
+    """Extract playlist ID from a Spotify URL or URI.
 
     Args:
-        url: Spotify playlist URL like https://open.spotify.com/playlist/ABC123
+        url: Spotify playlist URL/URI. Accepts:
+            - https://open.spotify.com/playlist/ABC123
+            - https://open.spotify.com/intl-en/playlist/ABC123
+            - spotify:playlist:ABC123
+            (trailing ?si=... query params are tolerated)
 
     Returns:
         The playlist ID (e.g., "ABC123")
@@ -704,18 +737,21 @@ def extract_playlist_id(url: str) -> str:
     Raises:
         ValueError: If the URL is not a valid Spotify playlist URL
     """
-    pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
-    match = re.match(pattern, url)
-    if not match:
-        raise ValueError("Invalid Spotify playlist URL.")
-    return match.group(1)
+    try:
+        _, pid = _match_spotify(url, expected_type="playlist")
+    except ValueError as exc:
+        raise ValueError("Invalid Spotify playlist URL.") from exc
+    return pid
 
 
 def extract_track_id(url: str) -> str:
-    """Extract track ID from a Spotify URL.
+    """Extract track ID from a Spotify URL or URI.
 
     Args:
-        url: Spotify track URL like https://open.spotify.com/track/ABC123
+        url: Spotify track URL/URI. Accepts:
+            - https://open.spotify.com/track/ABC123
+            - https://open.spotify.com/intl-en/track/ABC123
+            - spotify:track:ABC123
 
     Returns:
         The track ID (e.g., "ABC123")
@@ -723,18 +759,21 @@ def extract_track_id(url: str) -> str:
     Raises:
         ValueError: If the URL is not a valid Spotify track URL
     """
-    pattern = r"https://open\.spotify\.com/track/([a-zA-Z0-9]+)"
-    match = re.match(pattern, url)
-    if not match:
-        raise ValueError("Invalid Spotify track URL.")
-    return match.group(1)
+    try:
+        _, tid = _match_spotify(url, expected_type="track")
+    except ValueError as exc:
+        raise ValueError("Invalid Spotify track URL.") from exc
+    return tid
 
 
 def extract_album_id(url: str) -> str:
-    """Extract album ID from a Spotify URL.
+    """Extract album ID from a Spotify URL or URI.
 
     Args:
-        url: Spotify album URL like https://open.spotify.com/album/ABC123
+        url: Spotify album URL/URI. Accepts:
+            - https://open.spotify.com/album/ABC123
+            - https://open.spotify.com/intl-en/album/ABC123
+            - spotify:album:ABC123
 
     Returns:
         The album ID (e.g., "ABC123")
@@ -742,44 +781,33 @@ def extract_album_id(url: str) -> str:
     Raises:
         ValueError: If the URL is not a valid Spotify album URL
     """
-    pattern = r"https://open\.spotify\.com/album/([a-zA-Z0-9]+)"
-    match = re.match(pattern, url)
-    if not match:
-        raise ValueError("Invalid Spotify album URL.")
-    return match.group(1)
+    try:
+        _, aid = _match_spotify(url, expected_type="album")
+    except ValueError as exc:
+        raise ValueError("Invalid Spotify album URL.") from exc
+    return aid
 
 
 def detect_spotify_url_type(url: str) -> tuple[str, str]:
-    """Detect the type of Spotify URL and extract the ID.
+    """Detect the type of Spotify URL/URI and extract the ID.
+
+    Accepts canonical URLs, /intl-xx/ locale-prefixed URLs, and spotify:
+    URIs (the format you get when right-clicking in the Spotify desktop app
+    and choosing Share -> Copy Spotify URI). Trailing query params are ignored.
 
     Args:
-        url: Spotify URL (track, playlist, or album)
+        url: Spotify URL/URI
 
     Returns:
         Tuple of (type, id) where type is 'track', 'playlist', or 'album'
 
     Raises:
-        ValueError: If the URL is not a valid Spotify URL
+        ValueError: If the URL is not a valid Spotify URL/URI
     """
-    # Playlist
-    playlist_pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
-    match = re.match(playlist_pattern, url)
-    if match:
-        return ("playlist", match.group(1))
-
-    # Track
-    track_pattern = r"https://open\.spotify\.com/track/([a-zA-Z0-9]+)"
-    match = re.match(track_pattern, url)
-    if match:
-        return ("track", match.group(1))
-
-    # Album
-    album_pattern = r"https://open\.spotify\.com/album/([a-zA-Z0-9]+)"
-    match = re.match(album_pattern, url)
-    if match:
-        return ("album", match.group(1))
-
-    raise ValueError("Invalid Spotify URL. Must be a track, playlist, or album URL.")
+    try:
+        return _match_spotify(url)
+    except ValueError as exc:
+        raise ValueError("Invalid Spotify URL. Must be a track, playlist, or album URL.") from exc
 
 
 def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
