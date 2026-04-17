@@ -11,6 +11,7 @@ from spotifydown_api import (
     SpotifyEmbedAPI,
     TrackInfo,
     detect_spotify_url_type,
+    extract_album_id,
     extract_playlist_id,
     extract_track_id,
     sanitize_filename,
@@ -89,10 +90,12 @@ class TestDetectSpotifyUrlType:
         with pytest.raises(ValueError, match="Invalid Spotify URL"):
             detect_spotify_url_type("https://example.com/something")
 
-    def test_album_url_raises_valueerror(self):
-        """Album URLs are not supported."""
-        with pytest.raises(ValueError, match="Invalid Spotify URL"):
-            detect_spotify_url_type("https://open.spotify.com/album/abc123")
+    def test_detect_album(self):
+        """Detect album URL type."""
+        url = "https://open.spotify.com/album/abc123"
+        url_type, item_id = detect_spotify_url_type(url)
+        assert url_type == "album"
+        assert item_id == "abc123"
 
 
 class TestSanitizeFilename:
@@ -387,3 +390,122 @@ class TestResilientExtraction:
                 api._cached_token = session_data.get("accessToken")
                 break
         assert api._cached_token == "tok_flat"
+
+
+class TestExtractAlbumId:
+    """Tests for extract_album_id function."""
+
+    def test_valid_album_url(self):
+        """Extract ID from standard album URL."""
+        assert (
+            extract_album_id("https://open.spotify.com/album/151w1FgRZfnKZA9FEcg9Z3")
+            == "151w1FgRZfnKZA9FEcg9Z3"
+        )
+
+    def test_invalid_url_raises_valueerror(self):
+        """Invalid URLs should raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid Spotify album URL"):
+            extract_album_id("https://example.com/album/123")
+
+    def test_playlist_url_raises_valueerror(self):
+        """Playlist URLs should raise ValueError for album extraction."""
+        with pytest.raises(ValueError, match="Invalid Spotify album URL"):
+            extract_album_id("https://open.spotify.com/playlist/abc123")
+
+
+class TestAlbumApi:
+    """Tests for SpotifyEmbedAPI album methods (offline with mocked HTTP)."""
+
+    def _build_album_html(self, name, artist, tracks, cover_url):
+        import json as _json
+
+        payload = {
+            "props": {
+                "pageProps": {
+                    "state": {
+                        "data": {
+                            "entity": {
+                                "type": "album",
+                                "name": name,
+                                "subtitle": artist,
+                                "trackList": tracks,
+                                "visualIdentity": {
+                                    "image": [
+                                        {
+                                            "url": cover_url,
+                                            "maxWidth": 300,
+                                            "maxHeight": 300,
+                                        }
+                                    ]
+                                },
+                                "releaseDate": {"isoString": "2022-10-21T00:00:00Z"},
+                            }
+                        },
+                        "settings": {
+                            "session": {
+                                "accessToken": "fake_token",
+                                "accessTokenExpirationTimestampMs": 9999999999999,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+        return (
+            "<html><body>"
+            f'<script id="__NEXT_DATA__" type="application/json">{_json.dumps(payload)}</script>'
+            "</body></html>"
+        )
+
+    def test_get_album_metadata_returns_playlistinfo(self, mocker):
+        """Album metadata shape matches PlaylistInfo so callers can be unified."""
+        api = SpotifyEmbedAPI()
+        tracks = [{"uri": "spotify:track:t1", "title": "S1", "subtitle": "A"}] * 3
+        html = self._build_album_html("M", "TS", tracks, "http://c/x.jpg")
+        mock_resp = mocker.MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = html
+        mocker.patch.object(api._session, "get", return_value=mock_resp)
+
+        meta = api.get_album_metadata("aid")
+        assert meta.name == "M"
+        assert meta.owner == "TS"
+        assert meta.cover_url == "http://c/x.jpg"
+        assert meta.track_count == 3
+
+    def test_iter_album_tracks_sets_album_cover_per_track(self, mocker):
+        """Every yielded track carries the album cover (no per-track fetch)."""
+        api = SpotifyEmbedAPI()
+        tracks = [
+            {"uri": "spotify:track:t1", "title": "One", "subtitle": "A"},
+            {"uri": "spotify:track:t2", "title": "Two", "subtitle": "B"},
+        ]
+        html = self._build_album_html("M", "TS", tracks, "http://c/album.jpg")
+        mock_resp = mocker.MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = html
+        mocker.patch.object(api._session, "get", return_value=mock_resp)
+
+        yielded = list(api.iter_album_tracks("aid"))
+        assert len(yielded) == 2
+        assert all(t.cover_url == "http://c/album.jpg" for t in yielded)
+        assert all(t.album == "M" for t in yielded)
+        assert all(t.release_date == "2022-10-21" for t in yielded)
+
+    def test_iter_album_tracks_skips_non_track_uris(self, mocker):
+        """Episode or unknown URIs in the trackList are skipped, not yielded."""
+        api = SpotifyEmbedAPI()
+        tracks = [
+            {"uri": "spotify:track:good", "title": "OK", "subtitle": "A"},
+            {"uri": "spotify:episode:nope", "title": "Skip", "subtitle": ""},
+            {"uri": "", "title": "Empty", "subtitle": ""},
+        ]
+        html = self._build_album_html("M", "TS", tracks, "http://c/x.jpg")
+        mock_resp = mocker.MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = html
+        mocker.patch.object(api._session, "get", return_value=mock_resp)
+
+        yielded = list(api.iter_album_tracks("aid"))
+        assert len(yielded) == 1
+        assert yielded[0].id == "good"

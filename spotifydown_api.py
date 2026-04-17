@@ -120,6 +120,7 @@ class SpotifyEmbedAPI:
 
     _EMBED_PLAYLIST_URL = "https://open.spotify.com/embed/playlist/{playlist_id}"
     _EMBED_TRACK_URL = "https://open.spotify.com/embed/track/{track_id}"
+    _EMBED_ALBUM_URL = "https://open.spotify.com/embed/album/{album_id}"
     _OEMBED_URL = "https://open.spotify.com/oembed"
     _SPCLIENT_URL = "https://spclient.wg.spotify.com/playlist/v2/playlist/{playlist_id}"
     _NEXT_DATA_PATTERN = re.compile(r'<script id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
@@ -490,6 +491,79 @@ class SpotifyEmbedAPI:
             raise SpotifyDownAPIError(f"Could not fetch track {track_id}")
         return track_info
 
+    def get_album_metadata(self, album_id: str) -> PlaylistInfo:
+        """Get album metadata from the embed page.
+
+        Returns a PlaylistInfo so callers can treat albums and playlists
+        uniformly. name is the album title, owner is the artist.
+        """
+        url = self._EMBED_ALBUM_URL.format(album_id=album_id)
+        data = self._fetch_embed_data(url)
+        entity = self._extract_entity(data)
+
+        name = entity.get("name") or entity.get("title") or "Unknown Album"
+        artist = entity.get("subtitle")
+
+        # Album cover from visualIdentity.image (prefer 300px+)
+        cover_url = None
+        vi = entity.get("visualIdentity", {})
+        images = vi.get("image", []) if isinstance(vi, dict) else []
+        for img in images:
+            if isinstance(img, dict) and img.get("url"):
+                cover_url = img.get("url")
+                if img.get("maxWidth", 0) >= 300:
+                    break
+
+        track_list = entity.get("trackList", [])
+        return PlaylistInfo(
+            name=str(name),
+            owner=str(artist) if artist else None,
+            description=entity.get("description"),
+            cover_url=cover_url,
+            track_count=len(track_list),
+        )
+
+    def iter_album_tracks(self, album_id: str) -> Iterator[TrackInfo]:
+        """Iterate over album tracks from the embed page.
+
+        Albums are bounded (max ~50 tracks on Spotify) so no spclient fallback
+        is needed. All tracks share the album cover, unlike playlists.
+        """
+        url = self._EMBED_ALBUM_URL.format(album_id=album_id)
+        data = self._fetch_embed_data(url)
+        entity = self._extract_entity(data)
+
+        # Album cover applies to every track
+        album_cover = None
+        vi = entity.get("visualIdentity", {})
+        images = vi.get("image", []) if isinstance(vi, dict) else []
+        for img in images:
+            if isinstance(img, dict) and img.get("url"):
+                album_cover = img.get("url")
+                if img.get("maxWidth", 0) >= 300:
+                    break
+
+        album_name = entity.get("name") or entity.get("title") or ""
+        release_date = entity.get("releaseDate")
+        if isinstance(release_date, dict):
+            release_date = release_date.get("isoString", "")[:10]
+
+        for track in entity.get("trackList", []):
+            if not isinstance(track, dict):
+                continue
+            uri = track.get("uri", "")
+            track_id = uri.split(":")[-1] if uri.startswith("spotify:track:") else ""
+            if not track_id:
+                continue
+
+            info = self._parse_track(track, track_id)
+            # Albums always share cover; override the None that _parse_track sets
+            info.cover_url = album_cover
+            info.album = album_name
+            if release_date and not info.release_date:
+                info.release_date = release_date
+            yield info
+
 
 # Legacy class kept for compatibility - redirects to embed API
 class SpotifyDownAPI:
@@ -606,6 +680,14 @@ class PlaylistClient:
         """
         return self._embed_api.get_track(track_id)
 
+    def get_album_metadata(self, album_id: str) -> PlaylistInfo:
+        """Get album metadata (name, artist, cover, track count)."""
+        return self._embed_api.get_album_metadata(album_id)
+
+    def iter_album_tracks(self, album_id: str) -> Iterator[TrackInfo]:
+        """Iterate over album tracks (all share the album cover)."""
+        yield from self._embed_api.iter_album_tracks(album_id)
+
 
 # Utility functions shared across desktop app and web backend
 
@@ -648,31 +730,56 @@ def extract_track_id(url: str) -> str:
     return match.group(1)
 
 
+def extract_album_id(url: str) -> str:
+    """Extract album ID from a Spotify URL.
+
+    Args:
+        url: Spotify album URL like https://open.spotify.com/album/ABC123
+
+    Returns:
+        The album ID (e.g., "ABC123")
+
+    Raises:
+        ValueError: If the URL is not a valid Spotify album URL
+    """
+    pattern = r"https://open\.spotify\.com/album/([a-zA-Z0-9]+)"
+    match = re.match(pattern, url)
+    if not match:
+        raise ValueError("Invalid Spotify album URL.")
+    return match.group(1)
+
+
 def detect_spotify_url_type(url: str) -> tuple[str, str]:
     """Detect the type of Spotify URL and extract the ID.
 
     Args:
-        url: Spotify URL (track or playlist)
+        url: Spotify URL (track, playlist, or album)
 
     Returns:
-        Tuple of (type, id) where type is 'track' or 'playlist'
+        Tuple of (type, id) where type is 'track', 'playlist', or 'album'
 
     Raises:
         ValueError: If the URL is not a valid Spotify URL
     """
-    # Try playlist first
+    # Playlist
     playlist_pattern = r"https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)"
     match = re.match(playlist_pattern, url)
     if match:
         return ("playlist", match.group(1))
 
-    # Try track
+    # Track
     track_pattern = r"https://open\.spotify\.com/track/([a-zA-Z0-9]+)"
     match = re.match(track_pattern, url)
     if match:
         return ("track", match.group(1))
 
-    raise ValueError("Invalid Spotify URL. Must be a track or playlist URL.")
+    # Album
+    album_pattern = r"https://open\.spotify\.com/album/([a-zA-Z0-9]+)"
+    match = re.match(album_pattern, url)
+    if match:
+        return ("album", match.group(1))
+
+    raise ValueError("Invalid Spotify URL. Must be a track, playlist, or album URL.")
 
 
 def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
@@ -706,6 +813,7 @@ __all__ = [
     "SpotifyPublicAPI",
     "TrackInfo",
     "detect_spotify_url_type",
+    "extract_album_id",
     "extract_playlist_id",
     "extract_track_id",
     "sanitize_filename",

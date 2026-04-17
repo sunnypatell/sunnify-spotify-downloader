@@ -8,6 +8,7 @@ import sys
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
 
@@ -943,3 +944,524 @@ class TestMainWindow:
         expected_contains = os.path.join(home, "Music", "Sunnify")
         # The path should be under user's home
         assert home in expected_contains
+
+
+class TestConfigModule:
+    """Tests for the persisted user config (load_config / save_config)."""
+
+    def test_load_config_returns_defaults_when_missing(self, tmp_path, mocker):
+        """Missing config file returns sane defaults."""
+        from Spotify_Downloader import DEFAULT_TEMPLATE, load_config
+
+        mocker.patch(
+            "Spotify_Downloader._config_path",
+            return_value=str(tmp_path / "nonexistent.json"),
+        )
+        cfg = load_config()
+        assert cfg["format"] == "mp3"
+        assert cfg["quality"] == "192"
+        assert cfg["filename_template"] == DEFAULT_TEMPLATE
+        assert cfg["recent_playlists"] == []
+
+    def test_load_config_roundtrip(self, tmp_path, mocker):
+        """save_config then load_config returns the same values."""
+        from Spotify_Downloader import load_config, save_config
+
+        mocker.patch(
+            "Spotify_Downloader._config_path",
+            return_value=str(tmp_path / "cfg.json"),
+        )
+        save_config(
+            {
+                "version": 1,
+                "download_path": "/tmp/foo",
+                "format": "flac",
+                "quality": "256",
+                "filename_template": "{artists} - {title}",
+                "recent_playlists": [{"url": "x", "name": "Y"}],
+            }
+        )
+        cfg = load_config()
+        assert cfg["download_path"] == "/tmp/foo"
+        assert cfg["format"] == "flac"
+        assert cfg["quality"] == "256"
+        assert cfg["filename_template"] == "{artists} - {title}"
+        assert len(cfg["recent_playlists"]) == 1
+
+    def test_load_config_clamps_invalid_format(self, tmp_path, mocker):
+        """Invalid format in config is clamped to mp3."""
+        from Spotify_Downloader import load_config, save_config
+
+        mocker.patch(
+            "Spotify_Downloader._config_path",
+            return_value=str(tmp_path / "cfg.json"),
+        )
+        save_config({"version": 1, "format": "garbage", "quality": "999"})
+        cfg = load_config()
+        assert cfg["format"] == "mp3"
+        assert cfg["quality"] == "192"
+
+    def test_load_config_tolerates_corrupt_file(self, tmp_path, mocker):
+        """Malformed JSON file returns defaults instead of crashing."""
+        from Spotify_Downloader import load_config
+
+        path = tmp_path / "broken.json"
+        path.write_text("{{not json")
+        mocker.patch("Spotify_Downloader._config_path", return_value=str(path))
+        cfg = load_config()
+        assert cfg["format"] == "mp3"
+
+
+class TestExtractSpotifyUrlFromText:
+    """Tests for the clipboard/drag-drop URL extractor."""
+
+    def test_plain_url(self):
+        from Spotify_Downloader import extract_spotify_url_from_text
+
+        url = "https://open.spotify.com/playlist/abc123"
+        assert extract_spotify_url_from_text(url) == url
+
+    def test_url_embedded_in_text(self):
+        from Spotify_Downloader import extract_spotify_url_from_text
+
+        text = "check this out https://open.spotify.com/track/xyz in here"
+        assert extract_spotify_url_from_text(text) == "https://open.spotify.com/track/xyz"
+
+    def test_album_url(self):
+        from Spotify_Downloader import extract_spotify_url_from_text
+
+        assert (
+            extract_spotify_url_from_text("https://open.spotify.com/album/aaa111")
+            == "https://open.spotify.com/album/aaa111"
+        )
+
+    def test_no_spotify_url(self):
+        from Spotify_Downloader import extract_spotify_url_from_text
+
+        assert extract_spotify_url_from_text("plain text with no url") is None
+
+    def test_empty_and_none(self):
+        from Spotify_Downloader import extract_spotify_url_from_text
+
+        assert extract_spotify_url_from_text("") is None
+
+
+class TestFilenameTemplate:
+    """Tests for MusicScraper._format_filename and custom templates."""
+
+    def _track(self, title="Hello", artists="World", album="Album"):
+        from spotifydown_api import TrackInfo
+
+        return TrackInfo(
+            id="tid",
+            title=title,
+            artists=artists,
+            album=album,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+
+    def test_default_template(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        assert scraper._format_filename(self._track()) == "Hello - World"
+
+    def test_reverse_template(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(filename_template="{artists} - {title}")
+        assert scraper._format_filename(self._track()) == "World - Hello"
+
+    def test_numbered_template(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(filename_template="{track_num:02d} {title} - {artists}")
+        assert scraper._format_filename(self._track(), track_num=7) == "07 Hello - World"
+
+    def test_malformed_template_falls_back(self):
+        """Unknown placeholders should not raise; we fall back to the default."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(filename_template="{bogus_placeholder}")
+        name = scraper._format_filename(self._track())
+        assert name == "Hello - World"
+
+
+class TestAudioFormatWiring:
+    """Tests that format + quality flow from config to yt-dlp opts."""
+
+    def test_defaults_produce_mp3_192(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        assert scraper.audio_format == "mp3"
+        assert scraper.audio_quality == "192"
+
+    def test_invalid_format_is_clamped(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(audio_format="garbage")
+        assert scraper.audio_format == "mp3"
+
+    def test_flac_postprocessor_has_no_quality(self, mocker):
+        """Lossless format must not pass preferredquality to ffmpeg."""
+        from Spotify_Downloader import MusicScraper
+
+        mocker.patch("Spotify_Downloader.get_ffmpeg_path", return_value="/opt/homebrew/bin")
+        captured = {}
+
+        class _FakeYDL:
+            def __init__(self, opts):
+                captured["opts"] = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def extract_info(self, *a, **kw):
+                return {}
+
+            def prepare_filename(self, info):
+                return ""
+
+        mocker.patch("Spotify_Downloader.YoutubeDL", _FakeYDL)
+
+        scraper = MusicScraper(audio_format="flac")
+        scraper.download_track_audio("ytsearch1:test", "/tmp/out.flac")
+        pps = captured["opts"]["postprocessors"]
+        assert pps[0]["preferredcodec"] == "flac"
+        assert "preferredquality" not in pps[0]
+
+    def test_mp3_320_postprocessor_has_quality(self, mocker):
+        """Lossy format passes the configured bitrate."""
+        from Spotify_Downloader import MusicScraper
+
+        mocker.patch("Spotify_Downloader.get_ffmpeg_path", return_value="/opt/homebrew/bin")
+        captured = {}
+
+        class _FakeYDL:
+            def __init__(self, opts):
+                captured["opts"] = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def extract_info(self, *a, **kw):
+                return {}
+
+            def prepare_filename(self, info):
+                return ""
+
+        mocker.patch("Spotify_Downloader.YoutubeDL", _FakeYDL)
+
+        scraper = MusicScraper(audio_format="mp3", audio_quality="320")
+        scraper.download_track_audio("ytsearch1:test", "/tmp/out.mp3")
+        pps = captured["opts"]["postprocessors"]
+        assert pps[0]["preferredcodec"] == "mp3"
+        assert pps[0]["preferredquality"] == "320"
+
+    def test_progress_hooks_cancel_raises(self, mocker):
+        """The progress hook raises when cancel_event is set so yt-dlp aborts."""
+        from Spotify_Downloader import MusicScraper
+
+        mocker.patch("Spotify_Downloader.get_ffmpeg_path", return_value="/opt/homebrew/bin")
+        captured = {}
+
+        class _FakeYDL:
+            def __init__(self, opts):
+                captured["opts"] = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
+            def extract_info(self, *a, **kw):
+                return {}
+
+            def prepare_filename(self, info):
+                return ""
+
+        mocker.patch("Spotify_Downloader.YoutubeDL", _FakeYDL)
+
+        cancel = threading.Event()
+        scraper = MusicScraper(cancel_event=cancel)
+        scraper.download_track_audio("ytsearch1:x", "/tmp/out.mp3")
+        hook = captured["opts"]["progress_hooks"][0]
+        # No cancel: hook does nothing
+        hook({"status": "downloading"})
+        # With cancel: hook raises so yt-dlp aborts mid-fragment
+        cancel.set()
+        with pytest.raises(RuntimeError, match="cancelled"):
+            hook({"status": "downloading"})
+
+
+class TestCoverEnrichment:
+    """Tests that per-track covers are fetched when the playlist embed omits them."""
+
+    def _track(self, tid="id1", cover=None):
+        from spotifydown_api import TrackInfo
+
+        return TrackInfo(
+            id=tid,
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date=None,
+            cover_url=cover,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+
+    def test_enriches_when_cover_missing(self, tmp_path):
+        """Empty track.cover_url triggers a get_track call for the real cover."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        mock_api = MagicMock()
+        enriched = self._track(cover="https://real/cover.jpg")
+        mock_api.get_track.return_value = enriched
+        scraper.spotifydown_api = mock_api
+
+        captured = []
+        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta["cover"])
+
+        bare = self._track(cover=None)
+        scraper._download_one_track(bare, str(tmp_path), "fallback-playlist-cover")
+        assert captured == ["https://real/cover.jpg"]
+
+    def test_does_not_enrich_when_disabled(self, tmp_path):
+        """Album path sets enrich_cover=False to skip per-track fetches."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        mock_api = MagicMock()
+        scraper.spotifydown_api = mock_api
+
+        bare = self._track(cover=None)
+        scraper._download_one_track(bare, str(tmp_path), "album-cover", enrich_cover=False)
+        mock_api.get_track.assert_not_called()
+
+    def test_uses_existing_cover_without_fetching(self, tmp_path):
+        """Track that already has a cover (e.g. fetched via spclient fallback)
+        should not trigger a second network call.
+        """
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        mock_api = MagicMock()
+        scraper.spotifydown_api = mock_api
+
+        with_cover = self._track(cover="https://already/present.jpg")
+        scraper._download_one_track(with_cover, str(tmp_path), "playlist-cover")
+        mock_api.get_track.assert_not_called()
+
+    def test_enrichment_failure_falls_back_to_default(self, tmp_path):
+        """If get_track fails, we fall back to default_cover_url rather than
+        crashing the worker.
+        """
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import SpotifyDownAPIError
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        mock_api = MagicMock()
+        mock_api.get_track.side_effect = SpotifyDownAPIError("offline")
+        scraper.spotifydown_api = mock_api
+
+        captured = []
+        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta["cover"])
+
+        bare = self._track(cover=None)
+        scraper._download_one_track(bare, str(tmp_path), "fallback-playlist-cover")
+        assert captured == ["fallback-playlist-cover"]
+
+
+class TestCancelDuringMaterialization:
+    """Tests that cancel set mid-iter_playlist_tracks aborts materialization."""
+
+    def test_materialize_tracks_stops_on_cancel(self):
+        from Spotify_Downloader import MusicScraper
+
+        cancel = threading.Event()
+        scraper = MusicScraper(cancel_event=cancel)
+
+        yielded_count = 0
+
+        def slow_generator():
+            nonlocal yielded_count
+            # Yield 5 then cancel; remaining yields should be skipped.
+            for i in range(10):
+                if i == 5:
+                    cancel.set()
+                yielded_count += 1
+                yield f"track-{i}"
+
+        out = scraper._materialize_tracks(slow_generator())
+        # 5 are collected pre-cancel; cancel fires on 6th yield and we break
+        # before appending that one.
+        assert len(out) == 5
+
+
+class TestAlbumScrape:
+    """Tests that scrape_album goes through iter_album_tracks and runs workers."""
+
+    def test_scrape_album_uses_album_api(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import TrackInfo
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+        tracks = [
+            TrackInfo(
+                id=f"t{i}",
+                title=f"S{i}",
+                artists="A",
+                album="M",
+                release_date="2022-10-21",
+                cover_url="http://album/cover.jpg",
+                duration_ms=None,
+                preview_url=None,
+                raw={},
+            )
+            for i in range(4)
+        ]
+
+        mock_api = MagicMock()
+        meta = MagicMock()
+        meta.name = "Midnights"
+        meta.owner = "TS"
+        meta.cover_url = "http://album/cover.jpg"
+        mock_api.get_album_metadata.return_value = meta
+        mock_api.iter_album_tracks.return_value = iter(tracks)
+        scraper.ensure_spotifydown_api = MagicMock(return_value=mock_api)
+        scraper.format_playlist_name = lambda _m: "Midnights - TS"
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        scraper.scrape_album("https://open.spotify.com/album/151w1FgRZfnKZA9FEcg9Z3", str(tmp_path))
+
+        # All 4 tracks processed
+        assert scraper.counter == 4
+        # iter_album_tracks was used, not iter_playlist_tracks
+        mock_api.iter_album_tracks.assert_called_once()
+        mock_api.iter_playlist_tracks.assert_not_called()
+        # get_track (cover enrichment) was NOT called for albums
+        mock_api.get_track.assert_not_called()
+
+
+class TestYtdlpStaleness:
+    """Tests for the yt-dlp version staleness detector."""
+
+    def test_fresh_version_is_not_stale(self, monkeypatch):
+        import yt_dlp.version as _v
+
+        from Spotify_Downloader import _ytdlp_version_is_stale
+
+        today = __import__("datetime").date.today()
+        fresh_ver = f"{today.year}.{today.month}.{today.day}"
+        monkeypatch.setattr(_v, "__version__", fresh_ver)
+
+        stale, ver = _ytdlp_version_is_stale(max_age_days=60)
+        assert stale is False
+        assert ver == fresh_ver
+
+    def test_old_version_is_stale(self, monkeypatch):
+        import yt_dlp.version as _v
+
+        from Spotify_Downloader import _ytdlp_version_is_stale
+
+        monkeypatch.setattr(_v, "__version__", "2023.1.1")
+
+        stale, ver = _ytdlp_version_is_stale(max_age_days=60)
+        assert stale is True
+        assert ver == "2023.1.1"
+
+    def test_malformed_version_is_not_flagged(self, monkeypatch):
+        import yt_dlp.version as _v
+
+        from Spotify_Downloader import _ytdlp_version_is_stale
+
+        monkeypatch.setattr(_v, "__version__", "not.a.version")
+
+        stale, _ver = _ytdlp_version_is_stale()
+        assert stale is False
