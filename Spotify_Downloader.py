@@ -15,7 +15,7 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.0.4"
+__version__ = "2.0.5"
 
 import concurrent.futures
 import os
@@ -228,7 +228,7 @@ class MusicScraper(QThread):
                     self.dlprogress_signal.emit(progress)
         return destination
 
-    def _download_one_track(self, track, playlist_folder_path, default_cover_url):
+    def _download_one_track(self, track, playlist_folder_path, default_cover_url, track_num=0):
         """Download a single track. Runs inside a ThreadPoolExecutor worker.
 
         Returns None on success, the track title on failure (for _failed_tracks).
@@ -239,6 +239,9 @@ class MusicScraper(QThread):
         preview, per-byte progress) is suppressed because those widgets are
         single-track and would flicker with N workers in flight. add_song_meta
         still fires so ID3 tags + cover art get written to every mp3.
+
+        track_num (1-based) is passed through to song_meta so the ID3 TRCK
+        frame can be populated for playlist ordering.
         """
         if self.is_cancelled():
             return None
@@ -263,9 +266,36 @@ class MusicScraper(QThread):
                 )
             self._in_flight_files.add(filepath)
 
-        album_name = track.album or ""
+        # Per-track cover enrichment. Spotify's playlist embed trackList does
+        # not include per-track cover URLs at all, so without this enrichment
+        # every track ends up falling back to default_cover_url (the playlist
+        # cover). That's the reported bug: "all 300 songs have the same cover".
+        # Fix: when cover_url is missing, fetch /embed/track/{id} which has
+        # the real visualIdentity.image. The request runs synchronously
+        # inside the worker before the YouTube search, so it adds roughly
+        # 100-300ms per track in sequential mode. In parallel mode that
+        # per-track cost overlaps with downloads running in other workers,
+        # so aggregate wall-clock impact on a full playlist stays small.
+        cover_url = track.cover_url
         release_date = track.release_date or ""
-        cover_url = track.cover_url or default_cover_url
+        if (
+            not cover_url
+            and track.id
+            and self.spotifydown_api is not None
+            and not self.is_cancelled()
+        ):
+            try:
+                enriched = self.spotifydown_api.get_track(track.id)
+                if enriched:
+                    if enriched.cover_url:
+                        cover_url = enriched.cover_url
+                    if not release_date and enriched.release_date:
+                        release_date = enriched.release_date
+            except SpotifyDownAPIError:
+                pass  # Fall through to default_cover_url
+
+        cover_url = cover_url or default_cover_url
+        album_name = track.album or ""
 
         song_meta = {
             "title": track_title,
@@ -274,6 +304,7 @@ class MusicScraper(QThread):
             "releaseDate": release_date,
             "cover": cover_url or "",
             "file": filepath,
+            "trackNumber": track_num,
         }
 
         # In sequential mode, emit song_meta at start so the UI shows what's
@@ -381,13 +412,15 @@ class MusicScraper(QThread):
         self._parallel_mode = worker_count > 1
 
         if worker_count == 1:
-            for track in tracks:
+            for idx, track in enumerate(tracks, start=1):
                 if self.is_cancelled():
                     break
                 # Reset the per-track progress bar at the top of each iteration
                 # so the single-track UI behaves the way it always has.
                 self.Resetprogress_signal.emit(0)
-                self._download_one_track(track, playlist_folder_path, metadata.cover_url)
+                self._download_one_track(
+                    track, playlist_folder_path, metadata.cover_url, track_num=idx
+                )
         else:
             try:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
@@ -397,8 +430,9 @@ class MusicScraper(QThread):
                             track,
                             playlist_folder_path,
                             metadata.cover_url,
+                            idx,
                         )
-                        for track in tracks
+                        for idx, track in enumerate(tracks, start=1)
                     ]
                     for future in concurrent.futures.as_completed(futures):
                         if self.is_cancelled():
@@ -477,6 +511,7 @@ class MusicScraper(QThread):
             "releaseDate": release_date,
             "cover": cover_url or "",
             "file": filepath,
+            "trackNumber": 1,
         }
 
         self.song_meta.emit(dict(song_meta))
@@ -562,6 +597,9 @@ class WritingMetaTagsThread(QThread):
             audio["artist"] = self.tags.get("artists", "")
             audio["album"] = self.tags.get("album", "")
             audio["date"] = self.tags.get("releaseDate", "")
+            track_num = self.tags.get("trackNumber") or 0
+            if track_num:
+                audio["tracknumber"] = str(track_num)
             audio.save()
 
             # Download and embed cover art synchronously (nested QThreads lose
