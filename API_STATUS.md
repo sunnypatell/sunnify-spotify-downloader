@@ -1,6 +1,6 @@
 # External API Status
 
-Sunnify v2.0.5 uses Spotify's embed page endpoints to fetch playlist and track
+Sunnify v2.0.6 uses Spotify's embed page endpoints to fetch playlist and track
 metadata without requiring developer credentials. YouTube (via `yt-dlp`) is used
 for audio downloads, with up to 4 tracks fetched in parallel.
 

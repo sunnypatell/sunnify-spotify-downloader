@@ -16,7 +16,7 @@ class Ui_MainWindow(object):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(750, 500)
         MainWindow.setStyleSheet("QFrame#frame, #SONGINFORMATION{\n"
-"    background-color: qlineargradient(spread:pad, x1:1.072045, y1:0.124, x2:0.368, y2:1, stop:0.227273 rgba(80, 214, 255, 155), stop:0.806818 rgba(112, 32,213,191));\n"
+"    background-color: qlineargradient(spread:pad, x1:1.072045, y1:0.124, x2:0.368, y2:1, stop:0.227273 rgba(80, 214, 255, 255), stop:0.806818 rgba(112, 32,213,255));\n"
 "    border-radius:10px;\n"
 "}\n"
 "QPushButton#Closed{\n"
@@ -381,7 +381,7 @@ class Ui_MainWindow(object):
         self.label_7.setText(_translate("MainWindow", "Status   :"))
         self.PlaylistMsg_2.setText(_translate("MainWindow", "Spotify Song Name :"))
         self.Select_Home.setText(_translate("MainWindow", "Follow me on Linkedin"))
-        self.version.setText(_translate("MainWindow", "V2.0.5"))
+        self.version.setText(_translate("MainWindow", "V2.0.6"))
         self.label_10.setText(_translate("MainWindow", "Counter :"))
         self.CounterLabel.setText(_translate("MainWindow", "Songs downloaded 0"))
         self.showPreviewCheck.setText(_translate("MainWindow", "Show Preview"))

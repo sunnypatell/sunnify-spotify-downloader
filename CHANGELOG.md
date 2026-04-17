@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-04-16
+
+### Added
+- **audio format + bitrate selection** in settings. choose between mp3, m4a, opus, flac, and wav, with 128/192/256/320 kbps for the lossy formats. the selection is persisted to disk (`~/Library/Application Support/Sunnify/config.json` on macos, `%APPDATA%\Sunnify` on windows, `$XDG_CONFIG_HOME/Sunnify` on linux) so it survives app restarts. end-to-end verified across all 10 format/quality combos via ffprobe (mp3 @ 128/192/256/320 kbps exact, m4a aac @ 129/327 kbps, opus, flac lossless, wav pcm_s16le @ 1536 kbps).
+- **multi-format metadata writers**: id3 for mp3, itunes atoms for m4a, vorbis comments for flac. each container gets its cover art + tags written correctly by the format-appropriate writer; unsupported containers (opus/wav) skip tagging gracefully instead of silently breaking.
+- counter now shows `X of Y` during downloads so users can see progress against the full playlist size instead of a bare increment.
+- metadata fetch now emits `Fetching track metadata (X of Y)...` every 10 tracks during the pre-download materialization phase so large playlists (700+ tracks) no longer look frozen for the 30-60 seconds of parallel embed fetches.
+- artist preview in the song info panel truncates long collaborator lists to `Artist A, Artist B +N` with a tooltip showing the full string, so classical tracks with 4+ performers no longer clip through the fixed-height label.
+
+### Fixed
+- stop button now takes effect immediately on large playlists instead of hanging for 10+ seconds. `iter_playlist_tracks` issues serial spclient + per-track metadata requests for playlists over 100 tracks, and the previous `list()` call held the thread for the whole duration before the cancel check could run. materialization now checks `is_cancelled()` between yields so stop preempts mid-fetch.
+- cancel-during-parallel-metadata hang: the parallel `/embed/track/{id}` `ThreadPoolExecutor` in `iter_playlist_tracks` previously blocked on `__exit__` waiting for all submitted futures to complete, holding the generator open for 20-30 seconds after the user pressed stop and causing the "download button won't go" symptom on restart. pool lifecycle is now managed via `try/finally` with `shutdown(wait=False, cancel_futures=True)` so pending HTTP fetches get cancelled immediately.
+- `RateLimitError` (HTTP 429 from spotify's embed endpoint) is now in the retry decorator's exception list with 4-attempt exponential backoff (1.5× factor), so transient rate limits under concurrent load recover automatically instead of surfacing as a terminal error.
+- metadata fetch concurrency dropped from 8 → 4 workers in `iter_playlist_tracks` to stay under spotify's embed-endpoint rate threshold on 700+ track playlists.
+- card is now fully opaque (closes #33). the translucent alpha values on the gradient stops (`155` / `191`) made text hard to read when the app sat in front of a bright wallpaper; both stops are now `255`. frameless window stays; only the card content is opacified.
+- album row in the song info panel is hidden entirely. spotify's unauthenticated embed endpoints do not expose album name, so the field was always blank; removing it is honest about the limitation instead of showing an empty "Album :" row.
+
+### Changed
+- url parsing now accepts `spotify:` URIs (copy-URI from the spotify desktop app), `/intl-xx/` locale-prefixed URLs, and trailing `?si=...` query params. drop-in compatible with the prior HTTPS-only detector; previously-working inputs still work.
+
+### Known limitations
+- changing audio format or quality mid-download does not apply to the in-flight download. `ScraperThread` captures the format/quality at construction and the running pool keeps them; new settings take effect on the next download. stop + re-start after changing settings to switch format mid-playlist (no resume, restarts from track 1).
+
 ## [2.0.5] - 2026-04-14
 
 ### Fixed
@@ -140,7 +163,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.5...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.6...HEAD
+[2.0.6]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...v2.0.3

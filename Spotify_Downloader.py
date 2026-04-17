@@ -15,7 +15,7 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.0.5"
+__version__ = "2.0.6"
 
 import concurrent.futures
 import os
@@ -38,10 +38,17 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import QCursor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QGraphicsDropShadowEffect,
+    QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QPushButton,
+    QVBoxLayout,
 )
 from yt_dlp import YoutubeDL
 
@@ -94,6 +101,73 @@ def get_ffmpeg_path():
     return None
 
 
+# Supported output formats. "lossy" means quality/bitrate applies; "lossless"
+# means the ffmpeg postprocessor ignores preferredquality.
+SUPPORTED_FORMATS = {
+    "mp3": {"ext": "mp3", "lossy": True},
+    "m4a": {"ext": "m4a", "lossy": True},
+    "opus": {"ext": "opus", "lossy": True},
+    "flac": {"ext": "flac", "lossy": False},
+    "wav": {"ext": "wav", "lossy": False},
+}
+SUPPORTED_QUALITIES = ("128", "192", "256", "320")
+
+
+def _config_dir() -> str:
+    """Return the per-user config directory, creating it if needed."""
+    import json as _json  # noqa: F401 (used by load/save)
+
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    elif sys.platform == "darwin":
+        base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
+    path = os.path.join(base, "Sunnify")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _config_path() -> str:
+    return os.path.join(_config_dir(), "config.json")
+
+
+def load_config() -> dict:
+    """Load persisted user config. Missing or corrupt file returns defaults."""
+    import json
+
+    defaults = {
+        "version": 1,
+        "download_path": None,
+        "format": "mp3",
+        "quality": "192",
+    }
+    try:
+        with open(_config_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return defaults
+        defaults.update({k: v for k, v in data.items() if k in defaults})
+        if defaults["format"] not in SUPPORTED_FORMATS:
+            defaults["format"] = "mp3"
+        if defaults["quality"] not in SUPPORTED_QUALITIES:
+            defaults["quality"] = "192"
+        return defaults
+    except (OSError, json.JSONDecodeError):
+        return defaults
+
+
+def save_config(config: dict) -> None:
+    """Persist user config to disk. Best-effort, swallows IO errors."""
+    import json
+
+    try:
+        with open(_config_path(), "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except OSError as exc:
+        print(f"[*] Could not save config: {exc}")
+
+
 class MusicScraper(QThread):
     PlaylistCompleted = pyqtSignal(str)
     PlaylistID = pyqtSignal(str)
@@ -109,13 +183,23 @@ class MusicScraper(QThread):
     # linear speedup through 4, diminishing returns past 6 (CPU-bound ffmpeg).
     MAX_WORKERS = 4
 
-    def __init__(self, cancel_event: threading.Event | None = None):
+    def __init__(
+        self,
+        cancel_event: threading.Event | None = None,
+        *,
+        audio_format: str = "mp3",
+        audio_quality: str = "192",
+    ):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
         self.session = requests.Session()
         self.spotifydown_api = None
         self._cancel_event = cancel_event or threading.Event()
         self._failed_tracks: list[str] = []  # Track failed downloads
+        # Output options. audio_format must be a key of SUPPORTED_FORMATS;
+        # audio_quality only applies to lossy formats (mp3/m4a/opus).
+        self.audio_format = audio_format if audio_format in SUPPORTED_FORMATS else "mp3"
+        self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
@@ -180,36 +264,42 @@ class MusicScraper(QThread):
                 "or apt install ffmpeg (Linux)"
             )
 
+        fmt = self.audio_format if self.audio_format in SUPPORTED_FORMATS else "mp3"
+        ext = SUPPORTED_FORMATS[fmt]["ext"]
+        is_lossy = SUPPORTED_FORMATS[fmt]["lossy"]
+
         base, _ = os.path.splitext(destination)
         output_template = base + ".%(ext)s"
+        postprocessor = {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": fmt,
+        }
+        if is_lossy:
+            postprocessor["preferredquality"] = self.audio_quality
+
         ydl_opts = {
             "format": "bestaudio/best",
             "noplaylist": True,
             "quiet": True,
+            "no_warnings": True,
             "outtmpl": output_template,
             "ffmpeg_location": ffmpeg_path,
             "retries": 5,
             "socket_timeout": 15,
             "concurrent_fragment_downloads": 4,
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
+            "postprocessors": [postprocessor],
         }
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
             if info.get("entries"):
                 info = info["entries"][0]
-            expected_path = base + ".mp3"
+            expected_path = base + "." + ext
             if os.path.exists(expected_path):
                 return expected_path
             fallback = ydl.prepare_filename(info)
             if os.path.exists(fallback):
                 return fallback
-        return base + ".mp3"
+        return base + "." + ext
 
     def download_http_file(self, url, destination):
         response = self.session.get(url, stream=True, timeout=60)
@@ -307,12 +397,11 @@ class MusicScraper(QThread):
             "trackNumber": track_num,
         }
 
-        # In sequential mode, emit song_meta at start so the UI shows what's
-        # currently downloading. In parallel mode, skip it — the UI widgets
-        # can only show one track at a time and flickering between N workers
-        # is worse than a stable "now processing" message.
-        if not self._parallel_mode:
-            self.song_meta.emit(dict(song_meta))
+        # Emit song_meta so the preview panel shows the current track. With
+        # multiple workers running, this label races between workers and ends
+        # up showing whichever track most recently started, which is fine
+        # (and better than a blank panel).
+        self.song_meta.emit(dict(song_meta))
 
         try:
             if os.path.exists(filepath):
@@ -397,7 +486,20 @@ class MusicScraper(QThread):
         # Materialize the generator into a list. iter_playlist_tracks is a
         # generator and generators are not thread-safe. Consuming it upfront
         # also lets us pick the right worker count based on track count.
-        tracks = list(spotify_api.iter_playlist_tracks(playlist_id))
+        # Cancel is checked between yields so very large playlists (where
+        # iter_playlist_tracks issues hundreds of spclient + per-track embed
+        # requests serially) can abort mid-fetch instead of waiting through
+        # the full window before the stop button takes effect.
+        expected_total = metadata.track_count or 0
+        tracks: list = []
+        for track in spotify_api.iter_playlist_tracks(playlist_id):
+            if self.is_cancelled():
+                break
+            tracks.append(track)
+            if expected_total and len(tracks) % 10 == 0:
+                self.error_signal.emit(
+                    f"Fetching track metadata ({len(tracks)} of {expected_total})..."
+                )
         self._total_tracks = len(tracks)
 
         if self.is_cancelled():
@@ -555,13 +657,23 @@ class ScraperThread(QThread):
     progress_update = pyqtSignal(str)
 
     def __init__(
-        self, spotify_link, music_folder=None, cancel_event: threading.Event | None = None
+        self,
+        spotify_link,
+        music_folder=None,
+        cancel_event: threading.Event | None = None,
+        *,
+        audio_format: str = "mp3",
+        audio_quality: str = "192",
     ):
         super().__init__()
         self.spotify_link = spotify_link
         self.music_folder = music_folder or os.path.join(os.getcwd(), "music")
         self._cancel_event = cancel_event or threading.Event()
-        self.scraper = MusicScraper(cancel_event=self._cancel_event)
+        self.scraper = MusicScraper(
+            cancel_event=self._cancel_event,
+            audio_format=audio_format,
+            audio_quality=audio_quality,
+        )
 
     def request_cancel(self):
         """Request cancellation of the download."""
@@ -581,6 +693,86 @@ class ScraperThread(QThread):
             self.progress_update.emit(f"{e}")
 
 
+def _fetch_cover_bytes(url: str) -> bytes | None:
+    """Download cover image bytes, returning None on any failure."""
+    if not url:
+        return None
+    try:
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 200 and resp.content:
+            return resp.content
+    except (requests.RequestException, OSError) as exc:
+        print(f"[*] Error fetching cover: {exc}")
+    return None
+
+
+def _write_metadata_mp3(filename: str, tags: dict, cover_bytes: bytes | None) -> None:
+    """Write ID3 tags + embedded cover art to an MP3."""
+    audio = EasyID3(filename)
+    audio["title"] = tags.get("title", "")
+    audio["artist"] = tags.get("artists", "")
+    audio["album"] = tags.get("album", "")
+    audio["date"] = tags.get("releaseDate", "")
+    track_num = tags.get("trackNumber") or 0
+    if track_num:
+        audio["tracknumber"] = str(track_num)
+    audio.save()
+    if cover_bytes:
+        id3 = ID3(filename)
+        id3["APIC"] = APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_bytes)
+        id3.save()
+
+
+def _write_metadata_m4a(filename: str, tags: dict, cover_bytes: bytes | None) -> None:
+    """Write iTunes atom tags + embedded cover art to an M4A/MP4."""
+    from mutagen.mp4 import MP4, MP4Cover
+
+    audio = MP4(filename)
+    audio["\xa9nam"] = tags.get("title", "")
+    audio["\xa9ART"] = tags.get("artists", "")
+    audio["\xa9alb"] = tags.get("album", "")
+    date = tags.get("releaseDate", "")
+    if date:
+        audio["\xa9day"] = date
+    track_num = tags.get("trackNumber") or 0
+    if track_num:
+        audio["trkn"] = [(int(track_num), 0)]
+    if cover_bytes:
+        audio["covr"] = [MP4Cover(cover_bytes, imageformat=MP4Cover.FORMAT_JPEG)]
+    audio.save()
+
+
+def _write_metadata_flac(filename: str, tags: dict, cover_bytes: bytes | None) -> None:
+    """Write Vorbis comments + embedded cover art to a FLAC."""
+    from mutagen.flac import FLAC, Picture
+
+    audio = FLAC(filename)
+    audio["title"] = tags.get("title", "")
+    audio["artist"] = tags.get("artists", "")
+    audio["album"] = tags.get("album", "")
+    date = tags.get("releaseDate", "")
+    if date:
+        audio["date"] = date
+    track_num = tags.get("trackNumber") or 0
+    if track_num:
+        audio["tracknumber"] = str(track_num)
+    if cover_bytes:
+        pic = Picture()
+        pic.type = 3  # Front cover
+        pic.mime = "image/jpeg"
+        pic.desc = "Cover"
+        pic.data = cover_bytes
+        audio.add_picture(pic)
+    audio.save()
+
+
+_METADATA_WRITERS = {
+    ".mp3": _write_metadata_mp3,
+    ".m4a": _write_metadata_m4a,
+    ".flac": _write_metadata_flac,
+}
+
+
 class WritingMetaTagsThread(QThread):
     tags_success = pyqtSignal(str)
 
@@ -590,38 +782,23 @@ class WritingMetaTagsThread(QThread):
         self.filename = filename
 
     def run(self):
+        """Write tags + cover art synchronously, dispatching on file extension.
+
+        Each container uses a different tag system (ID3 for mp3, iTunes atoms
+        for m4a, Vorbis comments for flac). Opus/WAV are skipped with a log
+        line; those formats have limited or no standard cover-art story that
+        would repay the extra dependency surface for this project's scope.
+        """
         try:
             print("[*] FileName : ", self.filename)
-            audio = EasyID3(self.filename)
-            audio["title"] = self.tags.get("title", "")
-            audio["artist"] = self.tags.get("artists", "")
-            audio["album"] = self.tags.get("album", "")
-            audio["date"] = self.tags.get("releaseDate", "")
-            track_num = self.tags.get("trackNumber") or 0
-            if track_num:
-                audio["tracknumber"] = str(track_num)
-            audio.save()
+            ext = os.path.splitext(self.filename)[1].lower()
+            writer = _METADATA_WRITERS.get(ext)
+            if writer is None:
+                self.tags_success.emit("Tags skipped (unsupported container)")
+                return
 
-            # Download and embed cover art synchronously (nested QThreads lose
-            # their signal delivery once this run() method returns, so a
-            # synchronous fetch is the correct approach here)
-            cover_url = self.tags.get("cover", "")
-            if cover_url:
-                try:
-                    resp = requests.get(cover_url, timeout=15)
-                    if resp.status_code == 200 and resp.content:
-                        audio = ID3(self.filename)
-                        audio["APIC"] = APIC(
-                            encoding=3,
-                            mime="image/jpeg",
-                            type=3,
-                            desc="Cover",
-                            data=resp.content,
-                        )
-                        audio.save()
-                except (requests.RequestException, OSError) as e:
-                    print(f"[*] Error adding cover art: {e}")
-
+            cover_bytes = _fetch_cover_bytes(self.tags.get("cover", ""))
+            writer(self.filename, self.tags, cover_bytes)
             self.tags_success.emit("Tags added successfully")
         except Exception as e:
             print(f"[*] Error writing meta tags: {e}")
@@ -654,6 +831,101 @@ class DownloadThumbnail(QThread):
         self.main_UI.CoverImg.show()
 
 
+class SettingsDialog(QDialog):
+    """Download folder + audio format + quality in one dialog."""
+
+    def __init__(self, parent, config: dict):
+        super().__init__(parent)
+        self.setWindowTitle("Sunnify Settings")
+        self.setModal(True)
+        # Min width + resizable so the full path fits on any screen; wider
+        # default because macOS path strings are long (`/Users/.../Music/...`).
+        self.setMinimumWidth(560)
+        self.resize(620, self.sizeHint().height())
+        self._config = dict(config)
+
+        from PyQt5.QtWidgets import QLineEdit
+
+        # QLineEdit (read-only) handles arbitrarily long paths cleanly: it
+        # elides mid-path with horizontal scroll on focus, rather than
+        # truncating and leaving the user guessing. Tooltip always shows the
+        # full value.
+        self._folder_label = QLineEdit(self._config.get("download_path") or "(not set)")
+        self._folder_label.setReadOnly(True)
+        self._folder_label.setFrame(False)
+        self._folder_label.setCursorPosition(0)
+        self._folder_label.setToolTip(self._folder_label.text())
+        self._folder_label.setStyleSheet("QLineEdit { background: transparent; padding: 0; }")
+        browse = QPushButton("Choose folder")
+        browse.clicked.connect(self._choose_folder)
+
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(self._folder_label, 1)
+        folder_row.addWidget(browse)
+
+        self._format_cb = QComboBox()
+        for key in SUPPORTED_FORMATS:
+            self._format_cb.addItem(key)
+        self._format_cb.setCurrentText(self._config.get("format", "mp3"))
+        self._format_cb.currentTextChanged.connect(self._on_format_change)
+
+        self._quality_cb = QComboBox()
+        for q in SUPPORTED_QUALITIES:
+            self._quality_cb.addItem(f"{q} kbps")
+        current_q = self._config.get("quality", "192")
+        self._quality_cb.setCurrentText(f"{current_q} kbps")
+        self._on_format_change(self._format_cb.currentText())
+
+        form = QFormLayout()
+        form.addRow("Download folder:", folder_row)
+        form.addRow("Audio format:", self._format_cb)
+        form.addRow("Audio quality:", self._quality_cb)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(btns)
+
+    def _choose_folder(self):
+        start = (
+            self._folder_label.text()
+            if os.path.isdir(self._folder_label.text())
+            else os.path.expanduser("~")
+        )
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Download Folder",
+            start,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        )
+        if folder:
+            # Only append "Sunnify" when the user picked a non-Sunnify folder,
+            # otherwise re-selecting the existing destination creates nested
+            # Sunnify/Sunnify/... paths.
+            chosen = (
+                folder
+                if os.path.basename(folder.rstrip(os.sep)) == "Sunnify"
+                else os.path.join(folder, "Sunnify")
+            )
+            self._folder_label.setText(chosen)
+            self._folder_label.setCursorPosition(0)
+            self._folder_label.setToolTip(chosen)
+
+    def _on_format_change(self, fmt: str) -> None:
+        """Lossless formats (flac/wav) ignore the bitrate selector."""
+        is_lossy = SUPPORTED_FORMATS.get(fmt, {}).get("lossy", True)
+        self._quality_cb.setEnabled(is_lossy)
+
+    def result_config(self) -> dict:
+        self._config["download_path"] = self._folder_label.text()
+        self._config["format"] = self._format_cb.currentText()
+        self._config["quality"] = self._quality_cb.currentText().split()[0]
+        return self._config
+
+
 # Main Window
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -661,9 +933,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
 
-        # Default download path - use user's Music folder, not cwd (which is / on macOS bundles)
-        self.download_path = self._get_default_download_path()
-        self._download_path_set = False  # Track if user has explicitly chosen a path
+        # Load persisted user config so format/quality/folder survive restarts
+        self._config = load_config()
+        self.download_path = self._config.get("download_path") or self._get_default_download_path()
+        self._download_path_set = bool(self._config.get("download_path"))
         self._active_threads = []  # Keep references to running threads to prevent GC crashes
         self._is_downloading = False  # Track download state for stop button
         self._cancel_event = threading.Event()  # Event for cooperative thread cancellation
@@ -679,6 +952,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Closed.clicked.connect(self.exitprogram)
         self.Select_Home.clicked.connect(self.Linkedin)
         self.SettingsBtn.clicked.connect(self.open_settings)
+
+        # Hide the Album row in the preview panel: Spotify's unauthenticated
+        # embed endpoints do not expose album name anywhere we can reach it,
+        # so the field would always be blank. A missing row reads better than
+        # a permanently empty label.
+        self.label_8.hide()
+        self.AlbumText.hide()
 
     def _get_default_download_path(self):
         """Get a sensible default download path that's writable."""
@@ -724,28 +1004,38 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
         if folder:
-            # Create Sunnify subfolder so downloads don't splatter everywhere
-            self.download_path = os.path.join(folder, "Sunnify")
+            # Keep downloads contained in a "Sunnify" subfolder, but avoid
+            # creating nested Sunnify/Sunnify/... paths when the user picked
+            # a folder that's already named Sunnify.
+            if os.path.basename(folder.rstrip(os.sep)) == "Sunnify":
+                self.download_path = folder
+            else:
+                self.download_path = os.path.join(folder, "Sunnify")
             self._download_path_set = True
+            self._config["download_path"] = self.download_path
+            save_config(self._config)
             return True
         return False
 
     def open_settings(self):
-        """Open settings dialog to choose download location."""
-        folder = QFileDialog.getExistingDirectory(
-            self,
-            "Select Download Folder",
-            self.download_path if os.path.exists(self.download_path) else os.path.expanduser("~"),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
-        )
-        if folder:
-            self.download_path = os.path.join(folder, "Sunnify")
-            self._download_path_set = True
-            QMessageBox.information(
-                self,
-                "Settings Updated",
-                f"Download location set to:\n{self.download_path}",
+        """Full settings dialog: folder + audio format + bitrate."""
+        cfg_for_dialog = dict(self._config)
+        cfg_for_dialog["download_path"] = self.download_path
+        dialog = SettingsDialog(self, cfg_for_dialog)
+        if dialog.exec_() == QDialog.Accepted:
+            new = dialog.result_config()
+            if new.get("download_path"):
+                self.download_path = new["download_path"]
+                self._download_path_set = True
+            self._config.update(
+                {
+                    "download_path": self.download_path,
+                    "format": new.get("format", "mp3"),
+                    "quality": new.get("quality", "192"),
+                }
             )
+            save_config(self._config)
+            self.statusMsg.setText("Settings saved")
 
     @pyqtSlot()
     def on_returnButton(self):
@@ -788,7 +1078,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.DownloadBtn.setText("Stop")
 
             self.scraper_thread = ScraperThread(
-                spotify_url, self.download_path, cancel_event=self._cancel_event
+                spotify_url,
+                self.download_path,
+                cancel_event=self._cancel_event,
+                audio_format=self._config.get("format", "mp3"),
+                audio_quality=self._config.get("quality", "192"),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
@@ -845,7 +1139,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self._active_threads.append(thumb_thread)
                 thumb_thread.finished.connect(lambda: self._cleanup_thread(thumb_thread))
                 thumb_thread.start()
-            self.ArtistNameText.setText(song_meta.get("artists", ""))
+            artists_full = song_meta.get("artists", "")
+            artist_list = [a.strip() for a in artists_full.split(",") if a.strip()]
+            if len(artist_list) > 2:
+                artists_display = f"{artist_list[0]}, {artist_list[1]} +{len(artist_list) - 2}"
+            else:
+                artists_display = artists_full
+            self.ArtistNameText.setText(artists_display)
+            self.ArtistNameText.setToolTip(artists_full)
             self.AlbumText.setText(song_meta.get("album", ""))
             self.SongName.setText(song_meta.get("title", ""))
             self.YearText.setText(song_meta.get("releaseDate", ""))
@@ -873,7 +1174,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @pyqtSlot(int)
     def update_counter(self, count):
-        self.CounterLabel.setText("Songs downloaded " + str(count))
+        total = 0
+        if hasattr(self, "scraper_thread") and self.scraper_thread is not None:
+            try:
+                total = self.scraper_thread.scraper._total_tracks or 0
+            except AttributeError:
+                total = 0
+        if total > 0:
+            self.CounterLabel.setText(f"Songs downloaded {count} of {total}")
+        else:
+            self.CounterLabel.setText("Songs downloaded " + str(count))
 
     @pyqtSlot(int)
     def update_song_progress(self, progress):

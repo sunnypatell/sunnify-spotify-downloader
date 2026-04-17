@@ -846,10 +846,13 @@ class TestParallelDownloads:
         assert claimed != base_path
         assert "[id_b]" in claimed
 
-    def test_parallel_mode_suppresses_song_meta_emits(self, tmp_path):
-        """In parallel mode, song_meta (UI preview) is not emitted per track.
+    def test_parallel_mode_emits_song_meta_per_track(self, tmp_path):
+        """In parallel mode, song_meta IS emitted per track.
 
-        Audit fix H2: avoids label flicker + thumbnail thread spam.
+        Previously suppressed to avoid label flicker, but an empty Song
+        Information panel looked like a bug. Now the label races between
+        workers and shows whichever track most recently started, which is
+        fine. add_song_meta still fires for ID3 tag writing.
         """
         from Spotify_Downloader import MusicScraper
 
@@ -882,9 +885,10 @@ class TestParallelDownloads:
 
         scraper.scrape_playlist("https://open.spotify.com/playlist/abc", str(tmp_path))
 
-        # 4 tracks >= 3 threshold → parallel mode. song_meta should NOT have
-        # been emitted per track. add_song_meta must still fire (for ID3 tags).
-        assert scraper.song_meta.emit.call_count == 0
+        # 4 tracks >= 3 threshold, parallel mode. song_meta now emits per
+        # track so the preview panel reflects active work. add_song_meta
+        # still fires per track for ID3 tag writing.
+        assert scraper.song_meta.emit.call_count == 4
         assert scraper.add_song_meta.emit.call_count == 4
 
     def test_parallel_mode_aggregate_progress_emits(self, tmp_path):
