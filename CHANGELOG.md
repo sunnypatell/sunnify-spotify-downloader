@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-04-14
+
+### Fixed
+- every track in a playlist sharing the same cover art (closes #31). spotify's playlist embed trackList does not include per-track cover urls at all, so every track was falling back to the playlist cover. the download worker now enriches missing cover urls by fetching `/embed/track/{id}` (which has the real `visualIdentity.image`) in parallel with the youtube search, so per-track covers land in the id3 tags at no wall-clock cost.
+- release date is now also pulled from the per-track enrichment call when missing, so the `year` id3 tag populates correctly for playlist downloads.
+
+### Added
+- track number (id3 `TRCK` / `tracknumber`) is now written to downloaded files using the 1-based playlist position. addresses the broader "no meta tags apart from song name and artist" feedback from #31.
+
+### Notes
+- album name and genre remain unavailable in this release because spotify's unauthenticated embed endpoints do not expose them at all. the `/embed/track/{id}` entity's `relatedEntityUri` points at the artist, not the album, and the non-embed track page is a client-rendered spa with no ssr payload. adding those fields would require oauth, which conflicts with the "no account required" model the app is built around.
+
 ## [2.0.4] - 2026-04-13
 
 ### Added
@@ -128,7 +140,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.4...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.5...HEAD
+[2.0.5]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.1...v2.0.2

@@ -943,3 +943,239 @@ class TestMainWindow:
         expected_contains = os.path.join(home, "Music", "Sunnify")
         # The path should be under user's home
         assert home in expected_contains
+
+
+class TestCoverEnrichment:
+    """Tests for per-track cover art enrichment (fixes #31).
+
+    Playlist embed trackList does not include per-track cover urls; without
+    enrichment every track would fall back to default_cover_url (the playlist
+    cover) and end up with the same artwork. These tests lock in that the
+    worker calls get_track when cover_url is missing, uses the enriched
+    release_date too, and falls back gracefully on enrichment failure.
+    """
+
+    def _track(self, tid="id1", cover=None, release_date=None):
+        from spotifydown_api import TrackInfo
+
+        return TrackInfo(
+            id=tid,
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date=release_date,
+            cover_url=cover,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+
+    def _stub_scraper_signals(self, scraper):
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+    def test_missing_cover_triggers_enrichment(self, tmp_path):
+        """Track with cover_url=None causes a get_track call for the real cover."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        self._stub_scraper_signals(scraper)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        mock_api = MagicMock()
+        enriched = self._track(cover="https://real/cover.jpg", release_date="2024-06-01")
+        mock_api.get_track.return_value = enriched
+        scraper.spotifydown_api = mock_api
+
+        captured = []
+        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+
+        scraper._download_one_track(
+            self._track(cover=None), str(tmp_path), "fallback-playlist-cover"
+        )
+        assert captured[0]["cover"] == "https://real/cover.jpg"
+        assert captured[0]["releaseDate"] == "2024-06-01"
+        mock_api.get_track.assert_called_once_with("id1")
+
+    def test_existing_cover_skips_enrichment(self, tmp_path):
+        """Track that already has cover_url (e.g. spclient fallback path) does
+        not trigger a second network call."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        self._stub_scraper_signals(scraper)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        mock_api = MagicMock()
+        scraper.spotifydown_api = mock_api
+
+        scraper._download_one_track(
+            self._track(cover="https://already/present.jpg"),
+            str(tmp_path),
+            "fallback",
+        )
+        mock_api.get_track.assert_not_called()
+
+    def test_enrichment_failure_falls_back_to_playlist_cover(self, tmp_path):
+        """If get_track raises, the worker silently falls back to default_cover_url."""
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import SpotifyDownAPIError
+
+        scraper = MusicScraper()
+        self._stub_scraper_signals(scraper)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        mock_api = MagicMock()
+        mock_api.get_track.side_effect = SpotifyDownAPIError("offline")
+        scraper.spotifydown_api = mock_api
+
+        captured = []
+        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+
+        scraper._download_one_track(
+            self._track(cover=None), str(tmp_path), "playlist-cover-fallback"
+        )
+        assert captured[0]["cover"] == "playlist-cover-fallback"
+
+    def test_no_enrichment_when_cancelled(self, tmp_path):
+        """Cancel set before worker runs skips enrichment + download entirely."""
+        from Spotify_Downloader import MusicScraper
+
+        cancel = threading.Event()
+        scraper = MusicScraper(cancel_event=cancel)
+        self._stub_scraper_signals(scraper)
+        scraper.download_track_audio = MagicMock()
+
+        mock_api = MagicMock()
+        scraper.spotifydown_api = mock_api
+
+        cancel.set()
+        result = scraper._download_one_track(self._track(cover=None), str(tmp_path), "fallback")
+        assert result is None
+        mock_api.get_track.assert_not_called()
+        scraper.download_track_audio.assert_not_called()
+
+    def test_enrichment_preserves_existing_release_date(self, tmp_path):
+        """If the track already has release_date, enrichment shouldn't clobber it."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        self._stub_scraper_signals(scraper)
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        mock_api = MagicMock()
+        enriched = self._track(cover="https://real/cover.jpg", release_date="2020-01-01")
+        mock_api.get_track.return_value = enriched
+        scraper.spotifydown_api = mock_api
+
+        captured = []
+        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+
+        original = self._track(cover=None, release_date="2024-12-31")
+        scraper._download_one_track(original, str(tmp_path), "fallback")
+        assert captured[0]["releaseDate"] == "2024-12-31"
+
+
+class TestTrackNumberMetadata:
+    """Tests that track_num flows into song_meta and gets written to ID3."""
+
+    def _track(self, tid="t1"):
+        from spotifydown_api import TrackInfo
+
+        return TrackInfo(
+            id=tid,
+            title="Title",
+            artists="Artist",
+            album="Album",
+            release_date="2024-01-01",
+            cover_url="https://x/y.jpg",
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+
+    def test_track_num_in_song_meta(self, tmp_path):
+        """_download_one_track threads track_num into the emitted song_meta."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+
+        captured = []
+        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+
+        scraper._download_one_track(self._track(), str(tmp_path), "", track_num=7)
+        assert captured[0]["trackNumber"] == 7
+
+    def test_writingmetatagsthread_writes_tracknumber(self, tmp_path, mocker):
+        """WritingMetaTagsThread writes trackNumber to ID3 when present."""
+        from Spotify_Downloader import WritingMetaTagsThread
+
+        # Mock EasyID3/ID3 so we can inspect what was written without a real mp3
+        mock_easy = mocker.MagicMock()
+        mocker.patch("Spotify_Downloader.EasyID3", return_value=mock_easy)
+        mocker.patch(
+            "Spotify_Downloader.requests.get",
+            return_value=mocker.MagicMock(status_code=200, content=b""),
+        )
+
+        tags = {
+            "title": "T",
+            "artists": "A",
+            "album": "Al",
+            "releaseDate": "2024-05-01",
+            "trackNumber": 5,
+            "cover": "",
+        }
+        thread = WritingMetaTagsThread(tags, str(tmp_path / "fake.mp3"))
+        thread.tags_success = MagicMock()
+        thread.run()
+        mock_easy.__setitem__.assert_any_call("tracknumber", "5")
+
+    def test_writingmetatagsthread_skips_tracknumber_when_zero(self, tmp_path, mocker):
+        """trackNumber=0 (unset) should not write a tag."""
+        from Spotify_Downloader import WritingMetaTagsThread
+
+        mock_easy = mocker.MagicMock()
+        mocker.patch("Spotify_Downloader.EasyID3", return_value=mock_easy)
+        mocker.patch(
+            "Spotify_Downloader.requests.get",
+            return_value=mocker.MagicMock(status_code=200, content=b""),
+        )
+
+        tags = {
+            "title": "T",
+            "artists": "A",
+            "album": "",
+            "releaseDate": "",
+            "trackNumber": 0,
+            "cover": "",
+        }
+        thread = WritingMetaTagsThread(tags, str(tmp_path / "fake.mp3"))
+        thread.tags_success = MagicMock()
+        thread.run()
+        # Confirm tracknumber was NOT written
+        calls = [c for c in mock_easy.__setitem__.call_args_list if c.args[0] == "tracknumber"]
+        assert len(calls) == 0
