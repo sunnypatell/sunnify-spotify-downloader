@@ -98,13 +98,18 @@ root
 
 ## Features
 
-- 🎼 Full playlist and single track downloader (tagged MP3 library)
-- ⚡ Parallel track downloads (4 concurrent workers by default, ~4x speedup on large playlists)
-- 🖼️ Artwork and tagging (title, artists, album, release date, cover art)
-- 🚦 Spotify embed page API (no credentials required)
-- 🎯 YouTube audio via `yt-dlp` with FFmpeg conversion
-- 🪟 Clean desktop UI (progress, preview panel, settings, download location picker)
-- 🌐 Web experience (Flask backend and Next.js client)
+- 🎼 Playlists, tracks, and albums as a tagged MP3 library
+- ⚡ Parallel downloads (4 concurrent workers by default, ~4x speedup on large playlists)
+- 🎚 Multi-format output: MP3, M4A, FLAC, OPUS, WAV, with 128/192/256/320 kbps bitrate for lossy formats
+- 🖼️ Per-track cover art, release year, and track number embedded in every file
+- 🏷️ Filename template customization (Title - Artists, Artists - Title, numbered variants)
+- 🎧 Drag-and-drop Spotify links directly onto the window, or auto-detect from clipboard
+- 🔁 Retry failed tracks from the completion dialog, open the output folder in one click
+- 🕓 Recent downloads history persisted across sessions
+- ⌨️ Keyboard shortcuts: Cmd/Ctrl+, for settings, Cmd/Ctrl+Shift+A for about, Esc to stop
+- 🚦 No credentials required; uses Spotify's embed page API and YouTube via `yt-dlp`
+- 🪟 Purple-gradient PyQt desktop UI with a design system (see `theme.py`) and a programmatic layout (see `Template.py`)
+- 🌐 Companion Flask backend + Next.js client for metadata preview on the web
 
 <hr/>
 

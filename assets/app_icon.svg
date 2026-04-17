@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Sunnify app icon: purple gradient tile with centered equalizer bars.
+       Palette ties directly to theme.py Color tokens so the desktop app and
+       the app icon read as one brand. -->
+
+  <defs>
+    <!-- Tile background (deep violet → near-black purple) -->
+    <linearGradient id="bgGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#3b2185"/>
+      <stop offset="55%"  stop-color="#1e1140"/>
+      <stop offset="100%" stop-color="#0c0619"/>
+    </linearGradient>
+
+    <!-- Equalizer bar gradient (violet → pink) -->
+    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#a78bfa"/>
+      <stop offset="55%"  stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#f472b6"/>
+    </linearGradient>
+
+    <!-- Top-left inner highlight to suggest light direction -->
+    <radialGradient id="topLight" cx="0.25" cy="0.2" r="0.6">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Soft glow behind the bars for depth -->
+    <radialGradient id="centerGlow" cx="0.5" cy="0.55" r="0.5">
+      <stop offset="0%"  stop-color="#a78bfa" stop-opacity="0.45"/>
+      <stop offset="70%" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Drop shadow under bars -->
+    <filter id="barShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="12" result="blurred"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.35"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Rounded-rect clip so everything stays tile-shaped -->
+    <clipPath id="tileClip">
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tileClip)">
+    <!-- Base gradient tile -->
+    <rect width="1024" height="1024" fill="url(#bgGradient)"/>
+
+    <!-- Soft purple glow behind the bars -->
+    <rect width="1024" height="1024" fill="url(#centerGlow)"/>
+
+    <!-- Top-left light catch -->
+    <rect width="1024" height="1024" fill="url(#topLight)"/>
+
+    <!-- Equalizer bars. Heights picked so the silhouette reads as a beat.
+         Bar width 80, gap 40, centered around x=512. Five bars.           -->
+    <g filter="url(#barShadow)" fill="url(#barGradient)">
+      <!-- left outer  -->
+      <rect x="228" y="432" width="80" height="160" rx="40"/>
+      <!-- left inner  -->
+      <rect x="348" y="352" width="80" height="320" rx="40"/>
+      <!-- center tall -->
+      <rect x="468" y="288" width="80" height="448" rx="40"/>
+      <!-- right inner -->
+      <rect x="588" y="352" width="80" height="320" rx="40"/>
+      <!-- right outer -->
+      <rect x="708" y="432" width="80" height="160" rx="40"/>
+    </g>
+
+    <!-- Tiny base line under the bars to anchor them -->
+    <rect x="200" y="760" width="624" height="6" rx="3" fill="#ffffff" opacity="0.08"/>
+  </g>
+
+  <!-- Hairline border for definition on light wallpapers -->
+  <rect x="2" y="2" width="1020" height="1020" rx="222" ry="222"
+        fill="none" stroke="#000000" stroke-opacity="0.35" stroke-width="2"/>
+</svg>

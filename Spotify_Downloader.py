@@ -15,7 +15,7 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.0.4"
+__version__ = "2.1.0"
 
 import concurrent.futures
 import datetime as _dt
@@ -33,9 +33,10 @@ from mutagen.id3 import APIC, ID3
 from PyQt5.QtCore import (
     QEasingCurve,
     QPropertyAnimation,
-    QSize,
+    QRect,
     Qt,
     QThread,
+    QTimer,
     pyqtSignal,
     pyqtSlot,
 )
@@ -1152,14 +1153,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Drag-and-drop of a Spotify URL onto the window auto-fills the input
         self.setAcceptDrops(True)
 
-        # Warn on stale yt-dlp because YouTube anti-bot patches ship in yt-dlp
-        # updates; a 2+ month old release starts failing with 403s.
+        # Keyboard shortcuts
+        from PyQt5.QtGui import QKeySequence
+        from PyQt5.QtWidgets import QShortcut
+
+        QShortcut(QKeySequence("Ctrl+,"), self, self.open_settings)
+        QShortcut(QKeySequence("Meta+,"), self, self.open_settings)
+        QShortcut(QKeySequence("Escape"), self, self._escape_pressed)
+        QShortcut(QKeySequence("Ctrl+Shift+A"), self, self.show_about)
+        QShortcut(QKeySequence("Meta+Shift+A"), self, self.show_about)
+        QShortcut(QKeySequence("Ctrl+Q"), self, self.exitprogram)
+        QShortcut(QKeySequence("Meta+Q"), self, self.exitprogram)
+
         stale, ver = _ytdlp_version_is_stale()
         if stale:
             self.statusMsg.setText(f"yt-dlp {ver} is stale; run: pip install -U yt-dlp")
+        else:
+            self.statusMsg.setText("Ready to download")
 
         # Look for a Spotify URL in the clipboard right away
         self._maybe_paste_clipboard_url()
+
+    def _escape_pressed(self) -> None:
+        """Esc stops an active download. Ignored when idle."""
+        if self._is_downloading:
+            self._stop_download()
+
+    def show_about(self) -> None:
+        """Open the About dialog (Cmd+Shift+A)."""
+        AboutDialog(self).exec_()
 
     def _get_default_download_path(self):
         """Get a sensible default download path that's writable."""
@@ -1305,18 +1327,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         save_config(self._config)
 
     def _offer_reveal_folder(self, folder: str) -> None:
-        """After a successful download, offer to open the output folder."""
+        """Show the completion summary. Lets the user open the folder or retry
+        any tracks that failed.
+        """
         if not folder or not os.path.isdir(folder):
             return
-        resp = QMessageBox.question(
-            self,
-            "Download complete",
-            f"Downloaded to:\n{folder}\n\nOpen folder now?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if resp == QMessageBox.Yes:
-            open_folder_in_file_manager(folder)
+        total = self._current_download_total or 0
+        failed = list(self._current_failed_tracks or [])
+        dialog = CompletionDialog(self, folder, total, failed)
+        dialog.exec_()
+        if dialog.retry_clicked and failed:
+            self._retry_failed_tracks(failed)
 
     @pyqtSlot()
     def on_returnButton(self):
@@ -1360,6 +1381,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._current_download_url = spotify_url
             self._current_download_name: str | None = None
             self._current_download_succeeded = False
+            self._current_download_total = 0
+            self._current_failed_tracks: list[str] = []
 
             self.scraper_thread = ScraperThread(
                 spotify_url,
@@ -1402,7 +1425,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         completed = message.startswith("Download Complete") or message.startswith("Done!")
         self._current_download_succeeded = completed
         if completed:
-            # Compute the playlist folder (prepare_playlist_folder rules)
             folder = None
             if self._current_download_name:
                 safe = (
@@ -1417,12 +1439,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 track_count = int(self.CounterLabel.text().split()[-1])
             except (ValueError, IndexError):
                 track_count = 0
+            # Snapshot the scraper's counters for the completion dialog
+            if hasattr(self, "scraper_thread") and self.scraper_thread is not None:
+                try:
+                    self._current_download_total = self.scraper_thread.scraper._total_tracks
+                    self._current_failed_tracks = list(self.scraper_thread.scraper._failed_tracks)
+                except AttributeError:
+                    self._current_download_total = track_count
+                    self._current_failed_tracks = []
             if hasattr(self, "_current_download_url"):
                 self._record_recent_download(
                     self._current_download_url,
                     self._current_download_name,
                     track_count,
                 )
+
+    def _retry_failed_tracks(self, failed_titles: list[str]) -> None:
+        """Kick off a fresh download restricted to the tracks that failed.
+
+        The simplest effective retry is to rerun the same URL; any tracks
+        whose files are already on disk will be skipped by the existing
+        os.path.exists guard, so only the failed set does real work.
+        """
+        if not hasattr(self, "_current_download_url") or self._is_downloading:
+            return
+        self.PlaylistLink.setText(self._current_download_url)
+        self.statusMsg.setText(f"Retrying {len(failed_titles)} failed track(s)...")
+        self.on_returnButton()
 
     def _stop_download(self):
         """Stop the current download gracefully using cooperative cancellation."""
@@ -1522,24 +1565,50 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setCursor(QCursor(Qt.ArrowCursor))
 
     def CloseSongInformation(self):
-        self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
-        self.animation.setDuration(250)
-        self.animation.setEndValue(QSize(0, 440))
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
-        self.animation.start()
+        self._preview_animation = QPropertyAnimation(self.SONGINFORMATION, b"geometry")
+        start_rect = self.SONGINFORMATION.geometry()
+        self._preview_animation.setDuration(220)
+        self._preview_animation.setStartValue(start_rect)
+        self._preview_animation.setEndValue(
+            QRect(start_rect.x(), start_rect.y(), 0, start_rect.height())
+        )
+        self._preview_animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self._preview_animation.finished.connect(lambda: self.SONGINFORMATION.setVisible(False))
+        self._preview_animation.start()
 
     def OpenSongInformation(self):
-        self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
-        self.animation.setDuration(1000)
-        self.animation.setEndValue(QSize(350, 440))
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
-        self.animation.start()
+        # Anchor the panel to the right edge of the window and match the card
+        # height so it feels attached rather than floating.
+        panel_width = 280
+        panel_height = max(self.height() - 48, 360)
+        y_offset = 24
+        x_start = self.width()
+        x_end = self.width() - panel_width - 16
+
+        self.SONGINFORMATION.setVisible(True)
+        self.SONGINFORMATION.setGeometry(x_start, y_offset, 0, panel_height)
+
+        self._preview_animation = QPropertyAnimation(self.SONGINFORMATION, b"geometry")
+        self._preview_animation.setDuration(320)
+        self._preview_animation.setEndValue(QRect(x_end, y_offset, panel_width, panel_height))
+        self._preview_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._preview_animation.start()
 
     def show_preview(self, state):
-        if state == 2:  # 2 corresponds to checked state
-            self.preview_window = self.OpenSongInformation()
+        if state == 2:  # Qt.Checked
+            self.OpenSongInformation()
         else:
             self.CloseSongInformation()
+
+    def resizeEvent(self, event):
+        """Keep the sliding preview panel anchored to the window's right edge."""
+        super().resizeEvent(event)
+        if self.SONGINFORMATION.isVisible() and self.SONGINFORMATION.width() > 0:
+            panel_width = self.SONGINFORMATION.width()
+            panel_height = max(self.height() - 48, 360)
+            self.SONGINFORMATION.setGeometry(
+                self.width() - panel_width - 16, 24, panel_width, panel_height
+            )
 
     def exitprogram(self):
         sys.exit()
@@ -1548,13 +1617,270 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         webbrowser.open("https://www.linkedin.com/in/sunny-patel-30b460204/")
 
 
+# ---------------------------------------------------------------------------
+# Splash screen. Brief branded intro instead of a cold window appear.
+# ---------------------------------------------------------------------------
+class SplashScreen(QDialog):
+    """A brief, branded splash shown on launch for ~1.5s."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(380, 220)
+
+        from theme import Color as _C
+        from theme import Font as _F
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 24, 24, 24)
+
+        card = QLabel(self)
+        card.setStyleSheet(
+            f"background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
+            f" stop:0 {_C.gradient_top}, stop:1 {_C.gradient_bot});"
+            f" border-radius: 16px; border: 1px solid {_C.border};"
+        )
+        card.setGraphicsEffect(QGraphicsDropShadowEffect(blurRadius=40, xOffset=0, yOffset=10))
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(6)
+
+        title = QLabel("Sunnify", card)
+        title.setStyleSheet(
+            f"color: {_C.fg_primary}; font-size: 28px; font-weight: 800; letter-spacing: 0.5px;"
+        )
+        title.setAlignment(Qt.AlignCenter)
+
+        tagline = QLabel("Spotify playlists, tracks & albums to local MP3s.", card)
+        tagline.setStyleSheet(f"color: {_C.fg_secondary}; font-size: {_F.small}px;")
+        tagline.setAlignment(Qt.AlignCenter)
+
+        version = QLabel(f"Version {__version__}", card)
+        version.setStyleSheet(f"color: {_C.fg_muted}; font-size: {_F.caption}px;")
+        version.setAlignment(Qt.AlignCenter)
+
+        card_layout.addStretch(1)
+        card_layout.addWidget(title)
+        card_layout.addWidget(tagline)
+        card_layout.addSpacing(8)
+        card_layout.addWidget(version)
+        card_layout.addStretch(1)
+
+        outer.addWidget(card)
+
+    def show_and_close(self, on_done) -> None:
+        """Show the splash for the duration defined in theme.Motion.splash."""
+        from theme import Motion as _M
+
+        self.show()
+        QTimer.singleShot(_M.splash, lambda: (self.close(), on_done()))
+
+
+# ---------------------------------------------------------------------------
+# About dialog. Version, author, license, project links.
+# ---------------------------------------------------------------------------
+class AboutDialog(QDialog):
+    """A small, branded About dialog shown via Cmd+Shift+A or the settings menu."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About Sunnify")
+        self.setModal(True)
+        self.setMinimumWidth(380)
+
+        from theme import Color as _C
+        from theme import Font as _F
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        title = QLabel("Sunnify", self)
+        title.setStyleSheet(f"color: {_C.fg_primary}; font-size: 24px; font-weight: 800;")
+        layout.addWidget(title)
+
+        tagline = QLabel("Download Spotify playlists, tracks, and albums as tagged MP3s.", self)
+        tagline.setStyleSheet(f"color: {_C.fg_secondary}; font-size: {_F.body}px;")
+        tagline.setWordWrap(True)
+        layout.addWidget(tagline)
+
+        facts = QLabel(
+            f"Version {__version__}\n"
+            "MIT licensed, educational project\n"
+            "Built by Sunny Jayendra Patel",
+            self,
+        )
+        facts.setStyleSheet(f"color: {_C.fg_muted}; font-size: {_F.small}px;")
+        layout.addWidget(facts)
+
+        btn_row = QHBoxLayout()
+        homepage = QPushButton("Homepage", self)
+        homepage.clicked.connect(
+            lambda: webbrowser.open("https://github.com/sunnypatell/sunnify-spotify-downloader")
+        )
+        issues = QPushButton("Report an issue", self)
+        issues.clicked.connect(
+            lambda: webbrowser.open(
+                "https://github.com/sunnypatell/sunnify-spotify-downloader/issues/new/choose"
+            )
+        )
+        close = QPushButton("Close", self)
+        close.clicked.connect(self.accept)
+
+        btn_row.addWidget(homepage)
+        btn_row.addWidget(issues)
+        btn_row.addStretch(1)
+        btn_row.addWidget(close)
+        layout.addLayout(btn_row)
+
+
+# ---------------------------------------------------------------------------
+# Completion summary dialog. Shown after a playlist/album download finishes.
+# Offers: open the folder, retry failed tracks, view all covered tracks.
+# ---------------------------------------------------------------------------
+class CompletionDialog(QDialog):
+    """Summary dialog shown when a playlist or album finishes downloading."""
+
+    def __init__(self, parent, folder: str, total: int, failed: list[str]):
+        super().__init__(parent)
+        self.setWindowTitle("Download Complete")
+        self.setModal(True)
+        self.setMinimumWidth(420)
+
+        from theme import Color as _C
+        from theme import Font as _F
+
+        self._folder = folder
+        self._failed = failed
+        self.retry_clicked = False
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        headline = "Download complete" if not failed else "Download finished with errors"
+        emoji = "✓" if not failed else "⚠"
+        title = QLabel(f"{emoji}  {headline}", self)
+        title.setStyleSheet(f"color: {_C.fg_primary}; font-size: 20px; font-weight: 700;")
+        layout.addWidget(title)
+
+        ok_count = max(total - len(failed), 0)
+        summary = QLabel(f"{ok_count} of {total} track(s) downloaded to:\n{folder}", self)
+        summary.setStyleSheet(f"color: {_C.fg_secondary}; font-size: {_F.body}px;")
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        if failed:
+            failed_header = QLabel(f"{len(failed)} track(s) failed to download:", self)
+            failed_header.setStyleSheet(
+                f"color: {_C.warning}; font-size: {_F.small}px; font-weight: 700;"
+            )
+            layout.addWidget(failed_header)
+
+            preview = "\n".join(f"  - {name}" for name in failed[:6])
+            if len(failed) > 6:
+                preview += f"\n  +{len(failed) - 6} more..."
+            failed_list = QLabel(preview, self)
+            failed_list.setStyleSheet(
+                f"color: {_C.fg_muted}; font-size: {_F.small}px; font-family: {_F.mono_family};"
+            )
+            layout.addWidget(failed_list)
+
+        btn_row = QHBoxLayout()
+        open_btn = QPushButton("Open folder", self)
+        open_btn.clicked.connect(lambda: open_folder_in_file_manager(self._folder))
+
+        if failed:
+            retry_btn = QPushButton(f"Retry {len(failed)} failed", self)
+            retry_btn.clicked.connect(self._retry)
+            btn_row.addWidget(retry_btn)
+
+        done_btn = QPushButton("Done", self)
+        done_btn.clicked.connect(self.accept)
+
+        btn_row.addWidget(open_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(done_btn)
+        layout.addLayout(btn_row)
+
+    def _retry(self):
+        self.retry_clicked = True
+        self.accept()
+
+
+# ---------------------------------------------------------------------------
+# Friendly error dialog with a "Copy details" action and a link to open an issue.
+# ---------------------------------------------------------------------------
+class FriendlyErrorDialog(QDialog):
+    """Error dialog with readable summary and copyable diagnostic details."""
+
+    def __init__(self, parent, title: str, summary: str, details: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setMinimumWidth(440)
+
+        from theme import Color as _C
+        from theme import Font as _F
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        headline = QLabel(f"⚠  {title}", self)
+        headline.setStyleSheet(f"color: {_C.fg_primary}; font-size: 18px; font-weight: 700;")
+        layout.addWidget(headline)
+
+        msg = QLabel(summary, self)
+        msg.setStyleSheet(f"color: {_C.fg_secondary}; font-size: {_F.body}px;")
+        msg.setWordWrap(True)
+        layout.addWidget(msg)
+
+        if details:
+            details_label = QLabel(details, self)
+            details_label.setStyleSheet(
+                f"color: {_C.fg_muted}; font-size: {_F.small}px;"
+                f" font-family: {_F.mono_family};"
+                f" background-color: {_C.bg_input}; padding: 8px; border-radius: 6px;"
+            )
+            details_label.setWordWrap(True)
+            details_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            layout.addWidget(details_label)
+
+        btn_row = QHBoxLayout()
+        if details:
+            copy_btn = QPushButton("Copy details", self)
+            copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(details))
+            btn_row.addWidget(copy_btn)
+        issue_btn = QPushButton("Report", self)
+        issue_btn.clicked.connect(
+            lambda: webbrowser.open(
+                "https://github.com/sunnypatell/sunnify-spotify-downloader/issues/new/choose"
+            )
+        )
+        dismiss_btn = QPushButton("Dismiss", self)
+        dismiss_btn.clicked.connect(self.accept)
+
+        btn_row.addWidget(issue_btn)
+        btn_row.addStretch(1)
+        btn_row.addWidget(dismiss_btn)
+        layout.addLayout(btn_row)
+
+
 # Main
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    Screen = MainWindow()
-    Screen.setFixedHeight(500)
-    Screen.setFixedWidth(750)
-    Screen.setWindowFlags(Qt.FramelessWindowHint)
-    Screen.setAttribute(Qt.WA_TranslucentBackground)
-    Screen.show()
+    app.setApplicationName("Sunnify")
+    app.setApplicationDisplayName("Sunnify")
+    app.setOrganizationName("Sunny Jayendra Patel")
+
+    def _launch_main():
+        screen = MainWindow()
+        screen.setWindowFlags(Qt.FramelessWindowHint)
+        screen.setAttribute(Qt.WA_TranslucentBackground)
+        screen.show()
+        # Keep reference on app to prevent GC
+        app._sunnify_main = screen  # noqa: SLF001
+
+    splash = SplashScreen()
+    splash.show_and_close(_launch_main)
+
     sys.exit(app.exec())
