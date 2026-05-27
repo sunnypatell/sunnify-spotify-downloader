@@ -15,10 +15,11 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
-__version__ = "2.0.6"
+__version__ = "2.0.7"
 
 import concurrent.futures
 import os
+import re
 import sys
 import threading
 import webbrowser
@@ -112,6 +113,13 @@ SUPPORTED_FORMATS = {
 }
 SUPPORTED_QUALITIES = ("128", "192", "256", "320")
 
+# Resume manifest: a JSON-lines file dropped inside each playlist/album folder
+# recording which tracks already downloaded. On a re-run we skip those tracks
+# before fetching their metadata, so a huge playlist throttled by Spotify's
+# rate limit can be finished across several sessions instead of one long sit
+# (closes #40).
+MANIFEST_FILENAME = ".sunnify-manifest.jsonl"
+
 
 def _config_dir() -> str:
     """Return the per-user config directory, creating it if needed."""
@@ -203,6 +211,8 @@ class MusicScraper(QThread):
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
+        self._manifest_lock = threading.Lock()
+        self._manifest_path: str | None = None
         self._in_flight_files: set[str] = set()
         # Set to True during parallel playlist downloads so workers can suppress
         # per-track UI noise (label flicker, thumbnail spam, progress bar jitter)
@@ -224,7 +234,12 @@ class MusicScraper(QThread):
             return f"Could not access '{track_title}' - may be unavailable"
         if "HTTP Error 429" in str(error):
             return "YouTube rate limit - waiting..."
-        if "No video formats" in str(error) or "unavailable" in str(error).lower():
+        error_text = str(error).lower()
+        if (
+            "no video formats" in error_text
+            or "no playable audio source" in error_text
+            or "unavailable" in error_text
+        ):
             return f"'{track_title}' not found on YouTube"
         return f"Error: {str(error)[:50]}"
 
@@ -255,6 +270,37 @@ class MusicScraper(QThread):
         os.makedirs(playlist_folder, exist_ok=True)
         return playlist_folder
 
+    @staticmethod
+    def _widen_search(search_query: str) -> str:
+        """Search several YouTube results instead of only the top hit.
+
+        A track's #1 result can be region-locked or removed; `ytsearch1`
+        fails the whole download in that case (closes #42). Widening to
+        `ytsearch5` lets yt-dlp skip unavailable results and download the
+        first one that actually plays.
+        """
+        if search_query.startswith("ytsearch1:"):
+            return "ytsearch5:" + search_query[len("ytsearch1:") :]
+        return search_query
+
+    @staticmethod
+    def _simplify_search(search_query: str) -> str:
+        """Strip parenthetical/bracketed qualifiers for a looser fallback.
+
+        Hyper-specific titles (classical works like `(Wiegenlied, Op. 49,
+        No. 4)`, tone tracks like `(528 Hz)`) can return zero YouTube
+        matches. Dropping the qualifiers widens the net on a second attempt.
+        Returns the original query unchanged if there is nothing to strip.
+        """
+        _, sep, terms = search_query.partition(":")
+        if not sep:
+            terms = search_query
+        stripped = re.sub(r"[\(\[\{].*?[\)\]\}]", " ", terms)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        if not stripped or stripped == terms.strip():
+            return search_query
+        return f"ytsearch5:{stripped}"
+
     def download_track_audio(self, search_query, destination):
         # Check for FFmpeg first
         ffmpeg_path = get_ffmpeg_path()
@@ -279,7 +325,6 @@ class MusicScraper(QThread):
 
         ydl_opts = {
             "format": "bestaudio/best",
-            "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
             "outtmpl": output_template,
@@ -287,19 +332,38 @@ class MusicScraper(QThread):
             "retries": 5,
             "socket_timeout": 15,
             "concurrent_fragment_downloads": 4,
+            # Skip unavailable search results instead of aborting, and stop
+            # after the first result that actually downloads (closes #42).
+            "ignoreerrors": True,
+            "max_downloads": 1,
             "postprocessors": [postprocessor],
         }
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(search_query, download=True)
-            if info.get("entries"):
-                info = info["entries"][0]
-            expected_path = base + "." + ext
+
+        expected_path = base + "." + ext
+
+        # Primary query (widened to 5 results), then a simplified fallback if
+        # the first pass produced nothing. Success is decided purely by whether
+        # an audio file landed on disk, never by yt-dlp's return value, so a
+        # search that finds no playable source fails loudly instead of silently
+        # reporting a path that does not exist.
+        queries = [self._widen_search(search_query)]
+        fallback = self._simplify_search(search_query)
+        if fallback not in queries:
+            queries.append(fallback)
+
+        for query in queries:
+            try:
+                with YoutubeDL(ydl_opts) as ydl:
+                    ydl.extract_info(query, download=True)
+            except Exception:
+                # MaxDownloadsReached is raised on success; availability and
+                # network errors are absorbed by ignoreerrors. The file-exists
+                # check below is the single source of truth.
+                pass
             if os.path.exists(expected_path):
                 return expected_path
-            fallback = ydl.prepare_filename(info)
-            if os.path.exists(fallback):
-                return fallback
-        return base + "." + ext
+
+        raise RuntimeError("no playable audio source found on YouTube for this track")
 
     def download_http_file(self, url, destination):
         response = self.session.get(url, stream=True, timeout=60)
@@ -405,6 +469,7 @@ class MusicScraper(QThread):
 
         try:
             if os.path.exists(filepath):
+                self._record_in_manifest(track.id, filepath)
                 self.add_song_meta.emit(song_meta)
                 self._finish_track_ui(ok=True)
                 return None
@@ -429,6 +494,7 @@ class MusicScraper(QThread):
                 self._finish_track_ui(ok=False)
                 return track_title
 
+            self._record_in_manifest(track.id, final_path)
             song_meta["file"] = final_path
             self.add_song_meta.emit(song_meta)
             self._finish_track_ui(ok=True)
@@ -449,6 +515,58 @@ class MusicScraper(QThread):
         elif ok:
             self.dlprogress_signal.emit(100)
 
+    def _load_manifest(self, folder: str) -> set:
+        """Load the set of track IDs already downloaded into `folder`.
+
+        The manifest is a JSON-lines file inside the folder; each line is a
+        `{"id", "file"}` record. Entries whose file is missing are ignored so
+        a track the user deleted re-downloads. Returns the set of valid IDs
+        and arms `_manifest_path` for incremental appends during this run.
+        """
+        import json
+
+        path = os.path.join(folder, MANIFEST_FILENAME)
+        self._manifest_path = path
+        done: set[str] = set()
+        if not os.path.exists(path):
+            return done
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue
+                    track_id = record.get("id")
+                    filename = record.get("file")
+                    if track_id and filename and os.path.exists(os.path.join(folder, filename)):
+                        done.add(track_id)
+        except OSError:
+            return set()
+        return done
+
+    def _record_in_manifest(self, track_id, filepath: str) -> None:
+        """Append a completed track to the manifest (thread-safe).
+
+        Append-only JSON-lines so recording a track is O(1) regardless of how
+        large the playlist is. Failures are swallowed: the manifest is an
+        optimization for resuming, never a hard dependency of a download.
+        """
+        if not track_id or not self._manifest_path:
+            return
+        import json
+
+        record = json.dumps({"id": track_id, "file": os.path.basename(filepath)})
+        with self._manifest_lock:
+            try:
+                with open(self._manifest_path, "a", encoding="utf-8") as handle:
+                    handle.write(record + "\n")
+            except OSError:
+                pass
+
     def scrape_playlist(self, spotify_playlist_link, music_folder):
         # Reset mutable state so repeat invocations on the same scraper
         # instance don't carry stale counters or failure lists.
@@ -461,7 +579,12 @@ class MusicScraper(QThread):
         self._parallel_mode = False
         self._total_tracks = 0
 
-        playlist_id = self.returnSPOT_ID(spotify_playlist_link)
+        # A playlist or an album both flow through here. detect_spotify_url_type
+        # returns ("playlist"|"album", id); albums reuse the same embed-parsing
+        # path with the album embed endpoint (closes #38).
+        content_type, playlist_id = detect_spotify_url_type(spotify_playlist_link)
+        if content_type not in ("playlist", "album"):
+            raise ValueError("Expected a playlist or album URL")
         self.PlaylistID.emit(playlist_id)
 
         # Check cancel before doing any network work. Large playlists can
@@ -477,11 +600,20 @@ class MusicScraper(QThread):
         except SpotifyDownAPIError as exc:
             raise RuntimeError(str(exc)) from exc
 
-        metadata = spotify_api.get_playlist_metadata(playlist_id)
+        metadata = spotify_api.get_playlist_metadata(playlist_id, content_type=content_type)
         playlist_display_name = self.format_playlist_name(metadata)
         self.song_Album.emit(playlist_display_name)
 
         playlist_folder_path = self.prepare_playlist_folder(music_folder, playlist_display_name)
+
+        # Resume support: skip tracks already downloaded in a previous run of
+        # this folder before fetching their (rate-limited) metadata, so a huge
+        # playlist can be finished across multiple sessions (closes #40).
+        already_done = self._load_manifest(playlist_folder_path)
+        if already_done:
+            self.error_signal.emit(
+                f"Resuming: skipping {len(already_done)} already-downloaded track(s)"
+            )
 
         # Materialize the generator into a list. iter_playlist_tracks is a
         # generator and generators are not thread-safe. Consuming it upfront
@@ -492,7 +624,9 @@ class MusicScraper(QThread):
         # the full window before the stop button takes effect.
         expected_total = metadata.track_count or 0
         tracks: list = []
-        for track in spotify_api.iter_playlist_tracks(playlist_id):
+        for track in spotify_api.iter_playlist_tracks(
+            playlist_id, content_type=content_type, skip_ids=already_done
+        ):
             if self.is_cancelled():
                 break
             tracks.append(track)

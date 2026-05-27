@@ -13,10 +13,10 @@ We currently support the active development branch and the latest 2.x release li
 | Version | Supported |
 | ------: | :-------: |
 | main    | ✅        |
-| 2.0.6   | ✅        |
+| 2.0.7   | ✅        |
+| 2.0.6   | ❌        |
 | 2.0.5   | ❌        |
-| 2.0.4   | ❌        |
-| < 2.0.4 | ❌        |
+| < 2.0.5 | ❌        |
 
 ## Reporting a Vulnerability
 

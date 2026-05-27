@@ -95,13 +95,13 @@ def scrape_playlist():
             playlist_name = f"{track.title} - {track.artists}"
 
         else:
-            # Playlist
-            metadata = client.get_playlist_metadata(item_id)
+            # Playlist or album (album reuses the same embed-parsing path).
+            metadata = client.get_playlist_metadata(item_id, content_type=url_type)
             playlist_name = f"{metadata.name} - {metadata.owner or 'Unknown'}"
             playlist_cover = metadata.cover_url or ""
 
             # Fetch tracks with memory-efficient iteration
-            for track in client.iter_playlist_tracks(item_id):
+            for track in client.iter_playlist_tracks(item_id, content_type=url_type):
                 # Use track cover if available, otherwise fall back to playlist cover
                 cover = track.cover_url or playlist_cover
                 tracks.append(
@@ -151,7 +151,7 @@ def index():
     return jsonify(
         {
             "name": "Sunnify API",
-            "version": "2.0.6",
+            "version": "2.0.7",
             "mode": "metadata-only",
             "description": "Fetches Spotify metadata. For MP3 downloads, use the desktop app.",
             "endpoints": {

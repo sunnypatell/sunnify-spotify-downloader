@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-05-26
+
+### Added
+- **album downloads** (closes #38). album URLs and `spotify:album:` URIs now work alongside playlists and tracks. albums reuse the embed-parsing path through `/embed/album/{id}`, and because the album embed exposes the album name, every downloaded album track gets its `album` tag written (something playlist downloads can't provide, since playlist embeds don't carry it). verified end-to-end: a real album download writes `album=...` into the output file's tags.
+- **resume support for large playlists** (closes #40). a per-playlist manifest (`.sunnify-manifest.jsonl`) inside each download folder records which tracks already landed. on a re-run, those tracks are skipped *before* their rate-limited `/embed/track/` metadata is fetched, so a playlist throttled by spotify's rate limit can be finished across several sessions instead of one long sit. entries whose files were deleted are pruned on load, so a removed track re-downloads. append-only json-lines keeps recording O(1) regardless of playlist size.
+
+### Fixed
+- tracks that scraped but never finished downloading (closes #42). the youtube search used `ytsearch1` (a single result), so a track whose top match was region-locked or removed failed outright; worse, `download_track_audio` returned the expected path even when no file was produced, so the app reported success for a download that never happened. the search now tries up to 5 results (skipping unavailable ones) with a simplified fallback query for hyper-specific titles (e.g. classical works with `(Op. 49, No. 4)`), and raises a clear "not found on YouTube" error when no audio lands. failures are now reported instead of silently hanging.
+- windows exe version metadata: the `FixedFileInfo` `filevers` / `prodvers` tuples in `Sunnify.spec` were stuck at `2.0.3` (missed in the 2.0.4-2.0.6 bumps) while the string fields read the current version. both are now bumped together so the embedded Windows version is internally consistent.
+
 ## [2.0.6] - 2026-04-16
 
 ### Added
@@ -163,7 +173,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.6...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.7...HEAD
+[2.0.7]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.3...v2.0.4

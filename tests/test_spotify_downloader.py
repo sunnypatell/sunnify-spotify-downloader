@@ -198,6 +198,50 @@ class TestMusicScraper:
         scraper.count_updated.emit.assert_called_once_with(1)
 
 
+class TestResumeManifest:
+    """Tests for the resume manifest that skips already-downloaded tracks (#40)."""
+
+    @staticmethod
+    def _scraper():
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper()
+
+    def test_load_manifest_absent_returns_empty(self, tmp_path):
+        """No manifest file means nothing to skip."""
+        assert self._scraper()._load_manifest(str(tmp_path)) == set()
+
+    def test_record_then_load_roundtrip(self, tmp_path):
+        """Recorded tracks (whose files exist) come back as skip IDs."""
+        folder = str(tmp_path)
+        writer = self._scraper()
+        writer._load_manifest(folder)  # arms _manifest_path
+        (tmp_path / "a.mp3").write_bytes(b"x")
+        (tmp_path / "b.mp3").write_bytes(b"x")
+        writer._record_in_manifest("id_a", str(tmp_path / "a.mp3"))
+        writer._record_in_manifest("id_b", str(tmp_path / "b.mp3"))
+
+        assert self._scraper()._load_manifest(folder) == {"id_a", "id_b"}
+
+    def test_load_prunes_missing_files(self, tmp_path):
+        """A manifest entry whose file was deleted is not treated as done."""
+        folder = str(tmp_path)
+        writer = self._scraper()
+        writer._load_manifest(folder)
+        (tmp_path / "present.mp3").write_bytes(b"x")
+        writer._record_in_manifest("present", str(tmp_path / "present.mp3"))
+        writer._record_in_manifest("ghost", str(tmp_path / "ghost.mp3"))  # never created
+
+        assert self._scraper()._load_manifest(folder) == {"present"}
+
+    def test_record_without_manifest_path_is_noop(self, tmp_path):
+        """Recording before a manifest is armed must not raise or write."""
+        scraper = self._scraper()
+        scraper._manifest_path = None
+        scraper._record_in_manifest("id", str(tmp_path / "x.mp3"))
+        assert self._scraper()._load_manifest(str(tmp_path)) == set()
+
+
 class TestDownloadTrackAudioOpts:
     """Tests for yt-dlp performance options in download_track_audio."""
 

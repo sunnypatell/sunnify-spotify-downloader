@@ -119,6 +119,7 @@ class SpotifyEmbedAPI:
     """
 
     _EMBED_PLAYLIST_URL = "https://open.spotify.com/embed/playlist/{playlist_id}"
+    _EMBED_ALBUM_URL = "https://open.spotify.com/embed/album/{playlist_id}"
     _EMBED_TRACK_URL = "https://open.spotify.com/embed/track/{track_id}"
     _OEMBED_URL = "https://open.spotify.com/oembed"
     _SPCLIENT_URL = "https://spclient.wg.spotify.com/playlist/v2/playlist/{playlist_id}"
@@ -256,38 +257,63 @@ class SpotifyEmbedAPI:
         self._fetch_embed_data(url)
         return self._cached_token
 
-    def get_playlist_metadata(self, playlist_id: str) -> PlaylistInfo:
-        """Get playlist metadata from the embed page."""
-        url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
+    def _embed_url_for(self, content_id: str, content_type: str) -> str:
+        """Pick the embed page URL for a playlist or album.
+
+        Albums and playlists ship the same `__NEXT_DATA__` entity shape
+        (`name` + `trackList`), so they share all downstream parsing; only
+        the embed path differs.
+        """
+        if content_type == "album":
+            return self._EMBED_ALBUM_URL.format(playlist_id=content_id)
+        return self._EMBED_PLAYLIST_URL.format(playlist_id=content_id)
+
+    def get_playlist_metadata(
+        self, playlist_id: str, content_type: str = "playlist"
+    ) -> PlaylistInfo:
+        """Get playlist or album metadata from the embed page.
+
+        `content_type` is "playlist" (default) or "album". Albums skip the
+        spclient track-count refinement because their full track list always
+        fits in the embed payload.
+        """
+        url = self._embed_url_for(playlist_id, content_type)
         data = self._fetch_embed_data(url)
         entity = self._extract_entity(data)
 
         name = entity.get("name") or entity.get("title") or "Unknown Playlist"
         subtitle = entity.get("subtitle")
 
-        # Get cover URL from coverArt sources
+        # Get cover URL from coverArt sources, falling back to visualIdentity
+        # (albums populate the latter instead of coverArt.sources).
         cover_url = None
         cover_art = entity.get("coverArt", {})
         sources = cover_art.get("sources", [])
         if sources:
             cover_url = sources[-1].get("url")
+        if not cover_url:
+            images = entity.get("visualIdentity", {}).get("image", [])
+            if images and isinstance(images[-1], dict):
+                cover_url = images[-1].get("url")
 
         # Get track count - try spclient for accurate count
         track_list = entity.get("trackList", [])
         track_count = len(track_list)
 
-        # Try to get true count from spclient
-        try:
-            token = self._cached_token
-            if token:
-                spclient_url = self._SPCLIENT_URL.format(playlist_id=playlist_id)
-                headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-                resp = self._session.get(spclient_url, headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    spc_data = resp.json()
-                    track_count = spc_data.get("length", track_count)
-        except Exception:
-            pass  # Fall back to embed count
+        # spclient refinement is playlist-only; albums ship the full trackList
+        # in the embed payload, so there's nothing more to fetch.
+        if content_type == "playlist":
+            try:
+                token = self._cached_token
+                if token:
+                    spclient_url = self._SPCLIENT_URL.format(playlist_id=playlist_id)
+                    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+                    resp = self._session.get(spclient_url, headers=headers, timeout=10)
+                    if resp.status_code == 200:
+                        spc_data = resp.json()
+                        track_count = spc_data.get("length", track_count)
+            except Exception:
+                pass  # Fall back to embed count
 
         return PlaylistInfo(
             name=str(name),
@@ -297,19 +323,40 @@ class SpotifyEmbedAPI:
             track_count=track_count,
         )
 
-    def iter_playlist_tracks(self, playlist_id: str) -> Iterator[TrackInfo]:
-        """Iterate over playlist tracks with fallback for large playlists.
+    def iter_playlist_tracks(
+        self,
+        playlist_id: str,
+        content_type: str = "playlist",
+        skip_ids: frozenset[str] | set[str] | None = None,
+    ) -> Iterator[TrackInfo]:
+        """Iterate over playlist or album tracks.
+
+        `content_type` is "playlist" (default) or "album".
+
+        `skip_ids` is a set of Spotify track IDs already downloaded in a prior
+        run. Matching tracks are skipped before any per-track metadata fetch,
+        so resuming a large playlist does not re-pay the rate-limited
+        `/embed/track/` cost for tracks that are already on disk (closes #40).
 
         For playlists with <=100 tracks: Uses embed page (fast).
         For playlists with >100 tracks: Uses spclient for URIs + individual
         track embeds for metadata on remaining tracks.
+
+        Albums ship their full track list in the embed payload and expose an
+        album name, so we tag every album track with it (something playlists
+        can't provide) and skip the playlist-only spclient fallback.
         """
-        url = self._EMBED_PLAYLIST_URL.format(playlist_id=playlist_id)
+        skip_ids = skip_ids or frozenset()
+        url = self._embed_url_for(playlist_id, content_type)
         data = self._fetch_embed_data(url)
         entity = self._extract_entity(data)
 
         track_list = entity.get("trackList", [])
         embed_track_ids: set[str] = set()
+
+        # Albums carry a real album name; stamp it onto each track so the
+        # downloader can write the album tag.
+        album_name = entity.get("name") if content_type == "album" else None
 
         # Yield tracks from embed page (up to ~100)
         for track in track_list:
@@ -322,7 +369,17 @@ class SpotifyEmbedAPI:
                 continue
 
             embed_track_ids.add(track_id)
-            yield self._parse_track(track, track_id)
+            if track_id in skip_ids:
+                continue
+            info = self._parse_track(track, track_id)
+            if album_name and not info.album:
+                info.album = str(album_name)
+            yield info
+
+        # The spclient fallback is playlist-only; albums are fully covered by
+        # the embed payload above.
+        if content_type != "playlist":
+            return
 
         # Check if there are more tracks via spclient
         token = self._cached_token
@@ -355,7 +412,7 @@ class SpotifyEmbedAPI:
                 if not uri.startswith("spotify:track:"):
                     continue
                 track_id = uri.split(":")[-1]
-                if track_id in embed_track_ids:
+                if track_id in embed_track_ids or track_id in skip_ids:
                     continue
                 pending.append((track_id, uri))
 
@@ -595,17 +652,27 @@ class PlaylistClient:
         self._session = session or requests.Session()
         self._embed_api = SpotifyEmbedAPI(session=self._session)
 
-    def get_playlist_metadata(self, playlist_id: str) -> PlaylistInfo:
-        """Get playlist metadata."""
-        return self._embed_api.get_playlist_metadata(playlist_id)
+    def get_playlist_metadata(
+        self, playlist_id: str, content_type: str = "playlist"
+    ) -> PlaylistInfo:
+        """Get playlist or album metadata (`content_type`: playlist | album)."""
+        return self._embed_api.get_playlist_metadata(playlist_id, content_type=content_type)
 
-    def iter_playlist_tracks(self, playlist_id: str) -> Iterator[TrackInfo]:
-        """Iterate over all playlist tracks.
+    def iter_playlist_tracks(
+        self,
+        playlist_id: str,
+        content_type: str = "playlist",
+        skip_ids: frozenset[str] | set[str] | None = None,
+    ) -> Iterator[TrackInfo]:
+        """Iterate over all playlist or album tracks (`content_type`: playlist | album).
 
         For large playlists (>100 tracks), automatically uses fallback
-        methods to retrieve complete track list.
+        methods to retrieve complete track list. `skip_ids` omits tracks
+        already downloaded in a prior run (resume support).
         """
-        yield from self._embed_api.iter_playlist_tracks(playlist_id)
+        yield from self._embed_api.iter_playlist_tracks(
+            playlist_id, content_type=content_type, skip_ids=skip_ids
+        )
 
     def validate_playlist(self, playlist_id: str) -> bool:
         """Quick validation that a playlist exists."""
@@ -647,7 +714,7 @@ class PlaylistClient:
 # Any trailing ?si=... query params are tolerated.
 _SPOTIFY_ID_RE = re.compile(
     r"(?:https?://open\.spotify\.com/(?:intl-[a-z]{2,}/)?|spotify:)"
-    r"(?P<type>playlist|track)[/:](?P<id>[a-zA-Z0-9]+)"
+    r"(?P<type>playlist|track|album)[/:](?P<id>[a-zA-Z0-9]+)"
 )
 
 
@@ -681,8 +748,17 @@ def extract_track_id(url: str) -> str:
     return tid
 
 
+def extract_album_id(url: str) -> str:
+    """Extract album ID from any supported Spotify URL or URI form."""
+    try:
+        _, aid = _match_spotify(url, expected_type="album")
+    except ValueError as exc:
+        raise ValueError("Invalid Spotify album URL.") from exc
+    return aid
+
+
 def detect_spotify_url_type(url: str) -> tuple[str, str]:
-    """Detect whether the input is a playlist or track and return (type, id).
+    """Detect whether the input is a playlist, album, or track and return (type, id).
 
     Accepts canonical `https://open.spotify.com/{type}/{id}` URLs, locale
     `/intl-xx/` prefixed URLs, and `spotify:{type}:{id}` URIs. Trailing query
@@ -691,7 +767,7 @@ def detect_spotify_url_type(url: str) -> tuple[str, str]:
     try:
         return _match_spotify(url)
     except ValueError as exc:
-        raise ValueError("Invalid Spotify URL. Must be a track or playlist URL.") from exc
+        raise ValueError("Invalid Spotify URL. Must be a track, playlist, or album URL.") from exc
 
 
 def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
@@ -725,6 +801,7 @@ __all__ = [
     "SpotifyPublicAPI",
     "TrackInfo",
     "detect_spotify_url_type",
+    "extract_album_id",
     "extract_playlist_id",
     "extract_track_id",
     "sanitize_filename",

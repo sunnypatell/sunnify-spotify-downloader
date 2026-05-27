@@ -11,6 +11,7 @@ from spotifydown_api import (
     SpotifyEmbedAPI,
     TrackInfo,
     detect_spotify_url_type,
+    extract_album_id,
     extract_playlist_id,
     extract_track_id,
     sanitize_filename,
@@ -42,10 +43,38 @@ class TestExtractPlaylistId:
         with pytest.raises(ValueError, match="Invalid Spotify playlist URL"):
             extract_playlist_id("https://open.spotify.com/track/abc123")
 
+    def test_album_url_raises_valueerror(self):
+        """Album URLs should raise ValueError for playlist extraction."""
+        with pytest.raises(ValueError, match="Invalid Spotify playlist URL"):
+            extract_playlist_id("https://open.spotify.com/album/abc123")
+
     def test_empty_url_raises_valueerror(self):
         """Empty URL should raise ValueError."""
         with pytest.raises(ValueError):
             extract_playlist_id("")
+
+
+class TestExtractAlbumId:
+    """Tests for extract_album_id function."""
+
+    def test_valid_album_url(self):
+        """Extract ID from standard album URL."""
+        url = "https://open.spotify.com/album/1JcLZljq8ADWNCdwVJKNID"
+        assert extract_album_id(url) == "1JcLZljq8ADWNCdwVJKNID"
+
+    def test_album_url_with_query_params(self):
+        """Extract ID from album URL with trailing query params."""
+        url = "https://open.spotify.com/album/abc123?si=xyz789"
+        assert extract_album_id(url) == "abc123"
+
+    def test_album_uri(self):
+        """Extract ID from a spotify:album: URI."""
+        assert extract_album_id("spotify:album:abc123") == "abc123"
+
+    def test_playlist_url_raises_valueerror(self):
+        """Playlist URLs should raise ValueError for album extraction."""
+        with pytest.raises(ValueError, match="Invalid Spotify album URL"):
+            extract_album_id("https://open.spotify.com/playlist/abc123")
 
 
 class TestExtractTrackId:
@@ -89,10 +118,19 @@ class TestDetectSpotifyUrlType:
         with pytest.raises(ValueError, match="Invalid Spotify URL"):
             detect_spotify_url_type("https://example.com/something")
 
-    def test_album_url_raises_valueerror(self):
-        """Album URLs are not supported."""
-        with pytest.raises(ValueError, match="Invalid Spotify URL"):
-            detect_spotify_url_type("https://open.spotify.com/album/abc123")
+    def test_detect_album(self):
+        """Detect album URL type."""
+        url = "https://open.spotify.com/album/1JcLZljq8ADWNCdwVJKNID"
+        url_type, item_id = detect_spotify_url_type(url)
+        assert url_type == "album"
+        assert item_id == "1JcLZljq8ADWNCdwVJKNID"
+
+    def test_detect_album_intl_and_query(self):
+        """Detect album URL with locale prefix and trailing query params."""
+        url = "https://open.spotify.com/intl-de/album/abc123?si=xyz"
+        url_type, item_id = detect_spotify_url_type(url)
+        assert url_type == "album"
+        assert item_id == "abc123"
 
 
 class TestSanitizeFilename:
@@ -158,6 +196,63 @@ class TestSpotifyEmbedAPI:
         headers = api._headers()
         assert "user-agent" in headers
         assert "Chrome" in headers["user-agent"]
+
+    def test_embed_url_selection_by_content_type(self):
+        """Album content uses the album embed endpoint, playlist the playlist one."""
+        api = SpotifyEmbedAPI()
+        assert api._embed_url_for("abc", "album") == ("https://open.spotify.com/embed/album/abc")
+        assert api._embed_url_for("abc", "playlist") == (
+            "https://open.spotify.com/embed/playlist/abc"
+        )
+
+    def test_album_iteration_tags_album_name_and_skips_spclient(self):
+        """Album iteration uses the album embed URL, tags every track with the
+        album name, and never invokes the playlist-only spclient fallback."""
+        api = SpotifyEmbedAPI()
+        fetched_urls: list[str] = []
+        album_data = {
+            "props": {
+                "pageProps": {
+                    "state": {
+                        "data": {
+                            "entity": {
+                                "name": "My Album",
+                                "trackList": [
+                                    {
+                                        "uri": "spotify:track:t1",
+                                        "title": "One",
+                                        "subtitle": "Artist A",
+                                        "duration": 100000,
+                                    },
+                                    {
+                                        "uri": "spotify:track:t2",
+                                        "title": "Two",
+                                        "subtitle": "Artist B",
+                                        "duration": 200000,
+                                    },
+                                ],
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        def fake_fetch(url: str) -> dict:
+            fetched_urls.append(url)
+            return album_data
+
+        def explode(*_args, **_kwargs):
+            raise AssertionError("spclient must not be called for albums")
+
+        api._fetch_embed_data = fake_fetch  # type: ignore[assignment]
+        api._session.get = explode  # type: ignore[assignment]
+
+        tracks = list(api.iter_playlist_tracks("ALBUMID", content_type="album"))
+
+        assert len(tracks) == 2
+        assert all(t.album == "My Album" for t in tracks)
+        assert fetched_urls == ["https://open.spotify.com/embed/album/ALBUMID"]
 
 
 class TestPlaylistClient:
