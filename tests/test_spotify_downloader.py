@@ -122,7 +122,12 @@ class TestMusicScraper:
 
         scraper = MusicScraper()
         assert scraper.sanitize_text("Hello World") == "Hello World"
-        assert scraper.sanitize_text("Test@Song#123") == "TestSong123"
+        # ordinary punctuation is legal in filenames and kept verbatim
+        assert scraper.sanitize_text("Test@Song#123") == "Test@Song#123"
+        # accented/non-Latin titles must survive (special-char download bug)
+        assert scraper.sanitize_text("MONTAGEM BAILÃO") == "MONTAGEM BAILÃO"
+        # Windows-reserved characters are still stripped
+        assert scraper.sanitize_text("A: B / C") == "A B C"
 
     def test_format_playlist_name(self):
         """Test playlist name formatting."""

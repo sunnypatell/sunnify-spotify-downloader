@@ -140,9 +140,15 @@ class TestSanitizeFilename:
         """Basic filename sanitization."""
         assert sanitize_filename("Hello World") == "Hello World"
 
-    def test_removes_special_chars(self):
-        """Special characters should be removed."""
-        assert sanitize_filename("Hello@World#123!") == "HelloWorld123"
+    def test_removes_windows_reserved_chars(self):
+        """Only the Windows-reserved characters are stripped (superset of mac/linux)."""
+        assert sanitize_filename('a<b>c:d"e/f\\g|h?i*j') == "abcdefghij"
+
+    def test_keeps_ordinary_punctuation(self):
+        """Non-reserved punctuation is legal on all platforms and kept verbatim."""
+        assert sanitize_filename("P!nk - Sober (Remix) [Explicit] & more") == (
+            "P!nk - Sober (Remix) [Explicit] & more"
+        )
 
     def test_preserves_allowed_chars(self):
         """Allowed characters should be preserved."""
@@ -157,21 +163,36 @@ class TestSanitizeFilename:
         result = sanitize_filename("Hello World", allow_spaces=False)
         assert result == "HelloWorld"
 
-    def test_empty_string_returns_unknown(self):
-        """Empty or all-special chars should return 'Unknown'."""
-        assert sanitize_filename("@#$%^&*") == "Unknown"
+    def test_empty_or_reserved_only_returns_unknown(self):
+        """Empty input, or input that is entirely reserved chars, returns 'Unknown'."""
         assert sanitize_filename("") == "Unknown"
+        assert sanitize_filename('/\\:*?"<>|') == "Unknown"
 
-    def test_unicode_characters_removed(self):
-        """Unicode characters should be removed."""
-        assert sanitize_filename("Café ☕ Music") == "Caf Music"
+    def test_unicode_preserved(self):
+        """Accented and non-Latin characters must be kept (closes the special-char bug)."""
+        assert sanitize_filename("MONTAGEM BAILÃO") == "MONTAGEM BAILÃO"
+        assert sanitize_filename("Café ☕ Music") == "Café ☕ Music"
+        assert sanitize_filename("Beyoncé") == "Beyoncé"
+        assert sanitize_filename("日本語の歌") == "日本語の歌"
+        assert sanitize_filename("Метель") == "Метель"
 
-    def test_long_filename(self):
-        """Long filenames should be handled."""
-        long_name = "A" * 300
-        result = sanitize_filename(long_name)
-        # Current implementation doesn't truncate, just sanitizes
-        assert result == "A" * 300
+    def test_control_chars_removed(self):
+        """Control characters (tab, newline, NUL) are stripped on all platforms."""
+        assert sanitize_filename("tab\there\nnewline\x00nul") == "tabherenewlinenul"
+
+    def test_trailing_and_leading_dots_spaces_trimmed(self):
+        """Windows rejects trailing dots/spaces; a leading dot hides files on Unix."""
+        assert sanitize_filename("trailing. ") == "trailing"
+        assert sanitize_filename("...Baby One More Time") == "Baby One More Time"
+
+    def test_windows_reserved_device_names_escaped(self):
+        """DOS device names (CON, NUL, COM1, ...) are escaped, incl. with extension."""
+        assert sanitize_filename("NUL") == "_NUL"
+        assert sanitize_filename("con.mp3") == "_con.mp3"
+        assert sanitize_filename("COM1") == "_COM1"
+        assert sanitize_filename("LPT9.flac") == "_LPT9.flac"
+        # a normal title that merely contains a reserved word is untouched
+        assert sanitize_filename("CONcrete") == "CONcrete"
 
 
 class TestSpotifyEmbedAPI:

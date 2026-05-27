@@ -14,6 +14,7 @@ import functools
 import json
 import re
 import time
+import unicodedata
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
@@ -770,23 +771,65 @@ def detect_spotify_url_type(url: str) -> tuple[str, str]:
         raise ValueError("Invalid Spotify URL. Must be a track, playlist, or album URL.") from exc
 
 
+# Characters reserved on Windows (the strictest of our three target platforms;
+# macOS forbids only "/" and NUL, Linux only "/" and NUL). Removing the Windows
+# set is therefore always safe everywhere.
+# Ref: https://learn.microsoft.com/windows/win32/fileio/naming-a-file
+_RESERVED_FILENAME_CHARS = '<>:"/\\|?*'
+
+# Names Windows reserves for legacy DOS devices. A file named e.g. "NUL" or
+# "NUL.mp3" is rejected ("NUL.txt" is equivalent to "NUL"). Compared case-
+# insensitively against the part before the first dot.
+_RESERVED_DEVICE_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+
+
 def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
-    """Sanitize a string for use as a filename.
+    """Sanitize a string into a cross-platform-safe filename component.
+
+    Removes only what is genuinely unsafe (Windows-reserved punctuation and
+    control characters) and keeps everything else, including accented and
+    non-Latin letters. The previous ASCII-only allowlist silently deleted any
+    non-ASCII character, which mangled titles like "MONTAGEM BAILAO" (the "AO"
+    is accented) and erased CJK titles to "Unknown" entirely.
+
+    Rules applied, per the platform docs:
+    - drop the Windows-reserved characters ``<>:"/\\|?*`` (superset of the
+      macOS/Linux forbidden set, which is just "/" and NUL)
+    - drop Unicode control characters (C0 incl. NUL, DEL, and C1)
+    - trim leading/trailing spaces and dots (Windows rejects trailing dots and
+      spaces; a leading dot would hide the file on Unix)
+    - escape the Windows reserved DOS device names (CON, NUL, COM1, ...)
 
     Args:
         name: The string to sanitize
         allow_spaces: Whether to allow spaces in the result
 
     Returns:
-        A sanitized string safe for use as a filename
+        A sanitized string safe to use as a filename on Windows, macOS, and Linux.
     """
-    valid_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.")
-    if allow_spaces:
-        valid_chars.add(" ")
-    sanitized = "".join(c for c in name if c in valid_chars)
-    # Collapse multiple spaces and strip
-    sanitized = " ".join(sanitized.split())
-    return sanitized or "Unknown"
+    # NFC keeps accented characters as single codepoints so the same title
+    # yields the same filename across platforms (macOS historically uses NFD).
+    normalized = unicodedata.normalize("NFC", name)
+    sanitized = "".join(
+        ch
+        for ch in normalized
+        if ch not in _RESERVED_FILENAME_CHARS and unicodedata.category(ch) != "Cc"
+    )
+    if not allow_spaces:
+        sanitized = sanitized.replace(" ", "")
+    # Collapse runs of whitespace, then trim leading/trailing spaces and dots.
+    sanitized = " ".join(sanitized.split()) if allow_spaces else sanitized.strip()
+    sanitized = sanitized.strip(" .")
+    if not sanitized:
+        return "Unknown"
+    # Escape Windows reserved device names (compared on the pre-extension base).
+    if sanitized.split(".")[0].upper() in _RESERVED_DEVICE_NAMES:
+        sanitized = f"_{sanitized}"
+    return sanitized
 
 
 __all__ = [
