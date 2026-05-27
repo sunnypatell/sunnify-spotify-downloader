@@ -5,7 +5,7 @@
 
 cask "sunnify" do
   version "2.0.7"
-  sha256 "119545496a7ecf4d6153571dbe65730ae6919c54b669a672c1363a8308137b83"
+  sha256 "08073701bce0214caebff893b09dff76fbad7de5d08ce16e5b6e9e483c5f77cf"
 
   url "https://github.com/sunnypatell/sunnify-spotify-downloader/releases/download/v#{version}/Sunnify-macOS.zip"
   name "Sunnify"
