@@ -301,7 +301,48 @@ class MusicScraper(QThread):
             return search_query
         return f"ytsearch5:{stripped}"
 
-    def download_track_audio(self, search_query, destination):
+    # Max gap (seconds) between the Spotify track length and a YouTube
+    # candidate's length for the candidate to count as the "same" recording.
+    # The top YouTube hit is often the music video (extra intro/skit/outro) or
+    # an extended/remix cut, which plays as a different song even though the
+    # filename is right. Matching on duration steers us to the real audio.
+    _DURATION_TOLERANCE_S = 7
+
+    def _select_youtube_match(self, search_query, expected_duration_s):
+        """Return the best YouTube watch URL for a search, or None.
+
+        Flat-searches the query (fast, metadata only) and, when the Spotify
+        track duration is known, picks the candidate whose length is closest
+        to it. Without a known duration it keeps the top available result.
+        Skips entries with no usable id.
+        """
+        select_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extract_flat": True,
+            "ignoreerrors": True,
+            "retries": 5,
+            "socket_timeout": 15,
+            "concurrent_fragment_downloads": 4,
+        }
+        try:
+            with YoutubeDL(select_opts) as ydl:
+                info = ydl.extract_info(search_query, download=False)
+        except Exception:
+            return None
+        entries = [e for e in (info or {}).get("entries", []) if e and e.get("id")]
+        if not entries:
+            return None
+
+        chosen = entries[0]
+        if expected_duration_s:
+            timed = [e for e in entries if e.get("duration")]
+            if timed:
+                chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
+        return f"https://www.youtube.com/watch?v={chosen['id']}"
+
+    def download_track_audio(self, search_query, destination, expected_duration_s=None):
         # Check for FFmpeg first
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
@@ -332,33 +373,33 @@ class MusicScraper(QThread):
             "retries": 5,
             "socket_timeout": 15,
             "concurrent_fragment_downloads": 4,
-            # Skip unavailable search results instead of aborting, and stop
-            # after the first result that actually downloads (closes #42).
             "ignoreerrors": True,
-            "max_downloads": 1,
             "postprocessors": [postprocessor],
         }
 
         expected_path = base + "." + ext
 
         # Primary query (widened to 5 results), then a simplified fallback if
-        # the first pass produced nothing. Success is decided purely by whether
-        # an audio file landed on disk, never by yt-dlp's return value, so a
-        # search that finds no playable source fails loudly instead of silently
-        # reporting a path that does not exist.
+        # the first pass produced nothing. For each, pick the duration-closest
+        # candidate (avoids grabbing the music video / wrong edit) and download
+        # that specific video. Success is decided purely by whether an audio
+        # file landed on disk, so a search with no playable source fails loudly
+        # instead of silently reporting a path that does not exist.
         queries = [self._widen_search(search_query)]
         fallback = self._simplify_search(search_query)
         if fallback not in queries:
             queries.append(fallback)
 
         for query in queries:
+            video_url = self._select_youtube_match(query, expected_duration_s)
+            if not video_url:
+                continue
             try:
                 with YoutubeDL(ydl_opts) as ydl:
-                    ydl.extract_info(query, download=True)
+                    ydl.extract_info(video_url, download=True)
             except Exception:
-                # MaxDownloadsReached is raised on success; availability and
-                # network errors are absorbed by ignoreerrors. The file-exists
-                # check below is the single source of truth.
+                # Availability/network errors are absorbed by ignoreerrors; the
+                # file-exists check below is the single source of truth.
                 pass
             if os.path.exists(expected_path):
                 return expected_path
@@ -475,8 +516,11 @@ class MusicScraper(QThread):
                 return None
 
             search_query = f"ytsearch1:{track_title} {artists} audio"
+            expected_dur = (track.duration_ms / 1000) if track.duration_ms else None
             try:
-                final_path = self.download_track_audio(search_query, filepath)
+                final_path = self.download_track_audio(
+                    search_query, filepath, expected_duration_s=expected_dur
+                )
             except Exception as error_status:
                 error_msg = self._get_user_friendly_error(error_status, track_title)
                 self.error_signal.emit(error_msg)
@@ -760,8 +804,11 @@ class MusicScraper(QThread):
 
         # Download via YouTube search
         search_query = f"ytsearch1:{track_title} {artists} audio"
+        expected_dur = (track.duration_ms / 1000) if track.duration_ms else None
         try:
-            final_path = self.download_track_audio(search_query, filepath)
+            final_path = self.download_track_audio(
+                search_query, filepath, expected_duration_s=expected_dur
+            )
         except Exception as error_status:
             error_msg = self._get_user_friendly_error(error_status, track_title)
             print(f"[*] Error downloading '{track_title}': {error_status}")

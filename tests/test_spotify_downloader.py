@@ -301,6 +301,65 @@ class TestDownloadTrackAudioOpts:
             assert opts["concurrent_fragment_downloads"] == 4
 
 
+class TestYoutubeMatchSelection:
+    """Tests for duration-aware YouTube match selection.
+
+    The top search hit is often the music video (extra intro/outro) which plays
+    as a different recording than the Spotify track. Selection must steer to the
+    candidate whose duration matches the Spotify track.
+    """
+
+    @staticmethod
+    def _scraper():
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper()
+
+    def _patched(self, entries):
+        candidates = {"entries": entries}
+        ctx = patch("Spotify_Downloader.YoutubeDL")
+        mock_ydl = ctx.start()
+        mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info = MagicMock(return_value=candidates)
+        return ctx
+
+    def test_picks_duration_closest_not_top_hit(self):
+        """With a known duration, the closest-length candidate wins over #1."""
+        entries = [
+            {"id": "musicvideo", "duration": 183, "title": "WAGWAN [MUSIC VIDEO]"},
+            {"id": "audio", "duration": 127, "title": "Wagwan (Official Audio)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match("ytsearch5:wagwan", 127)
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=audio"
+
+    def test_falls_back_to_first_without_expected_duration(self):
+        """No known duration keeps the top available result (legacy behavior)."""
+        entries = [
+            {"id": "first", "duration": 183, "title": "A"},
+            {"id": "second", "duration": 127, "title": "B"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match("ytsearch5:x", None)
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=first"
+
+    def test_returns_none_on_no_results(self):
+        """An empty search returns None so the caller can fall through / fail."""
+        ctx = self._patched([])
+        try:
+            url = self._scraper()._select_youtube_match("ytsearch5:nothing", 200)
+        finally:
+            ctx.stop()
+        assert url is None
+
+
 class TestWritingMetaTagsThread:
     """Tests for WritingMetaTagsThread synchronous cover fetch."""
 
@@ -526,7 +585,7 @@ class TestParallelDownloads:
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(2)]
         seen_workers: set[str] = set()
 
-        def fake_download(query, dest):
+        def fake_download(query, dest, **_kw):
             seen_workers.add(threading.current_thread().name)
             open(dest, "wb").close()
             return dest
@@ -570,7 +629,7 @@ class TestParallelDownloads:
         seen_workers: set[str] = set()
         barrier = threading.Barrier(MusicScraper.MAX_WORKERS, timeout=5)
 
-        def fake_download(query, dest):
+        def fake_download(query, dest, **_kw):
             seen_workers.add(threading.current_thread().name)
             # Block until MAX_WORKERS threads have arrived concurrently. Proves
             # the pool really spawned that many threads in parallel.
@@ -618,7 +677,7 @@ class TestParallelDownloads:
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(5)]
         completed = []
 
-        def fake_download(query, dest):
+        def fake_download(query, dest, **_kw):
             if "Song 2" in query:
                 raise RuntimeError("simulated yt-dlp failure")
             open(dest, "wb").close()
@@ -667,7 +726,7 @@ class TestParallelDownloads:
                 iter_threads.append(threading.get_ident())
                 yield self._make_track(f"id{i}", f"Song {i}")
 
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
         mock_api = MagicMock()
         meta = MagicMock()
         meta.name = "T"
@@ -705,7 +764,7 @@ class TestParallelDownloads:
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(10)]
 
         downloads = []
-        scraper.download_track_audio = lambda _q, d: (
+        scraper.download_track_audio = lambda _q, d, **_kw: (
             downloads.append(d),
             open(d, "wb").close(),
             d,
@@ -757,7 +816,7 @@ class TestParallelDownloads:
 
         downloaded = []
 
-        def fake_dl(q, d):
+        def fake_dl(q, d, **_kw):
             downloaded.append(d)
             open(d, "wb").close()
             return d
@@ -806,7 +865,7 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track("id1", "Song A")]
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
         mock_api = MagicMock()
         meta = MagicMock()
         meta.name = "T"
@@ -857,7 +916,7 @@ class TestParallelDownloads:
 
         claimed_paths = []
 
-        def slow_download(query, dest):
+        def slow_download(query, dest, **_kw):
             # Both workers hit this. Record which path each one claimed, then
             # create the file.
             claimed_paths.append(dest)
@@ -920,7 +979,7 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         meta = MagicMock()
@@ -963,7 +1022,7 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         meta = MagicMock()
@@ -1043,7 +1102,7 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         enriched = self._track(cover="https://real/cover.jpg", release_date="2024-06-01")
@@ -1067,7 +1126,7 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         scraper.spotifydown_api = mock_api
@@ -1086,7 +1145,7 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         mock_api.get_track.side_effect = SpotifyDownAPIError("offline")
@@ -1124,7 +1183,7 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         mock_api = MagicMock()
         enriched = self._track(cover="https://real/cover.jpg", release_date="2020-01-01")
@@ -1174,7 +1233,7 @@ class TestTrackNumberMetadata:
             "count_updated",
         ):
             setattr(scraper, sig, MagicMock())
-        scraper.download_track_audio = lambda _q, d: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         captured = []
         scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
