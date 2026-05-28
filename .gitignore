@@ -3,9 +3,8 @@
 Thumbs.db
 desktop.ini
 .idea/
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
+.vscode/
+.claude/
 *.sublime-workspace
 *.sublime-project
 

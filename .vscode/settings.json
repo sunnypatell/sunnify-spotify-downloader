@@ -1,6 +1,0 @@
-{
-  "claudeCode.allowDangerouslySkipPermissions": true,
-  "claudeCode.initialPermissionMode": "bypassPermissions",
-  "claudeCode.autoApproveEdits": true,
-  "claudeCode.autoApproveBash": true
-}
