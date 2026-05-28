@@ -311,9 +311,13 @@ class MusicScraper(QThread):
     def _select_youtube_match(self, search_query, expected_duration_s):
         """Return the best YouTube watch URL for a search, or None.
 
-        Flat-searches the query (fast, metadata only) and, when the Spotify
-        track duration is known, picks the candidate whose length is closest
-        to it. Without a known duration it keeps the top available result.
+        Flat-searches the query (fast, metadata only). The top hit is trusted
+        by default (YouTube's relevance ranking is usually right), so behavior
+        matches earlier versions for the common case. We only override it when
+        its length is clearly off from the Spotify track (the music-video /
+        extended-edit case), and then we pick the closest-length candidate.
+        This avoids second-guessing a correct top result and accidentally
+        preferring a same-length-but-wrong edit (sped-up, nightcore, remix).
         Skips entries with no usable id.
         """
         select_opts = {
@@ -337,9 +341,15 @@ class MusicScraper(QThread):
 
         chosen = entries[0]
         if expected_duration_s:
-            timed = [e for e in entries if e.get("duration")]
-            if timed:
-                chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
+            top_duration = chosen.get("duration")
+            top_off = top_duration is None or (
+                abs(top_duration - expected_duration_s) > self._DURATION_TOLERANCE_S
+            )
+            # Only look past the top hit when its length is clearly wrong.
+            if top_off:
+                timed = [e for e in entries if e.get("duration")]
+                if timed:
+                    chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
         return f"https://www.youtube.com/watch?v={chosen['id']}"
 
     def download_track_audio(self, search_query, destination, expected_duration_s=None):

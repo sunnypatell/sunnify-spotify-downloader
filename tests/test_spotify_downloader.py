@@ -337,6 +337,21 @@ class TestYoutubeMatchSelection:
             ctx.stop()
         assert url == "https://www.youtube.com/watch?v=audio"
 
+    def test_keeps_top_hit_when_its_duration_is_already_close(self):
+        """No regression: a top hit within tolerance is kept even if another
+        candidate is a hair closer (avoids preferring a same-length wrong edit)."""
+        entries = [
+            {"id": "official", "duration": 204, "title": "Song (Official Audio)"},
+            {"id": "spedup", "duration": 200, "title": "Song (sped up)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            # expected 200s; top is 4s off (within 7s tolerance) so it stays
+            url = self._scraper()._select_youtube_match("ytsearch5:song", 200)
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=official"
+
     def test_falls_back_to_first_without_expected_duration(self):
         """No known duration keeps the top available result (legacy behavior)."""
         entries = [
