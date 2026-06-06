@@ -1943,6 +1943,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._fix_playlist_label.setGeometry(QRect(40, 45, 900, 20))
         self._fix_playlist_label.setStyleSheet("color: #4CAF50; font-size: 12px; font-weight: bold;")
 
+        open_folder_btn = QPushButton("📁 Open Folder", self._fix_songs_panel)
+        open_folder_btn.setGeometry(QRect(950, 42, 170, 28))
+        open_folder_btn.setStyleSheet("QPushButton { background: #4CAF50; border: 1px solid #666; border-radius: 4px; color: white; font-weight: bold; font-size: 11px; } QPushButton:hover { background: #66BB6A; }")
+        open_folder_btn.clicked.connect(self._open_playlist_folder)
+
         info_text = QLabel("Select a playlist in the sidebar to view and manage its track links", self._fix_songs_panel)
         info_text.setGeometry(QRect(40, 70, 900, 25))
         info_text.setStyleSheet("color: #aaa; font-size: 10px;")
