@@ -125,13 +125,13 @@ class TestMusicScraper:
         assert scraper.sanitize_text("Test@Song#123") == "TestSong123"
 
     def test_format_playlist_name(self):
-        """Test playlist name formatting."""
+        """Test playlist name formatting - uses only playlist name."""
         from Spotify_Downloader import MusicScraper
         from spotifydown_api import PlaylistInfo
 
         scraper = MusicScraper()
 
-        # With owner
+        # With owner (should ignore owner and use only name)
         meta = PlaylistInfo(
             name="My Playlist",
             owner="Test User",
@@ -139,9 +139,9 @@ class TestMusicScraper:
             cover_url=None,
         )
         result = scraper.format_playlist_name(meta)
-        assert result == "My Playlist - Test User"
+        assert result == "My Playlist"
 
-        # Without owner
+        # Without owner (should still work)
         meta_no_owner = PlaylistInfo(
             name="Solo Playlist",
             owner=None,
@@ -149,7 +149,7 @@ class TestMusicScraper:
             cover_url=None,
         )
         result = scraper.format_playlist_name(meta_no_owner)
-        assert result == "Solo Playlist - Spotify"
+        assert result == "Solo Playlist"
 
     def test_prepare_playlist_folder(self, tmp_path):
         """Test playlist folder creation."""
@@ -1183,3 +1183,362 @@ class TestTrackNumberMetadata:
         # Confirm tracknumber was NOT written
         calls = [c for c in mock_easy.__setitem__.call_args_list if c.args[0] == "tracknumber"]
         assert len(calls) == 0
+
+
+class TestBuildFilename:
+    """Tests for build_filename function."""
+
+    def test_default_pattern_basic(self):
+        """Test default pattern with basic track."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="track123",
+            title="Song Title",
+            artists="Artist Name",
+            album="Album Name",
+            release_date="2024-01-15",
+            cover_url=None,
+            duration_ms=180000,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{title} - {artist}", track, track_num=1, ext="mp3")
+        assert result == "Song Title - Artist Name.mp3"
+
+    def test_pattern_with_index(self):
+        """Test pattern with track index formatting."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="track123",
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{index:02d}. {title}", track, track_num=3, ext="mp3")
+        assert result == "03. Song.mp3"
+
+    def test_pattern_with_year(self):
+        """Test pattern with year extraction."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="track123",
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date="2022-06-15",
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{year} - {title}", track, track_num=1, ext="mp3")
+        assert result == "2022 - Song.mp3"
+
+    def test_missing_album_becomes_empty(self):
+        """Test that missing album becomes empty string."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="track123",
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{album} - {title}", track, track_num=1, ext="mp3")
+        # Empty album gets stripped, leaving just " - Song"
+        assert "Song" in result and result.endswith(".mp3")
+
+    def test_missing_year_becomes_empty(self):
+        """Test that missing year becomes empty string."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="track123",
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{year} {title}", track, track_num=1, ext="mp3")
+        assert result == "Song.mp3"
+
+    def test_sanitization_applied(self):
+        """Test that result is sanitized."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="track123",
+            title="Song<Title>",
+            artists="Artist|Name",
+            album=None,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{title} - {artist}", track, track_num=1, ext="mp3")
+        # Sanitization removes invalid chars
+        assert "<" not in result and ">" not in result and "|" not in result
+        assert result.endswith(".mp3")
+
+    def test_malformed_format_spec_fallback(self):
+        """Test fallback for malformed format spec."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="track123",
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{index:zzz}", track, track_num=1, ext="mp3")
+        # Falls back to default pattern
+        assert "Song" in result and "Artist" in result and result.endswith(".mp3")
+
+    def test_collision_suffix_uses_correct_extension(self):
+        """Test that collision suffix uses the configured extension."""
+        from Spotify_Downloader import build_filename
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="abc123",
+            title="Song",
+            artists="Artist",
+            album=None,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        result = build_filename("{title} - {artist}", track, track_num=1, ext="flac")
+        assert result.endswith(".flac")
+
+
+class TestSavedPlaylists:
+    """Tests for saved playlists config and helpers."""
+
+    def test_load_saved_playlists_from_config(self):
+        """Test loading saved playlists from config."""
+        from Spotify_Downloader import load_saved_playlists
+
+        config = {
+            "saved_playlists": [
+                {"url": "https://open.spotify.com/playlist/abc123", "name": "My Playlist"}
+            ]
+        }
+        result = load_saved_playlists(config)
+        assert len(result) == 1
+        assert result[0]["url"] == "https://open.spotify.com/playlist/abc123"
+        assert result[0]["name"] == "My Playlist"
+
+    def test_load_saved_playlists_missing_key(self):
+        """Test loading from config without saved_playlists key."""
+        from Spotify_Downloader import load_saved_playlists
+
+        config = {}
+        result = load_saved_playlists(config)
+        assert result == []
+
+    def test_save_and_load_roundtrip(self, tmp_path):
+        """Test saving and loading playlists."""
+        from Spotify_Downloader import save_saved_playlists, load_saved_playlists, _config_path
+
+        with patch("Spotify_Downloader._config_path", return_value=str(tmp_path / "config.json")):
+            config = {"saved_playlists": []}
+            playlists = [
+                {"url": "https://open.spotify.com/playlist/abc", "name": "Playlist 1"},
+                {"url": "https://open.spotify.com/playlist/def", "name": "Playlist 2"},
+            ]
+            save_saved_playlists(config, playlists)
+
+            # Reload config from disk
+            import json
+
+            with open(str(tmp_path / "config.json")) as f:
+                reloaded = json.load(f)
+            assert len(reloaded["saved_playlists"]) == 2
+
+    def test_validate_saved_playlists_filters_invalid_entries(self):
+        """Test that _validate_saved_playlists filters invalid entries."""
+        from Spotify_Downloader import _validate_saved_playlists
+
+        raw = [
+            {"url": "https://...", "name": "Valid"},
+            {"url": "", "name": "Empty URL"},
+            {"name": "No URL"},
+            {"url": 123, "name": "Non-string URL"},
+        ]
+        result = _validate_saved_playlists(raw)
+        assert len(result) == 1
+        assert result[0]["url"] == "https://..."
+
+    def test_validate_saved_playlists_defaults_name(self):
+        """Test that _validate_saved_playlists defaults missing names."""
+        from Spotify_Downloader import _validate_saved_playlists
+
+        raw = [{"url": "https://..."}]
+        result = _validate_saved_playlists(raw)
+        assert result[0]["name"] == ""
+
+    def test_validate_saved_playlists_non_list(self):
+        """Test that _validate_saved_playlists handles non-list gracefully."""
+        from Spotify_Downloader import _validate_saved_playlists
+
+        result = _validate_saved_playlists(None)
+        assert result == []
+        result = _validate_saved_playlists("not a list")
+        assert result == []
+
+
+class TestSyncAllThread:
+    """Tests for SyncAllThread."""
+
+    def test_sync_all_thread_iterates_playlists(self):
+        """Test that SyncAllThread iterates all playlists."""
+        from Spotify_Downloader import SyncAllThread
+        from unittest.mock import MagicMock, patch
+
+        playlists = [
+            {"url": "https://open.spotify.com/playlist/abc", "name": "P1"},
+            {"url": "https://open.spotify.com/playlist/def", "name": "P2"},
+        ]
+        cancel_event = threading.Event()
+
+        with patch("Spotify_Downloader.MusicScraper") as mock_scraper_class:
+            mock_scraper = MagicMock()
+            mock_scraper_class.return_value = mock_scraper
+            mock_scraper.scrape_playlist = MagicMock()
+            mock_scraper.PlaylistCompleted = MagicMock()
+            mock_scraper.error_signal = MagicMock()
+
+            thread = SyncAllThread(
+                playlists, "/tmp", cancel_event, audio_format="mp3", audio_quality="192"
+            )
+            thread.sync_progress = MagicMock()
+            thread.sync_done = MagicMock()
+
+            thread.run()
+
+            # Verify scrape_playlist was called for each
+            assert mock_scraper.scrape_playlist.call_count == 2
+
+    def test_sync_all_thread_stops_on_cancel(self):
+        """Test that SyncAllThread stops when cancel event is set."""
+        from Spotify_Downloader import SyncAllThread
+        from unittest.mock import MagicMock, patch
+
+        playlists = [
+            {"url": "https://open.spotify.com/playlist/abc", "name": "P1"},
+            {"url": "https://open.spotify.com/playlist/def", "name": "P2"},
+        ]
+        cancel_event = threading.Event()
+
+        with patch("Spotify_Downloader.MusicScraper") as mock_scraper_class:
+            mock_scraper = MagicMock()
+            mock_scraper_class.return_value = mock_scraper
+            mock_scraper.scrape_playlist = MagicMock(
+                side_effect=lambda url, folder: cancel_event.set()
+            )
+            mock_scraper.PlaylistCompleted = MagicMock()
+            mock_scraper.error_signal = MagicMock()
+
+            thread = SyncAllThread(
+                playlists, "/tmp", cancel_event, audio_format="mp3", audio_quality="192"
+            )
+            thread.sync_progress = MagicMock()
+            thread.sync_done = MagicMock()
+
+            thread.run()
+
+            # Only first playlist should be processed before cancel
+            assert mock_scraper.scrape_playlist.call_count == 1
+            thread.sync_done.emit.assert_called_once()
+            assert "cancelled" in str(thread.sync_done.emit.call_args).lower()
+
+    def test_sync_all_thread_continues_after_error(self):
+        """Test that SyncAllThread continues after one playlist fails."""
+        from Spotify_Downloader import SyncAllThread
+        from unittest.mock import MagicMock, patch
+
+        playlists = [
+            {"url": "https://open.spotify.com/playlist/abc", "name": "P1"},
+            {"url": "https://open.spotify.com/playlist/def", "name": "P2"},
+        ]
+        cancel_event = threading.Event()
+
+        with patch("Spotify_Downloader.MusicScraper") as mock_scraper_class:
+            mock_scraper = MagicMock()
+            mock_scraper_class.return_value = mock_scraper
+            mock_scraper.scrape_playlist = MagicMock(side_effect=Exception("Test error"))
+            mock_scraper.PlaylistCompleted = MagicMock()
+            mock_scraper.error_signal = MagicMock()
+
+            thread = SyncAllThread(
+                playlists, "/tmp", cancel_event, audio_format="mp3", audio_quality="192"
+            )
+            thread.sync_progress = MagicMock()
+            thread.sync_done = MagicMock()
+
+            thread.run()
+
+            # Both playlists should be attempted despite first error
+            assert mock_scraper.scrape_playlist.call_count == 2
+            thread.sync_done.emit.assert_called_once()
+
+    def test_sync_all_thread_passes_filename_pattern(self):
+        """Test that SyncAllThread passes filename_pattern to scraper."""
+        from Spotify_Downloader import SyncAllThread
+        from unittest.mock import MagicMock, patch, call
+
+        playlists = [{"url": "https://...", "name": "P1"}]
+        cancel_event = threading.Event()
+        pattern = "{index:02d}. {title}"
+
+        with patch("Spotify_Downloader.MusicScraper") as mock_scraper_class:
+            thread = SyncAllThread(
+                playlists,
+                "/tmp",
+                cancel_event,
+                audio_format="mp3",
+                audio_quality="192",
+                filename_pattern=pattern,
+            )
+            thread.sync_progress = MagicMock()
+            thread.sync_done = MagicMock()
+
+            thread.run()
+
+            # Verify MusicScraper was instantiated with the pattern
+            call_kwargs = mock_scraper_class.call_args[1]
+            assert call_kwargs["filename_pattern"] == pattern

@@ -2803,36 +2803,53 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             for idx, song in enumerate(songs_data):
                 sp_id = song.get("spotify_id")
                 title = song.get("title", "Unknown")
+                artists = song.get("artists", "Unknown")
+                label = song.get("label", "")
+                release_date = song.get("release_date", "")
                 yt_url = song.get("youtube_url", "")
 
-                # Check disk state: build expected filename and check if it exists
+                # Check disk state
                 disk_state = self._check_file_on_disk(song, playlist_folder, idx + 1)
 
-                # Col 0: Song name with state indicators
-                spotify_state = "✓" if song.get("spotify_id") else "✗"
-                local_state = "✓" if yt_url else "✗"
-                disk_indicator = "✓" if disk_state else "✗"
+                # === Col 0: Song (artist / title / label release-date) ===
+                song_container = QFrame()
+                song_layout = QVBoxLayout(song_container)
+                song_layout.setContentsMargins(2, 2, 2, 2)
+                song_layout.setSpacing(0)
 
-                artists = song.get("artists", "Unknown")
-                name_text = f"{artists} - {title}"
-                state_text = f"{name_text}\n[S:{spotify_state} L:{local_state} D:{disk_indicator}]"
-                name_item = QTableWidgetItem(state_text)
-                name_item.setData(Qt.UserRole, sp_id)
-                name_item.setForeground(QColor("white"))
-                font = QFont()
-                font.setPointSize(10)
-                name_item.setFont(font)
-                self._songs_table.setItem(idx, 0, name_item)
+                artist_label = QLabel(artists)
+                artist_label.setStyleSheet("color: white; font-size: 8px;")
+                song_layout.addWidget(artist_label)
 
-                # Col 1: Spotify actions + duration (all on one line)
+                title_label = QLabel(title)
+                title_label.setStyleSheet("color: white; font-size: 9px; font-weight: bold;")
+                song_layout.addWidget(title_label)
+
+                info_text = ""
+                if label:
+                    info_text += label
+                if release_date:
+                    if info_text:
+                        info_text += " • "
+                    info_text += release_date[:10]  # Extract YYYY-MM-DD
+                info_label = QLabel(info_text or "—")
+                info_label.setStyleSheet("color: white; font-size: 7px;")
+                song_layout.addWidget(info_label)
+
+                self._songs_table.setCellWidget(idx, 0, song_container)
+
+                # === Col 1: Spotify actions ===
                 spotify_container = QFrame()
                 spotify_layout = QHBoxLayout(spotify_container)
                 spotify_layout.setContentsMargins(2, 2, 2, 2)
                 spotify_layout.setSpacing(2)
 
+                spotify_btn_style = "background: #666; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;"
+
                 spotify_open_btn = QPushButton("🔗")
-                spotify_open_btn.setStyleSheet("background: #1DB954; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
+                spotify_open_btn.setStyleSheet(spotify_btn_style)
                 spotify_open_btn.setMaximumWidth(30)
+                spotify_open_btn.setMaximumHeight(24)
                 spotify_open_btn.setToolTip("Open on Spotify")
                 spotify_open_btn.clicked.connect(lambda checked, tid=sp_id: webbrowser.open(f"https://open.spotify.com/track/{tid}"))
                 spotify_layout.addWidget(spotify_open_btn)
@@ -2840,142 +2857,198 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 preview_url = song.get("preview_url", "")
                 if preview_url:
                     preview_btn = QPushButton("🔊")
-                    preview_btn.setStyleSheet("background: #1DB954; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
+                    preview_btn.setStyleSheet(spotify_btn_style)
                     preview_btn.setMaximumWidth(30)
+                    preview_btn.setMaximumHeight(24)
                     preview_btn.setToolTip("Preview")
                     preview_btn.clicked.connect(lambda checked, url=preview_url: self._play_audio_preview(url, "Spotify"))
                     spotify_layout.addWidget(preview_btn)
 
-                # Duration label on same line as buttons
                 duration_ms = song.get("duration_ms", 0)
                 duration_text = format_duration(duration_ms)
                 duration_label = QLabel(f"⏱ {duration_text}")
-                duration_label.setStyleSheet("color: #aaa; font-size: 8px;")
+                duration_label.setStyleSheet("color: white; font-size: 8px;")
                 spotify_layout.addWidget(duration_label)
 
-                # Edit metadata button
                 edit_meta_btn = QPushButton("✎")
-                edit_meta_btn.setStyleSheet("background: #FF9800; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
+                edit_meta_btn.setStyleSheet(spotify_btn_style)
                 edit_meta_btn.setMaximumWidth(30)
+                edit_meta_btn.setMaximumHeight(24)
                 edit_meta_btn.setToolTip("Edit title/artist")
                 edit_meta_btn.clicked.connect(lambda checked, song_obj=song, pid=pid: self._show_edit_metadata_dialog(song_obj, pid))
                 spotify_layout.addWidget(edit_meta_btn)
 
                 self._songs_table.setCellWidget(idx, 1, spotify_container)
 
-                # Col 2: YouTube + Local data
+                # === Col 2: YouTube ===
                 yt_container = QFrame()
                 yt_layout = QHBoxLayout(yt_container)
                 yt_layout.setContentsMargins(2, 2, 2, 2)
-                yt_layout.setSpacing(2)
+                yt_layout.setSpacing(3)
 
-                if yt_url:
-                    yt_open_btn = QPushButton("▶")
-                    yt_open_btn.setStyleSheet("background: #FF0000; color: white; border: none; padding: 4px 6px; border-radius: 2px; font-size: 9px;")
-                    yt_open_btn.setMaximumWidth(30)
-                    yt_open_btn.clicked.connect(lambda checked, url=yt_url: webbrowser.open(url))
-                    yt_layout.addWidget(yt_open_btn)
+                button_style_normal = "background: #666; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 11px;"
+                button_style_disabled = "background: #666; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 11px; opacity: 0.3;"
 
-                    edit_btn = QPushButton("✎")
-                    edit_btn.setStyleSheet("background: #2196F3; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
-                    edit_btn.setMaximumWidth(30)
-                    edit_btn.setToolTip("Edit YouTube URL")
-                    edit_btn.clicked.connect(lambda checked, sid=sp_id, t=title, pid=pid: self._show_edit_dialog(sid, t, pid))
-                    yt_layout.addWidget(edit_btn)
+                # "youtube link exists?" button (non-interactive, green if yes, red if no)
+                exists_btn = QPushButton("✓" if yt_url else "✕")
+                exists_btn.setStyleSheet(f"background: {'#4CAF50' if yt_url else '#F44336'}; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 11px;")
+                exists_btn.setMaximumWidth(32)
+                exists_btn.setMaximumHeight(24)
+                exists_btn.setEnabled(False)
+                exists_btn.setToolTip("YouTube link exists" if yt_url else "No YouTube link")
+                yt_layout.addWidget(exists_btn)
 
-                    clear_btn = QPushButton("✕")
-                    clear_btn.setStyleSheet("background: #F44336; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
-                    clear_btn.setMaximumWidth(30)
-                    clear_btn.setToolTip("Clear YouTube URL")
-                    clear_btn.clicked.connect(lambda checked, sid=sp_id, t=title, pid=pid: self._clear_youtube_url(sid, t, pid))
-                    yt_layout.addWidget(clear_btn)
+                # "clear youtube link" button
+                clear_btn = QPushButton("✕")
+                if not yt_url:
+                    clear_btn.setStyleSheet(button_style_disabled)
+                    clear_btn.setEnabled(False)
                 else:
-                    edit_btn = QPushButton("✎")
-                    edit_btn.setStyleSheet("background: #2196F3; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
-                    edit_btn.setMaximumWidth(30)
-                    edit_btn.setToolTip("Edit YouTube URL")
-                    edit_btn.clicked.connect(lambda checked, sid=sp_id, t=title, pid=pid: self._show_edit_dialog(sid, t, pid))
-                    yt_layout.addWidget(edit_btn)
+                    clear_btn.setStyleSheet(button_style_normal)
+                    clear_btn.setEnabled(True)
+                clear_btn.setMaximumWidth(32)
+                clear_btn.setMaximumHeight(24)
+                clear_btn.setToolTip("Clear YouTube link")
+                clear_btn.clicked.connect(lambda checked, sid=sp_id, t=title, pid=pid: self._clear_youtube_url(sid, t, pid))
+                yt_layout.addWidget(clear_btn)
 
-                    find_btn = QPushButton("🔍")
-                    find_btn.setStyleSheet("background: #FF9800; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
-                    find_btn.setMaximumWidth(30)
-                    find_btn.setToolTip("Find YouTube URL")
-                    find_btn.clicked.connect(lambda checked, sid=sp_id, t=title, pid=pid: self._find_youtube_url_for_track(sid, t, pid))
-                    yt_layout.addWidget(find_btn)
+                # "edit youtube link" button
+                edit_yt_btn = QPushButton("✎")
+                edit_yt_btn.setStyleSheet(button_style_normal)
+                edit_yt_btn.setMaximumWidth(32)
+                edit_yt_btn.setMaximumHeight(24)
+                edit_yt_btn.setToolTip("Edit YouTube link")
+                edit_yt_btn.clicked.connect(lambda checked, sid=sp_id, t=title, pid=pid: self._show_edit_dialog(sid, t, pid))
+                yt_layout.addWidget(edit_yt_btn)
+
+                # "play on youtube" button
+                play_yt_btn = QPushButton("▶")
+                if not yt_url:
+                    play_yt_btn.setStyleSheet(button_style_disabled)
+                    play_yt_btn.setEnabled(False)
+                else:
+                    play_yt_btn.setStyleSheet(button_style_normal)
+                    play_yt_btn.setEnabled(True)
+                play_yt_btn.setMaximumWidth(32)
+                play_yt_btn.setMaximumHeight(24)
+                play_yt_btn.setToolTip("Play on YouTube")
+                play_yt_btn.clicked.connect(lambda checked, url=yt_url: webbrowser.open(url) if url else None)
+                yt_layout.addWidget(play_yt_btn)
+
+                # "find link on youtube" button
+                find_btn = QPushButton("🔍")
+                if yt_url:
+                    find_btn.setStyleSheet(button_style_disabled)
+                    find_btn.setEnabled(False)
+                else:
+                    find_btn.setStyleSheet(button_style_normal)
+                    find_btn.setEnabled(True)
+                find_btn.setMaximumWidth(32)
+                find_btn.setMaximumHeight(24)
+                find_btn.setToolTip("Find YouTube link")
+                find_btn.clicked.connect(lambda checked, sid=sp_id, t=title, pid=pid: self._find_youtube_url_for_track(sid, t, pid))
+                yt_layout.addWidget(find_btn)
 
                 self._songs_table.setCellWidget(idx, 2, yt_container)
 
-                # Col 3: Disk - filename, duration, and actions
+                # === Col 3: Disk ===
                 disk_container = QFrame()
                 disk_layout = QVBoxLayout(disk_container)
                 disk_layout.setContentsMargins(2, 2, 2, 2)
-                disk_layout.setSpacing(2)
+                disk_layout.setSpacing(1)
 
-                # Get the expected filename (single source of truth)
+                # Row 1: exists / filename
+                row1_container = QFrame()
+                row1_layout = QHBoxLayout(row1_container)
+                row1_layout.setContentsMargins(0, 0, 0, 0)
+                row1_layout.setSpacing(2)
+
+                # "disk file exists?" button (non-interactive)
+                file_exists_btn = QPushButton("✓" if disk_state else "✕")
+                file_exists_btn.setStyleSheet(f"background: {'#4CAF50' if disk_state else '#F44336'}; color: white; border: none; padding: 3px; border-radius: 2px; font-size: 10px;")
+                file_exists_btn.setMaximumWidth(28)
+                file_exists_btn.setMaximumHeight(20)
+                file_exists_btn.setEnabled(False)
+                file_exists_btn.setToolTip("File exists on disk" if disk_state else "File not on disk")
+                row1_layout.addWidget(file_exists_btn)
+
+                # filename
                 expected_filename = self._get_expected_filename(song, idx + 1)
-
-                # Filename label
                 filename_label = QLabel(expected_filename)
-                filename_label.setStyleSheet("color: #aaa; font-size: 8px; font-weight: bold;")
-                filename_label.setWordWrap(True)
-                disk_layout.addWidget(filename_label)
+                filename_label.setStyleSheet("color: white; font-size: 7px;")
+                row1_layout.addWidget(filename_label)
 
+                disk_layout.addWidget(row1_container)
+
+                # Row 2: duration + actions
+                row2_container = QFrame()
+                row2_layout = QHBoxLayout(row2_container)
+                row2_layout.setContentsMargins(0, 0, 0, 0)
+                row2_layout.setSpacing(3)
+
+                # disk duration
                 if disk_state:
-                    # Duration if available
-                    disk_duration = song.get("disk_file_duration")
+                    disk_duration = song.get("disk_file_duration", 0)
                     if disk_duration:
-                        duration_label = QLabel(format_duration(disk_duration))
-                        duration_label.setStyleSheet("color: #4CAF50; font-size: 8px;")
-                        disk_layout.addWidget(duration_label)
+                        duration_str = f"{disk_duration // 60000}:{(disk_duration % 60000) // 1000:02d}"
+                    else:
+                        duration_str = "—"
+                else:
+                    duration_str = "—"
 
-                    # Buttons row
-                    buttons_layout = QHBoxLayout()
-                    buttons_layout.setContentsMargins(0, 0, 0, 0)
-                    buttons_layout.setSpacing(2)
+                duration_label = QLabel(duration_str)
+                duration_label.setStyleSheet("color: white; font-size: 8px; min-width: 35px;")
+                row2_layout.addWidget(duration_label)
 
-                    # View tags button
+                if not disk_state:
+                    # Download button (only if file doesn't exist)
+                    download_btn = QPushButton("⬇️")
+                    download_btn.setStyleSheet("background: #4CAF50; color: white; border: none; padding: 3px; border-radius: 2px; font-size: 10px;")
+                    download_btn.setMaximumWidth(28)
+                    download_btn.setMaximumHeight(20)
+                    download_btn.setToolTip("Download track")
+                    download_btn.clicked.connect(lambda checked, song_obj=song, t_num=idx+1: self._download_single_track(song_obj, t_num))
+                    row2_layout.addWidget(download_btn)
+                else:
+                    # Re-download button
+                    redownload_btn = QPushButton("⬇️")
+                    redownload_btn.setStyleSheet("background: #666; color: white; border: none; padding: 3px; border-radius: 2px; font-size: 10px;")
+                    redownload_btn.setMaximumWidth(28)
+                    redownload_btn.setMaximumHeight(20)
+                    redownload_btn.setToolTip("Re-download (delete & download)")
+                    redownload_btn.clicked.connect(lambda checked, song_obj=song, t_num=idx+1: self._redownload_track(song_obj, t_num))
+                    row2_layout.addWidget(redownload_btn)
+
+                    # Delete button
+                    delete_btn = QPushButton("🗑")
+                    delete_btn.setStyleSheet("background: #666; color: white; border: none; padding: 3px; border-radius: 2px; font-size: 10px;")
+                    delete_btn.setMaximumWidth(28)
+                    delete_btn.setMaximumHeight(20)
+                    delete_btn.setToolTip("Delete file from disk")
+                    delete_btn.clicked.connect(lambda checked, song_obj=song, t_num=idx+1: self._delete_track_file(song_obj, t_num))
+                    row2_layout.addWidget(delete_btn)
+
+                    # View/edit tags button
                     tags_btn = QPushButton("🏷")
-                    tags_btn.setStyleSheet("background: #9C27B0; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
-                    tags_btn.setMaximumWidth(30)
+                    tags_btn.setStyleSheet("background: #666; color: white; border: none; padding: 3px; border-radius: 2px; font-size: 10px;")
+                    tags_btn.setMaximumWidth(28)
+                    tags_btn.setMaximumHeight(20)
                     tags_btn.setToolTip("View/Edit ID3 tags")
                     expected_filepath = os.path.join(
                         os.path.join(self.download_path, sanitize_filename(playlist_name, allow_spaces=True)),
                         self._get_expected_filename(song, idx + 1)
                     )
                     tags_btn.clicked.connect(lambda checked, fpath=expected_filepath, song_obj=song: self._show_tags_dialog(fpath, song_obj))
-                    buttons_layout.addWidget(tags_btn)
+                    row2_layout.addWidget(tags_btn)
 
-                    # Redownload button
-                    redownload_btn = QPushButton("⬇️")
-                    redownload_btn.setStyleSheet("background: #2196F3; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
-                    redownload_btn.setMaximumWidth(30)
-                    redownload_btn.setToolTip("Redownload (delete & re-download)")
-                    redownload_btn.clicked.connect(lambda checked, song_obj=song, t_num=idx+1: self._redownload_track(song_obj, t_num))
-                    buttons_layout.addWidget(redownload_btn)
-
-                    # Delete button
-                    delete_btn = QPushButton("🗑")
-                    delete_btn.setStyleSheet("background: #F44336; color: white; border: none; padding: 4px; border-radius: 2px; font-size: 10px;")
-                    delete_btn.setMaximumWidth(30)
-                    delete_btn.setToolTip("Delete file")
-                    delete_btn.clicked.connect(lambda checked, song_obj=song, t_num=idx+1: self._delete_track_file(song_obj, t_num))
-                    buttons_layout.addWidget(delete_btn)
-
-                    disk_layout.addLayout(buttons_layout)
-                else:
-                    # Download button
-                    download_btn = QPushButton("⬇️ Download")
-                    download_btn.setStyleSheet("background: #4CAF50; color: white; border: none; padding: 4px 6px; border-radius: 2px; font-size: 9px;")
-                    download_btn.setMaximumWidth(100)
-                    download_btn.clicked.connect(lambda checked, song_obj=song, t_num=idx+1: self._download_single_track(song_obj, t_num))
-                    disk_layout.addWidget(download_btn)
+                disk_layout.addWidget(row2_container)
 
                 self._songs_table.setCellWidget(idx, 3, disk_container)
 
-            self._songs_table.setRowHeight(0, 40)
+            # Set row heights for new layout
+            self._songs_table.setRowHeight(0, 70)
             for i in range(len(songs_data)):
-                self._songs_table.setRowHeight(i, 40)
+                self._songs_table.setRowHeight(i, 70)
 
             self.statusMsg.setText(f"✓ Loaded {len(songs_data)} songs")
         except Exception as e:
