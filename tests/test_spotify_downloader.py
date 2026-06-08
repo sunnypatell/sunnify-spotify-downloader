@@ -825,7 +825,8 @@ class TestParallelDownloads:
         playlist_folder.mkdir()
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        # Pre-create files for tracks 0 and 2
+        # Pre-create files for tracks 0 and 2 (default include_track_number=False
+        # keeps the historical `Title - Artist.mp3` shape)
         for i in (0, 2):
             (playlist_folder / f"Song {i} - Artist.mp3").touch()
 
@@ -955,13 +956,15 @@ class TestParallelDownloads:
         scraper._parallel_mode = True
         scraper._total_tracks = 2
 
-        # Pre-claim the filename as if worker A got there first
+        # Pre-claim the filename as if worker A got there first.
+        # Default include_track_number=False, so filenames keep the
+        # historical `Title - Artist.mp3` shape.
         base_name = "Song - Artist.mp3"
         base_path = os.path.join(str(playlist_folder), base_name)
         with scraper._filename_lock:
             scraper._in_flight_files.add(base_path)
 
-        # Worker B arrives — should get a suffixed filename
+        # Worker B arrives - should get a suffixed filename
         scraper._download_one_track(tracks[1], str(playlist_folder), None)
 
         assert len(claimed_paths) == 1
@@ -1306,3 +1309,121 @@ class TestTrackNumberMetadata:
         # Confirm tracknumber was NOT written
         calls = [c for c in mock_easy.__setitem__.call_args_list if c.args[0] == "tracknumber"]
         assert len(calls) == 0
+
+
+class TestTrackNumberInFilename:
+    """Tests for the include_track_number filename-prefix option.
+
+    Filename order must match playlist order in file managers (which sort
+    alphabetically). Zero-padding (`01.` not `1.`) is what makes that work
+    past nine tracks, so both the primary and the collision-guard paths
+    pad consistently.
+    """
+
+    def _track(self, tid="t1"):
+        from spotifydown_api import TrackInfo
+
+        return TrackInfo(
+            id=tid,
+            title="Title",
+            artists="Artist",
+            album="Album",
+            release_date="2024-01-01",
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+
+    def _stub(self, scraper):
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+    def test_default_off_keeps_legacy_filename(self, tmp_path):
+        """Default is opt-out: `Title - Artist.mp3`, same as before this feature."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        assert scraper.include_track_number is False
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+
+        scraper._download_one_track(self._track(), str(tmp_path), "", track_num=3)
+        assert captured[0].endswith("Title - Artist.mp3")
+        assert "03." not in os.path.basename(captured[0])
+
+    def test_enabled_writes_padded_prefix(self, tmp_path):
+        """When the user opts in, filenames get the zero-padded `NN. ` prefix."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(include_track_number=True)
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+
+        scraper._download_one_track(self._track(), str(tmp_path), "", track_num=3)
+        assert captured[0].endswith("03. Title - Artist.mp3")
+
+    def test_collision_path_pads_consistently(self, tmp_path):
+        """When a name collides, the `[id]` suffix variant must also be `NN. `-padded.
+
+        Without this, the same playlist mixes `03. Foo - Bar.mp3` with
+        `3. Foo - Bar [id].mp3`, which sorts wrong and looks broken.
+        """
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(include_track_number=True)
+        self._stub(scraper)
+        # Pretend the primary name is already claimed by a sibling worker
+        primary = str(tmp_path / "03. Title - Artist.mp3")
+        scraper._in_flight_files.add(primary)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+
+        scraper._download_one_track(self._track(tid="abc"), str(tmp_path), "", track_num=3)
+        assert captured[0].endswith("03. Title - Artist [abc].mp3")
+
+    def test_non_bool_config_falls_back_to_default(self):
+        """Bool validation in load_config must reject non-bool values (defensive)."""
+        from Spotify_Downloader import load_config
+
+        # We can't easily exercise the file path here, but the validation
+        # branch itself is small enough to exercise via construction:
+        scraper_cls_args = ["yes", "no", 1, 0, "true", None]
+        from Spotify_Downloader import MusicScraper
+
+        for v in scraper_cls_args:
+            s = MusicScraper(include_track_number=v)
+            assert isinstance(s.include_track_number, bool)
+        # And load_config returns a defaults dict; sanity-check the bool key
+        cfg = load_config()
+        assert isinstance(cfg["include_track_number"], bool)

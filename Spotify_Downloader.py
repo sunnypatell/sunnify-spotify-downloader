@@ -15,6 +15,8 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
+from __future__ import annotations
+
 __version__ = "2.0.7"
 
 import concurrent.futures
@@ -39,6 +41,7 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import QCursor, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -149,6 +152,7 @@ def load_config() -> dict:
         "download_path": None,
         "format": "mp3",
         "quality": "192",
+        "include_track_number": False,
     }
     try:
         with open(_config_path(), encoding="utf-8") as f:
@@ -160,6 +164,8 @@ def load_config() -> dict:
             defaults["format"] = "mp3"
         if defaults["quality"] not in SUPPORTED_QUALITIES:
             defaults["quality"] = "192"
+        if not isinstance(defaults["include_track_number"], bool):
+            defaults["include_track_number"] = False
         return defaults
     except (OSError, json.JSONDecodeError):
         return defaults
@@ -197,6 +203,7 @@ class MusicScraper(QThread):
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
+        include_track_number: bool = False,
     ):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
@@ -208,6 +215,7 @@ class MusicScraper(QThread):
         # audio_quality only applies to lossy formats (mp3/m4a/opus).
         self.audio_format = audio_format if audio_format in SUPPORTED_FORMATS else "mp3"
         self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
+        self.include_track_number = bool(include_track_number)
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
@@ -455,7 +463,12 @@ class MusicScraper(QThread):
         artists = track.artists
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
-        filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+
+        if self.include_track_number:
+            filename = f"{track_num:02d}. {sanitized_title} - {sanitized_artists}.mp3"
+        else:
+            filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+
         filepath = os.path.join(playlist_folder_path, filename)
 
         # Filename collision guard: two different tracks can sanitize to the
@@ -465,9 +478,16 @@ class MusicScraper(QThread):
         # lock; if taken, suffix with track id to de-dupe.
         with self._filename_lock:
             if filepath in self._in_flight_files:
+                if self.include_track_number:
+                    filename = (
+                        f"{track_num:02d}. {sanitized_title} - {sanitized_artists} [{track.id}].mp3"
+                    )
+                else:
+                    filename = f"{sanitized_title} - {sanitized_artists} [{track.id}].mp3"
+
                 filepath = os.path.join(
                     playlist_folder_path,
-                    f"{sanitized_title} - {sanitized_artists} [{track.id}].mp3",
+                    filename,
                 )
             self._in_flight_files.add(filepath)
 
@@ -855,6 +875,7 @@ class ScraperThread(QThread):
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
+        include_track_number: bool = False,
     ):
         super().__init__()
         self.spotify_link = spotify_link
@@ -864,6 +885,7 @@ class ScraperThread(QThread):
             cancel_event=self._cancel_event,
             audio_format=audio_format,
             audio_quality=audio_quality,
+            include_track_number=include_track_number,
         )
 
     def request_cancel(self):
@@ -1067,10 +1089,14 @@ class SettingsDialog(QDialog):
         self._quality_cb.setCurrentText(f"{current_q} kbps")
         self._on_format_change(self._format_cb.currentText())
 
+        self._include_track_number_cb = QCheckBox()
+        self._include_track_number_cb.setChecked(self._config.get("include_track_number", False))
+
         form = QFormLayout()
         form.addRow("Download folder:", folder_row)
         form.addRow("Audio format:", self._format_cb)
         form.addRow("Audio quality:", self._quality_cb)
+        form.addRow("Track number in filename:", self._include_track_number_cb)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
@@ -1114,6 +1140,7 @@ class SettingsDialog(QDialog):
         self._config["download_path"] = self._folder_label.text()
         self._config["format"] = self._format_cb.currentText()
         self._config["quality"] = self._quality_cb.currentText().split()[0]
+        self._config["include_track_number"] = self._include_track_number_cb.isChecked()
         return self._config
 
 
@@ -1223,6 +1250,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     "download_path": self.download_path,
                     "format": new.get("format", "mp3"),
                     "quality": new.get("quality", "192"),
+                    "include_track_number": new.get("include_track_number", False),
                 }
             )
             save_config(self._config)
@@ -1274,6 +1302,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 cancel_event=self._cancel_event,
                 audio_format=self._config.get("format", "mp3"),
                 audio_quality=self._config.get("quality", "192"),
+                include_track_number=self._config.get("include_track_number", False),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
