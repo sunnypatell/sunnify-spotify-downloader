@@ -379,10 +379,77 @@ class TestExtendedMixSelection:
     """Tests for extended-mix mode YouTube match selection."""
 
     @staticmethod
-    def _scraper(extended_mix=False):
+    def _scraper(extended_mix=False, max_extended_minutes=20):
         from Spotify_Downloader import MusicScraper
 
-        return MusicScraper(extended_mix=extended_mix)
+        return MusicScraper(
+            extended_mix=extended_mix, max_extended_minutes=max_extended_minutes
+        )
+
+    def test_max_track_duration_from_configurable_minutes(self):
+        """max_extended_minutes maps to max_track_duration_s (minutes * 60)."""
+        assert self._scraper(extended_mix=True, max_extended_minutes=30).max_track_duration_s == 1800
+        assert self._scraper(extended_mix=True).max_track_duration_s == 1200
+
+    def test_configurable_cap_rejects_above_ceiling(self):
+        """A keyworded cut above the configured minute cap is rejected."""
+        entries = [
+            {"id": "long", "duration": 450, "title": "Song (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper(
+                extended_mix=True, max_extended_minutes=5
+            )._select_youtube_match("ytsearch10:song extended mix", 200, prefer_extended=True)
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_configurable_cap_accepts_within_ceiling(self):
+        """A longer keyworded cut within ratio and a higher cap is accepted."""
+        entries = [
+            {"id": "long", "duration": 450, "title": "Song (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper(
+                extended_mix=True, max_extended_minutes=15
+            )._select_youtube_match("ytsearch10:song extended mix", 200, prefer_extended=True)
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=long"
+
+    def test_fallback_rejects_over_ratio_under_abs_cap(self):
+        """Over-ratio keyworded cuts below the absolute cap must not win via fallback."""
+        entries = [
+            {"id": "over", "duration": 900, "title": "Song (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 210, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_fallback_rejects_tiny_preview(self):
+        """Tiny preview clips with extended keywords must not win via fallback."""
+        entries = [
+            {
+                "id": "preview",
+                "duration": 30,
+                "title": "Song (Extended Mix) preview",
+            },
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 210, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
 
     def _patched(self, entries):
         candidates = {"entries": entries}
@@ -547,6 +614,20 @@ class TestExtendedMixSelection:
             ctx.stop()
         assert url == "https://www.youtube.com/watch?v=real"
 
+    def test_already_extended_picks_slightly_longer_within_window(self):
+        """Already-extended track: pick keyworded cut within ratio window."""
+        entries = [
+            {"id": "real", "duration": 430, "title": "Song (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 420, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=real"
+
 
 class TestExtendedMixDownload:
     """Tests for extended-mix two-stage download fallback."""
@@ -665,6 +746,12 @@ class TestStripRadioEdit:
 
     def test_only_radio_edit_removed(self):
         assert self._strip("Song (Radio Edit) - Remastered") == "Song - Remastered"
+
+    def test_radio_editorial_unchanged(self):
+        assert self._strip("Song - Radio Editorial") == "Song - Radio Editorial"
+
+    def test_radio_edit_version_unchanged(self):
+        assert self._strip("Song (Radio Edit Version)") == "Song (Radio Edit Version)"
 
     def test_extended_mode_meta_title_integration(self):
         from Spotify_Downloader import MusicScraper

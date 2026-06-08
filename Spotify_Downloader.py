@@ -150,6 +150,7 @@ def load_config() -> dict:
         "format": "mp3",
         "quality": "192",
         "extended_mix": False,
+        "max_extended_minutes": 20,
     }
     try:
         with open(_config_path(), encoding="utf-8") as f:
@@ -161,6 +162,13 @@ def load_config() -> dict:
             defaults["format"] = "mp3"
         if defaults["quality"] not in SUPPORTED_QUALITIES:
             defaults["quality"] = "192"
+        try:
+            mem = int(defaults["max_extended_minutes"])
+            if mem <= 0:
+                mem = 20
+        except (TypeError, ValueError):
+            mem = 20
+        defaults["max_extended_minutes"] = mem
         return defaults
     except (OSError, json.JSONDecodeError):
         return defaults
@@ -199,6 +207,7 @@ class MusicScraper(QThread):
         audio_format: str = "mp3",
         audio_quality: str = "192",
         extended_mix: bool = False,
+        max_extended_minutes: int = 20,
     ):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
@@ -211,6 +220,11 @@ class MusicScraper(QThread):
         self.audio_format = audio_format if audio_format in SUPPORTED_FORMATS else "mp3"
         self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
         self.extended_mix = extended_mix
+        try:
+            mem = int(max_extended_minutes)
+        except (TypeError, ValueError):
+            mem = MusicScraper._DEFAULT_MAX_EXTENDED_MINUTES
+        self.max_track_duration_s = max(1, mem) * 60
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
@@ -312,9 +326,10 @@ class MusicScraper(QThread):
     _DURATION_TOLERANCE_S = 7
     _EXTENDED_TITLE_KEYWORDS = ("extended", "club mix")
     _EXTENDED_MAX_RATIO = 2.5  # an extended cut is longer than the edit but never an hour-long mix
-    _MAX_TRACK_DURATION_S = 1200  # 20 min absolute ceiling; longer = a DJ set / full mix, never a single extended cut
+    _DEFAULT_MAX_EXTENDED_MINUTES = 20
     _RADIO_EDIT_RE = re.compile(
-        r"\s*[\(\[\-–—]\s*radio\s*edit\s*[\)\]]?\s*", re.IGNORECASE
+        r"\s*(?:\(\s*radio\s*edit\s*\)|\[\s*radio\s*edit\s*\]|[-–—]\s*radio\s*edit\b)\s*",
+        re.IGNORECASE,
     )
 
     @staticmethod
@@ -377,10 +392,11 @@ class MusicScraper(QThread):
 
         if prefer_extended:
             timed = [e for e in entries if e.get("duration")]
-            abs_cap = self._MAX_TRACK_DURATION_S
             if expected_duration_s:
                 lower = expected_duration_s + self._DURATION_TOLERANCE_S
-                upper = min(expected_duration_s * self._EXTENDED_MAX_RATIO, abs_cap)
+                upper = min(
+                    expected_duration_s * self._EXTENDED_MAX_RATIO, self.max_track_duration_s
+                )
                 longer = [
                     e
                     for e in timed
@@ -390,27 +406,29 @@ class MusicScraper(QThread):
                     chosen = max(longer, key=lambda e: e["duration"])
                     return f"https://www.youtube.com/watch?v={chosen['id']}"
                 # No genuinely-longer cut (e.g. the Spotify track is ALREADY the extended
-                # version): take the keyworded candidate closest to the expected length,
-                # within the absolute cap. Else give up so the caller falls back.
-                sane_kw = [
+                # version): take the keyworded candidate closest to the expected length
+                # within [expected/ratio, upper]. Else give up so the caller falls back.
+                lo = expected_duration_s / self._EXTENDED_MAX_RATIO
+                near = [
                     e
                     for e in timed
-                    if self._extended_title_boost(e) and e["duration"] <= abs_cap
+                    if self._extended_title_boost(e) and lo <= e["duration"] <= upper
                 ]
-                if sane_kw:
+                if near:
                     chosen = min(
-                        sane_kw, key=lambda e: abs(e["duration"] - expected_duration_s)
+                        near, key=lambda e: abs(e["duration"] - expected_duration_s)
                     )
                     return f"https://www.youtube.com/watch?v={chosen['id']}"
                 return None
             else:
                 # No Spotify duration to gate on: NEVER take an unbounded top hit. Require
-                # the extended keyword AND a sane single-track length (<= abs_cap); pick the
-                # most relevant (first) such result, else return None to fall back.
+                # the extended keyword AND a sane single-track length; pick the most
+                # relevant (first) such result, else return None to fall back.
                 sane_kw = [
                     e
                     for e in timed
-                    if self._extended_title_boost(e) and e["duration"] <= abs_cap
+                    if self._extended_title_boost(e)
+                    and e["duration"] <= self.max_track_duration_s
                 ]
                 if sane_kw:
                     chosen = sane_kw[0]
@@ -977,6 +995,7 @@ class ScraperThread(QThread):
         audio_format: str = "mp3",
         audio_quality: str = "192",
         extended_mix: bool = False,
+        max_extended_minutes: int = 20,
     ):
         super().__init__()
         self.spotify_link = spotify_link
@@ -987,6 +1006,7 @@ class ScraperThread(QThread):
             audio_format=audio_format,
             audio_quality=audio_quality,
             extended_mix=extended_mix,
+            max_extended_minutes=max_extended_minutes,
         )
 
     def request_cancel(self):
@@ -1158,7 +1178,7 @@ class SettingsDialog(QDialog):
         self.resize(620, self.sizeHint().height())
         self._config = dict(config)
 
-        from PyQt5.QtWidgets import QCheckBox, QLineEdit
+        from PyQt5.QtWidgets import QCheckBox, QLineEdit, QSpinBox
 
         # QLineEdit (read-only) handles arbitrarily long paths cleanly: it
         # elides mid-path with horizontal scroll on focus, rather than
@@ -1193,11 +1213,20 @@ class SettingsDialog(QDialog):
         self._extended_mix_cb = QCheckBox("Prefer extended mix / club mix versions")
         self._extended_mix_cb.setChecked(bool(self._config.get("extended_mix", False)))
 
+        self._max_extended_minutes_spin = QSpinBox()
+        self._max_extended_minutes_spin.setRange(1, 180)
+        self._max_extended_minutes_spin.setValue(
+            int(self._config.get("max_extended_minutes", 20))
+        )
+
         form = QFormLayout()
         form.addRow("Download folder:", folder_row)
         form.addRow("Audio format:", self._format_cb)
         form.addRow("Audio quality:", self._quality_cb)
         form.addRow("Extended mix:", self._extended_mix_cb)
+        form.addRow(
+            "Max extended-mix length (minutes):", self._max_extended_minutes_spin
+        )
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
@@ -1242,6 +1271,7 @@ class SettingsDialog(QDialog):
         self._config["format"] = self._format_cb.currentText()
         self._config["quality"] = self._quality_cb.currentText().split()[0]
         self._config["extended_mix"] = self._extended_mix_cb.isChecked()
+        self._config["max_extended_minutes"] = self._max_extended_minutes_spin.value()
         return self._config
 
 
@@ -1404,6 +1434,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 audio_format=self._config.get("format", "mp3"),
                 audio_quality=self._config.get("quality", "192"),
                 extended_mix=bool(self._config.get("extended_mix", False)),
+                max_extended_minutes=self._config.get("max_extended_minutes", 20),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
