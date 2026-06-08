@@ -520,8 +520,9 @@ class MusicScraper(QThread):
         track_title = track.title
         if self.extended_mix:
             track_title = self._strip_radio_edit(track_title)
+        display_title = self._meta_title(track_title)
         artists = track.artists
-        sanitized_title = self.sanitize_text(track_title)
+        sanitized_title = self.sanitize_text(display_title)
         sanitized_artists = self.sanitize_text(artists)
         filename = f"{sanitized_title} - {sanitized_artists}.mp3"
         filepath = os.path.join(playlist_folder_path, filename)
@@ -571,7 +572,7 @@ class MusicScraper(QThread):
         album_name = track.album or ""
 
         song_meta = {
-            "title": self._meta_title(track_title),
+            "title": display_title,
             "artists": artists,
             "album": album_name,
             "releaseDate": release_date,
@@ -865,8 +866,9 @@ class MusicScraper(QThread):
         track_title = track.title
         if self.extended_mix:
             track_title = self._strip_radio_edit(track_title)
+        display_title = self._meta_title(track_title)
         artists = track.artists
-        sanitized_title = self.sanitize_text(track_title)
+        sanitized_title = self.sanitize_text(display_title)
         sanitized_artists = self.sanitize_text(artists)
         filename = f"{sanitized_title} - {sanitized_artists}.mp3"
         filepath = os.path.join(music_folder, filename)
@@ -876,7 +878,7 @@ class MusicScraper(QThread):
         cover_url = track.cover_url
 
         song_meta = {
-            "title": self._meta_title(track_title),
+            "title": display_title,
             "artists": artists,
             "album": album_name,
             "releaseDate": release_date,

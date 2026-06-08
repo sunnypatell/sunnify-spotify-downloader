@@ -602,6 +602,59 @@ class TestStripRadioEdit:
         )
 
 
+class TestExtendedMixFilenameTitle:
+    """Tests for extended-mix display title used in output filenames."""
+
+    @staticmethod
+    def _scraper(extended_mix=False):
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper(extended_mix=extended_mix)
+
+    @staticmethod
+    def _display_title(scraper, raw_title: str) -> str:
+        track_title = raw_title
+        if scraper.extended_mix:
+            track_title = scraper._strip_radio_edit(track_title)
+        return scraper._meta_title(track_title)
+
+    def test_extended_mode_broken_pieces_display_title(self):
+        scraper = self._scraper(extended_mix=True)
+        display = scraper._meta_title(scraper._strip_radio_edit("Broken Pieces"))
+        assert display == "Broken Pieces (Extended Mix)"
+        assert scraper.sanitize_text(display) == "Broken Pieces (Extended Mix)"
+
+    def test_extended_mode_radio_edit_display_title(self):
+        scraper = self._scraper(extended_mix=True)
+        display = scraper._meta_title(
+            scraper._strip_radio_edit("Hold Me - Radio Edit")
+        )
+        assert display == "Hold Me (Extended Mix)"
+
+    def test_normal_mode_display_title_unchanged(self):
+        scraper = self._scraper(extended_mix=False)
+        display = self._display_title(scraper, "Broken Pieces")
+        assert display == "Broken Pieces"
+
+    def test_output_filename_includes_extended_mix_marker(self):
+        artist = "Paccu"
+        extended = self._scraper(extended_mix=True)
+        extended_display = self._display_title(extended, "Broken Pieces")
+        extended_filename = (
+            f"{extended.sanitize_text(extended_display)} - "
+            f"{extended.sanitize_text(artist)}.mp3"
+        )
+        assert extended_filename == "Broken Pieces (Extended Mix) - Paccu.mp3"
+
+        normal = self._scraper(extended_mix=False)
+        normal_display = self._display_title(normal, "Broken Pieces")
+        normal_filename = (
+            f"{normal.sanitize_text(normal_display)} - "
+            f"{normal.sanitize_text(artist)}.mp3"
+        )
+        assert normal_filename == "Broken Pieces - Paccu.mp3"
+
+
 class TestWritingMetaTagsThread:
     """Tests for WritingMetaTagsThread synchronous cover fetch."""
 
