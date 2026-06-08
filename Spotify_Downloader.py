@@ -469,6 +469,12 @@ class MusicScraper(QThread):
     def download_track_audio(
         self, search_query, destination, expected_duration_s=None, fallback_query=None
     ):
+        """Download audio from YouTube to *destination*.
+
+        Returns ``(path, used_extended)`` where *used_extended* is True when the
+        strict extended-mix search leg produced the file, False when a normal /
+        fallback query did.
+        """
         # Check for FFmpeg first
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
@@ -525,9 +531,42 @@ class MusicScraper(QThread):
                 # file-exists check below is the single source of truth.
                 pass
             if os.path.exists(expected_path):
-                return expected_path
+                return expected_path, pe
 
         raise RuntimeError("no playable audio source found on YouTube for this track")
+
+    def _resolve_extended_output(
+        self,
+        final_path,
+        used_extended,
+        folder,
+        sanitized_artists,
+        track_title,
+        display_title,
+        track_id,
+    ):
+        """After download, decide the final path + metadata title. If extended-mix
+        mode fell back to the original (used_extended is False), the audio is NOT an
+        extended cut, so rename the file and use the unmarked title instead of
+        mislabeling it '(Extended Mix)'. Returns (final_path, meta_title)."""
+        if not self.extended_mix or used_extended:
+            return final_path, display_title
+        # extended mode but fell back to the original -> drop the (Extended Mix) marker
+        unmarked = os.path.join(
+            folder, f"{self.sanitize_text(track_title)} - {sanitized_artists}.mp3"
+        )
+        if unmarked != final_path:
+            if os.path.exists(unmarked):
+                unmarked = os.path.join(
+                    folder,
+                    f"{self.sanitize_text(track_title)} - {sanitized_artists} [{track_id}].mp3",
+                )
+            try:
+                os.rename(final_path, unmarked)
+                final_path = unmarked
+            except OSError:
+                pass
+        return final_path, track_title
 
     def download_http_file(self, url, destination):
         response = self.session.get(url, stream=True, timeout=60)
@@ -648,14 +687,14 @@ class MusicScraper(QThread):
                     search_query = (
                         f"ytsearch10:{track_title} {artists} extended mix audio"
                     )
-                    final_path = self.download_track_audio(
+                    final_path, used_extended = self.download_track_audio(
                         search_query,
                         filepath,
                         expected_duration_s=expected_dur,
                         fallback_query=normal_query,
                     )
                 else:
-                    final_path = self.download_track_audio(
+                    final_path, used_extended = self.download_track_audio(
                         normal_query, filepath, expected_duration_s=expected_dur
                     )
             except Exception as error_status:
@@ -675,7 +714,17 @@ class MusicScraper(QThread):
                 self._finish_track_ui(ok=False)
                 return track_title
 
+            final_path, meta_title = self._resolve_extended_output(
+                final_path,
+                used_extended,
+                playlist_folder_path,
+                sanitized_artists,
+                track_title,
+                display_title,
+                track.id,
+            )
             self._record_in_manifest(track.id, final_path)
+            song_meta["title"] = meta_title
             song_meta["file"] = final_path
             self.add_song_meta.emit(song_meta)
             self._finish_track_ui(ok=True)
@@ -948,14 +997,14 @@ class MusicScraper(QThread):
         try:
             if self.extended_mix:
                 search_query = f"ytsearch10:{track_title} {artists} extended mix audio"
-                final_path = self.download_track_audio(
+                final_path, used_extended = self.download_track_audio(
                     search_query,
                     filepath,
                     expected_duration_s=expected_dur,
                     fallback_query=normal_query,
                 )
             else:
-                final_path = self.download_track_audio(
+                final_path, used_extended = self.download_track_audio(
                     normal_query, filepath, expected_duration_s=expected_dur
                 )
         except Exception as error_status:
@@ -969,6 +1018,16 @@ class MusicScraper(QThread):
             self.PlaylistCompleted.emit("Download failed - no audio file produced")
             return
 
+        final_path, meta_title = self._resolve_extended_output(
+            final_path,
+            used_extended,
+            music_folder,
+            sanitized_artists,
+            track_title,
+            display_title,
+            track.id,
+        )
+        song_meta["title"] = meta_title
         song_meta["file"] = final_path
         self.add_song_meta.emit(song_meta)
         self.increment_counter()

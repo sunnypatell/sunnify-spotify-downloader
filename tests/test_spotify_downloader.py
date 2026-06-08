@@ -675,15 +675,152 @@ class TestExtendedMixDownload:
             mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
             mock_exists.side_effect = lambda p: p == dest
 
-            result = scraper.download_track_audio(
+            result, used_extended = scraper.download_track_audio(
                 extended_q, dest, expected_duration_s=210, fallback_query=normal_q
             )
 
         assert result == dest
+        assert used_extended is False
         mock_select.assert_any_call(extended_q, 210, prefer_extended=True)
         mock_select.assert_any_call(
             "ytsearch5:Song Artist audio", 210, prefer_extended=False
         )
+
+    def test_extended_leg_reports_used_extended_true(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(extended_mix=True)
+        extended_q = "ytsearch10:Song Artist extended mix audio"
+        dest = str(tmp_path / "Song.mp3")
+        extended_url = "https://www.youtube.com/watch?v=extended"
+
+        mock_select = MagicMock(
+            side_effect=lambda query, expected_duration_s, prefer_extended=False: (
+                extended_url if prefer_extended else None
+            )
+        )
+
+        with (
+            patch("Spotify_Downloader.get_ffmpeg_path", return_value="/usr/bin"),
+            patch.object(scraper, "_select_youtube_match", mock_select),
+            patch("Spotify_Downloader.YoutubeDL") as mock_ydl,
+            patch("os.path.exists") as mock_exists,
+        ):
+            mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+            mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
+            mock_exists.side_effect = lambda p: p == dest
+
+            result, used_extended = scraper.download_track_audio(
+                extended_q, dest, expected_duration_s=420
+            )
+
+        assert result == dest
+        assert used_extended is True
+
+
+class TestResolveExtendedOutput:
+    """Tests for post-download filename/title correction on extended-mix fallback."""
+
+    @staticmethod
+    def _scraper(extended_mix=True):
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper(extended_mix=extended_mix)
+
+    def test_extended_wins_keeps_marked_path_and_title(self, tmp_path):
+        scraper = self._scraper(extended_mix=True)
+        marked = tmp_path / "Song (Extended Mix) - Artist.mp3"
+        marked.write_bytes(b"audio")
+        display_title = "Song (Extended Mix)"
+        final_path, meta_title = scraper._resolve_extended_output(
+            str(marked),
+            used_extended=True,
+            folder=str(tmp_path),
+            sanitized_artists="Artist",
+            track_title="Song",
+            display_title=display_title,
+            track_id="abc123",
+        )
+        assert final_path == str(marked)
+        assert meta_title == display_title
+        assert marked.exists()
+
+    def test_fallback_renames_to_unmarked_and_uses_track_title(self, tmp_path):
+        scraper = self._scraper(extended_mix=True)
+        marked = tmp_path / "Song (Extended Mix) - Artist.mp3"
+        marked.write_bytes(b"audio")
+        display_title = "Song (Extended Mix)"
+        unmarked = tmp_path / "Song - Artist.mp3"
+        final_path, meta_title = scraper._resolve_extended_output(
+            str(marked),
+            used_extended=False,
+            folder=str(tmp_path),
+            sanitized_artists="Artist",
+            track_title="Song",
+            display_title=display_title,
+            track_id="abc123",
+        )
+        assert final_path == str(unmarked)
+        assert meta_title == "Song"
+        assert not marked.exists()
+        assert unmarked.exists()
+        assert unmarked.read_bytes() == b"audio"
+
+    def test_fallback_no_rename_when_already_unmarked(self, tmp_path):
+        scraper = self._scraper(extended_mix=True)
+        unmarked = tmp_path / "Song - Artist.mp3"
+        unmarked.write_bytes(b"audio")
+        final_path, meta_title = scraper._resolve_extended_output(
+            str(unmarked),
+            used_extended=False,
+            folder=str(tmp_path),
+            sanitized_artists="Artist",
+            track_title="Song",
+            display_title="Song",
+            track_id="abc123",
+        )
+        assert final_path == str(unmarked)
+        assert meta_title == "Song"
+        assert unmarked.exists()
+
+    def test_non_extended_mode_unchanged(self, tmp_path):
+        scraper = self._scraper(extended_mix=False)
+        path = tmp_path / "Song - Artist.mp3"
+        path.write_bytes(b"audio")
+        final_path, meta_title = scraper._resolve_extended_output(
+            str(path),
+            used_extended=False,
+            folder=str(tmp_path),
+            sanitized_artists="Artist",
+            track_title="Song",
+            display_title="Song",
+            track_id="abc123",
+        )
+        assert final_path == str(path)
+        assert meta_title == "Song"
+        assert path.exists()
+
+    def test_fallback_collision_uses_track_id_suffix(self, tmp_path):
+        scraper = self._scraper(extended_mix=True)
+        marked = tmp_path / "Song (Extended Mix) - Artist.mp3"
+        marked.write_bytes(b"fallback")
+        (tmp_path / "Song - Artist.mp3").write_bytes(b"existing")
+        display_title = "Song (Extended Mix)"
+        expected = tmp_path / "Song - Artist [abc123].mp3"
+        final_path, meta_title = scraper._resolve_extended_output(
+            str(marked),
+            used_extended=False,
+            folder=str(tmp_path),
+            sanitized_artists="Artist",
+            track_title="Song",
+            display_title=display_title,
+            track_id="abc123",
+        )
+        assert final_path == str(expected)
+        assert meta_title == "Song"
+        assert not marked.exists()
+        assert expected.exists()
+        assert expected.read_bytes() == b"fallback"
 
 
 class TestExtendedMixTitleTag:
@@ -1049,7 +1186,7 @@ class TestParallelDownloads:
         def fake_download(query, dest, **_kw):
             seen_workers.add(threading.current_thread().name)
             open(dest, "wb").close()
-            return dest
+            return dest, False
 
         scraper.download_track_audio = fake_download
         mock_api = MagicMock()
@@ -1097,7 +1234,7 @@ class TestParallelDownloads:
             with contextlib.suppress(threading.BrokenBarrierError):
                 barrier.wait()
             open(dest, "wb").close()
-            return dest
+            return dest, False
 
         scraper.download_track_audio = fake_download
         mock_api = MagicMock()
@@ -1143,7 +1280,7 @@ class TestParallelDownloads:
                 raise RuntimeError("simulated yt-dlp failure")
             open(dest, "wb").close()
             completed.append(dest)
-            return dest
+            return dest, False
 
         scraper.download_track_audio = fake_download
         mock_api = MagicMock()
@@ -1187,7 +1324,9 @@ class TestParallelDownloads:
                 iter_threads.append(threading.get_ident())
                 yield self._make_track(f"id{i}", f"Song {i}")
 
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
         mock_api = MagicMock()
         meta = MagicMock()
         meta.name = "T"
@@ -1228,7 +1367,7 @@ class TestParallelDownloads:
         scraper.download_track_audio = lambda _q, d, **_kw: (
             downloads.append(d),
             open(d, "wb").close(),
-            d,
+            (d, False),
         )[2]
         mock_api = MagicMock()
         meta = MagicMock()
@@ -1326,7 +1465,9 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track("id1", "Song A")]
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
         mock_api = MagicMock()
         meta = MagicMock()
         meta.name = "T"
@@ -1382,7 +1523,7 @@ class TestParallelDownloads:
             # create the file.
             claimed_paths.append(dest)
             open(dest, "wb").close()
-            return dest
+            return dest, False
 
         scraper.download_track_audio = slow_download
         mock_api = MagicMock()
@@ -1440,7 +1581,9 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
 
         mock_api = MagicMock()
         meta = MagicMock()
@@ -1483,7 +1626,9 @@ class TestParallelDownloads:
             setattr(scraper, sig, MagicMock())
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
 
         mock_api = MagicMock()
         meta = MagicMock()
@@ -1563,7 +1708,9 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
 
         mock_api = MagicMock()
         enriched = self._track(cover="https://real/cover.jpg", release_date="2024-06-01")
@@ -1587,7 +1734,9 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
 
         mock_api = MagicMock()
         scraper.spotifydown_api = mock_api
@@ -1606,7 +1755,9 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
 
         mock_api = MagicMock()
         mock_api.get_track.side_effect = SpotifyDownAPIError("offline")
@@ -1644,7 +1795,9 @@ class TestCoverEnrichment:
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
 
         mock_api = MagicMock()
         enriched = self._track(cover="https://real/cover.jpg", release_date="2020-01-01")
@@ -1694,7 +1847,9 @@ class TestTrackNumberMetadata:
             "count_updated",
         ):
             setattr(scraper, sig, MagicMock())
-        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            open(d, "wb").close() or (d, False)
+        )
 
         captured = []
         scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
