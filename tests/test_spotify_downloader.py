@@ -375,6 +375,185 @@ class TestYoutubeMatchSelection:
         assert url is None
 
 
+class TestExtendedMixSelection:
+    """Tests for extended-mix mode YouTube match selection."""
+
+    @staticmethod
+    def _scraper(extended_mix=False):
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper(extended_mix=extended_mix)
+
+    def _patched(self, entries):
+        candidates = {"entries": entries}
+        ctx = patch("Spotify_Downloader.YoutubeDL")
+        mock_ydl = ctx.start()
+        mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+        mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
+        mock_ydl.extract_info = MagicMock(return_value=candidates)
+        return ctx
+
+    def test_picks_extended_over_radio_edit(self):
+        """Extended mode prefers a longer cut over the radio edit top hit."""
+        entries = [
+            {"id": "radio", "duration": 127, "title": "Song (Official Audio)"},
+            {"id": "extended", "duration": 240, "title": "Song (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 127, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=extended"
+
+    def test_returns_none_when_no_extended_candidate(self):
+        """Strict extended mode returns None when no keyworded in-range cut exists."""
+        entries = [
+            {"id": "official", "duration": 204, "title": "Song (Official Audio)"},
+            {"id": "spedup", "duration": 200, "title": "Song (sped up)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 200, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_rejects_hour_long_mix_even_with_keyword(self):
+        """An hour-long 'Extended Mix' exceeds the ratio cap and is rejected."""
+        entries = [
+            {"id": "mix", "duration": 7200, "title": "Song (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 210, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_rejects_wrong_long_upload_without_keyword(self):
+        """Long DJ-set uploads without extended keywords must not be selected."""
+        entries = [
+            {"id": "original", "duration": 210, "title": "Song"},
+            {"id": "djset", "duration": 3600, "title": "Beach House 2026 Mix"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 210, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_prefers_keyword_match_among_longer_candidates(self):
+        """Among longer cuts, titles with extended keywords win over generic uploads."""
+        entries = [
+            {"id": "radio", "duration": 127, "title": "Song"},
+            {"id": "djset", "duration": 3600, "title": "Song full set live"},
+            {"id": "club", "duration": 300, "title": "Song (Club Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 127, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=club"
+
+
+class TestExtendedMixDownload:
+    """Tests for extended-mix two-stage download fallback."""
+
+    @staticmethod
+    def _scraper(extended_mix=True):
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper(extended_mix=extended_mix)
+
+    def test_builds_strict_extended_plan_before_fallback(self):
+        scraper = self._scraper()
+        extended_q = "ytsearch10:Song Artist extended mix audio"
+        normal_q = "ytsearch1:Song Artist audio"
+        plan = scraper._build_youtube_download_plan(extended_q, fallback_query=normal_q)
+        assert plan[0] == (extended_q, True)
+        assert plan[1] == ("ytsearch5:Song Artist audio", False)
+
+    def test_falls_back_to_normal_query_when_no_extended_candidate(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(extended_mix=True)
+        extended_q = "ytsearch10:Song Artist extended mix audio"
+        normal_q = "ytsearch1:Song Artist audio"
+        dest = str(tmp_path / "Song.mp3")
+        fallback_url = "https://www.youtube.com/watch?v=original"
+
+        mock_select = MagicMock(
+            side_effect=lambda query, expected_duration_s, prefer_extended=False: (
+                None
+                if prefer_extended
+                else fallback_url
+                if query.startswith("ytsearch5:Song Artist audio")
+                else None
+            )
+        )
+
+        with (
+            patch("Spotify_Downloader.get_ffmpeg_path", return_value="/usr/bin"),
+            patch.object(scraper, "_select_youtube_match", mock_select),
+            patch("Spotify_Downloader.YoutubeDL") as mock_ydl,
+            patch("os.path.exists") as mock_exists,
+        ):
+            mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
+            mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
+            mock_exists.side_effect = lambda p: p == dest
+
+            result = scraper.download_track_audio(
+                extended_q, dest, expected_duration_s=210, fallback_query=normal_q
+            )
+
+        assert result == dest
+        mock_select.assert_any_call(extended_q, 210, prefer_extended=True)
+        mock_select.assert_any_call(
+            "ytsearch5:Song Artist audio", 210, prefer_extended=False
+        )
+
+
+class TestExtendedMixTitleTag:
+    """Tests for the metadata title annotation in extended-mix mode."""
+
+    @staticmethod
+    def _scraper(extended_mix=False):
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper(extended_mix=extended_mix)
+
+    def test_default_mode_leaves_title_untouched(self):
+        assert self._scraper(extended_mix=False)._meta_title("Song") == "Song"
+
+    def test_extended_mode_appends_suffix(self):
+        assert (
+            self._scraper(extended_mix=True)._meta_title("Song")
+            == "Song (Extended Mix)"
+        )
+
+    def test_extended_mode_does_not_double_append(self):
+        """A title that already says 'extended' is left as-is."""
+        title = "Song (Extended Mix)"
+        assert self._scraper(extended_mix=True)._meta_title(title) == title
+        assert (
+            self._scraper(extended_mix=True)._meta_title("Song - Extended Version")
+            == "Song - Extended Version"
+        )
+
+
 class TestWritingMetaTagsThread:
     """Tests for WritingMetaTagsThread synchronous cover fetch."""
 

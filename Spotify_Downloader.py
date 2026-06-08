@@ -149,6 +149,7 @@ def load_config() -> dict:
         "download_path": None,
         "format": "mp3",
         "quality": "192",
+        "extended_mix": False,
     }
     try:
         with open(_config_path(), encoding="utf-8") as f:
@@ -197,6 +198,7 @@ class MusicScraper(QThread):
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
+        extended_mix: bool = False,
     ):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
@@ -208,6 +210,7 @@ class MusicScraper(QThread):
         # audio_quality only applies to lossy formats (mp3/m4a/opus).
         self.audio_format = audio_format if audio_format in SUPPORTED_FORMATS else "mp3"
         self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
+        self.extended_mix = extended_mix
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
@@ -307,8 +310,27 @@ class MusicScraper(QThread):
     # an extended/remix cut, which plays as a different song even though the
     # filename is right. Matching on duration steers us to the real audio.
     _DURATION_TOLERANCE_S = 7
+    _EXTENDED_TITLE_KEYWORDS = ("extended", "club mix")
+    _EXTENDED_MAX_RATIO = 2.5  # an extended cut is longer than the edit but never an hour-long mix
 
-    def _select_youtube_match(self, search_query, expected_duration_s):
+    @classmethod
+    def _extended_title_boost(cls, entry: dict) -> int:
+        title = (entry.get("title") or "").lower()
+        return int(any(kw in title for kw in cls._EXTENDED_TITLE_KEYWORDS))
+
+    def _meta_title(self, track_title: str) -> str:
+        """Title written to the file's metadata tags and shown in the preview.
+
+        In extended-mix mode the downloaded audio is the extended cut rather
+        than the Spotify radio edit, so the title tag is annotated to say so.
+        Skipped when the Spotify title already mentions "extended" to avoid a
+        doubled "(Extended Mix)" on tracks that are themselves extended edits.
+        """
+        if self.extended_mix and "extended" not in track_title.lower():
+            return f"{track_title} (Extended Mix)"
+        return track_title
+
+    def _select_youtube_match(self, search_query, expected_duration_s, prefer_extended=False):
         """Return the best YouTube watch URL for a search, or None.
 
         Flat-searches the query (fast, metadata only). The top hit is trusted
@@ -339,20 +361,54 @@ class MusicScraper(QThread):
         if not entries:
             return None
 
-        chosen = entries[0]
-        if expected_duration_s:
-            top_duration = chosen.get("duration")
-            top_off = top_duration is None or (
-                abs(top_duration - expected_duration_s) > self._DURATION_TOLERANCE_S
-            )
-            # Only look past the top hit when its length is clearly wrong.
-            if top_off:
-                timed = [e for e in entries if e.get("duration")]
-                if timed:
-                    chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
+        if prefer_extended and expected_duration_s:
+            timed = [e for e in entries if e.get("duration")]
+            lower = expected_duration_s + self._DURATION_TOLERANCE_S
+            upper = expected_duration_s * self._EXTENDED_MAX_RATIO
+            candidates = [
+                e
+                for e in timed
+                if self._extended_title_boost(e) and lower < e["duration"] <= upper
+            ]
+            if not candidates:
+                return None
+            chosen = max(candidates, key=lambda e: e["duration"])
+            return f"https://www.youtube.com/watch?v={chosen['id']}"
+        else:
+            chosen = entries[0]
+            if expected_duration_s:
+                top_duration = chosen.get("duration")
+                top_off = top_duration is None or (
+                    abs(top_duration - expected_duration_s) > self._DURATION_TOLERANCE_S
+                )
+                # Only look past the top hit when its length is clearly wrong.
+                if top_off:
+                    timed = [e for e in entries if e.get("duration")]
+                    if timed:
+                        chosen = min(
+                            timed, key=lambda e: abs(e["duration"] - expected_duration_s)
+                        )
         return f"https://www.youtube.com/watch?v={chosen['id']}"
 
-    def download_track_audio(self, search_query, destination, expected_duration_s=None):
+    def _build_youtube_download_plan(self, search_query, fallback_query=None):
+        prefer_extended = self.extended_mix
+        if prefer_extended:
+            plan = [(self._widen_search(search_query), True)]
+            if fallback_query:
+                plan.append((self._widen_search(fallback_query), False))
+                simp = self._simplify_search(fallback_query)
+                if simp not in [q for q, _ in plan]:
+                    plan.append((simp, False))
+        else:
+            plan = [(self._widen_search(search_query), False)]
+            fb = self._simplify_search(search_query)
+            if fb not in [q for q, _ in plan]:
+                plan.append((fb, False))
+        return plan
+
+    def download_track_audio(
+        self, search_query, destination, expected_duration_s=None, fallback_query=None
+    ):
         # Check for FFmpeg first
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
@@ -395,13 +451,10 @@ class MusicScraper(QThread):
         # that specific video. Success is decided purely by whether an audio
         # file landed on disk, so a search with no playable source fails loudly
         # instead of silently reporting a path that does not exist.
-        queries = [self._widen_search(search_query)]
-        fallback = self._simplify_search(search_query)
-        if fallback not in queries:
-            queries.append(fallback)
-
-        for query in queries:
-            video_url = self._select_youtube_match(query, expected_duration_s)
+        for query, pe in self._build_youtube_download_plan(search_query, fallback_query):
+            video_url = self._select_youtube_match(
+                query, expected_duration_s, prefer_extended=pe
+            )
             if not video_url:
                 continue
             try:
@@ -503,7 +556,7 @@ class MusicScraper(QThread):
         album_name = track.album or ""
 
         song_meta = {
-            "title": track_title,
+            "title": self._meta_title(track_title),
             "artists": artists,
             "album": album_name,
             "releaseDate": release_date,
@@ -525,12 +578,23 @@ class MusicScraper(QThread):
                 self._finish_track_ui(ok=True)
                 return None
 
-            search_query = f"ytsearch1:{track_title} {artists} audio"
+            normal_query = f"ytsearch1:{track_title} {artists} audio"
             expected_dur = (track.duration_ms / 1000) if track.duration_ms else None
             try:
-                final_path = self.download_track_audio(
-                    search_query, filepath, expected_duration_s=expected_dur
-                )
+                if self.extended_mix:
+                    search_query = (
+                        f"ytsearch10:{track_title} {artists} extended mix audio"
+                    )
+                    final_path = self.download_track_audio(
+                        search_query,
+                        filepath,
+                        expected_duration_s=expected_dur,
+                        fallback_query=normal_query,
+                    )
+                else:
+                    final_path = self.download_track_audio(
+                        normal_query, filepath, expected_duration_s=expected_dur
+                    )
             except Exception as error_status:
                 error_msg = self._get_user_friendly_error(error_status, track_title)
                 self.error_signal.emit(error_msg)
@@ -795,7 +859,7 @@ class MusicScraper(QThread):
         cover_url = track.cover_url
 
         song_meta = {
-            "title": track_title,
+            "title": self._meta_title(track_title),
             "artists": artists,
             "album": album_name,
             "releaseDate": release_date,
@@ -813,12 +877,21 @@ class MusicScraper(QThread):
             return
 
         # Download via YouTube search
-        search_query = f"ytsearch1:{track_title} {artists} audio"
+        normal_query = f"ytsearch1:{track_title} {artists} audio"
         expected_dur = (track.duration_ms / 1000) if track.duration_ms else None
         try:
-            final_path = self.download_track_audio(
-                search_query, filepath, expected_duration_s=expected_dur
-            )
+            if self.extended_mix:
+                search_query = f"ytsearch10:{track_title} {artists} extended mix audio"
+                final_path = self.download_track_audio(
+                    search_query,
+                    filepath,
+                    expected_duration_s=expected_dur,
+                    fallback_query=normal_query,
+                )
+            else:
+                final_path = self.download_track_audio(
+                    normal_query, filepath, expected_duration_s=expected_dur
+                )
         except Exception as error_status:
             error_msg = self._get_user_friendly_error(error_status, track_title)
             print(f"[*] Error downloading '{track_title}': {error_status}")
@@ -855,6 +928,7 @@ class ScraperThread(QThread):
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
+        extended_mix: bool = False,
     ):
         super().__init__()
         self.spotify_link = spotify_link
@@ -864,6 +938,7 @@ class ScraperThread(QThread):
             cancel_event=self._cancel_event,
             audio_format=audio_format,
             audio_quality=audio_quality,
+            extended_mix=extended_mix,
         )
 
     def request_cancel(self):
@@ -1035,7 +1110,7 @@ class SettingsDialog(QDialog):
         self.resize(620, self.sizeHint().height())
         self._config = dict(config)
 
-        from PyQt5.QtWidgets import QLineEdit
+        from PyQt5.QtWidgets import QCheckBox, QLineEdit
 
         # QLineEdit (read-only) handles arbitrarily long paths cleanly: it
         # elides mid-path with horizontal scroll on focus, rather than
@@ -1067,10 +1142,14 @@ class SettingsDialog(QDialog):
         self._quality_cb.setCurrentText(f"{current_q} kbps")
         self._on_format_change(self._format_cb.currentText())
 
+        self._extended_mix_cb = QCheckBox("Prefer extended mix / club mix versions")
+        self._extended_mix_cb.setChecked(bool(self._config.get("extended_mix", False)))
+
         form = QFormLayout()
         form.addRow("Download folder:", folder_row)
         form.addRow("Audio format:", self._format_cb)
         form.addRow("Audio quality:", self._quality_cb)
+        form.addRow("Extended mix:", self._extended_mix_cb)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
@@ -1114,6 +1193,7 @@ class SettingsDialog(QDialog):
         self._config["download_path"] = self._folder_label.text()
         self._config["format"] = self._format_cb.currentText()
         self._config["quality"] = self._quality_cb.currentText().split()[0]
+        self._config["extended_mix"] = self._extended_mix_cb.isChecked()
         return self._config
 
 
@@ -1223,6 +1303,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     "download_path": self.download_path,
                     "format": new.get("format", "mp3"),
                     "quality": new.get("quality", "192"),
+                    "extended_mix": bool(new.get("extended_mix", False)),
                 }
             )
             save_config(self._config)
@@ -1274,6 +1355,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 cancel_event=self._cancel_event,
                 audio_format=self._config.get("format", "mp3"),
                 audio_quality=self._config.get("quality", "192"),
+                extended_mix=bool(self._config.get("extended_mix", False)),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
