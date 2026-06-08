@@ -15,6 +15,8 @@ For the program to work, the playlist URL pattern must follow the format of
 <sunnypatel124555@gmail.com> or open an issue in the repository.
 """
 
+from __future__ import annotations
+
 __version__ = "2.0.7"
 
 import concurrent.futures
@@ -23,7 +25,6 @@ import re
 import sys
 import threading
 import webbrowser
-from typing import Optional
 
 import requests
 from mutagen.easyid3 import EasyID3
@@ -114,7 +115,6 @@ SUPPORTED_FORMATS = {
     "wav": {"ext": "wav", "lossy": False},
 }
 SUPPORTED_QUALITIES = ("128", "192", "256", "320")
-SUPPORTED_OPTIONS = (True, False)
 
 # Resume manifest: a JSON-lines file dropped inside each playlist/album folder
 # recording which tracks already downloaded. On a re-run we skip those tracks
@@ -164,7 +164,7 @@ def load_config() -> dict:
             defaults["format"] = "mp3"
         if defaults["quality"] not in SUPPORTED_QUALITIES:
             defaults["quality"] = "192"
-        if defaults["include_track_number"] not in SUPPORTED_OPTIONS:
+        if not isinstance(defaults["include_track_number"], bool):
             defaults["include_track_number"] = True
         return defaults
     except (OSError, json.JSONDecodeError):
@@ -199,7 +199,7 @@ class MusicScraper(QThread):
 
     def __init__(
         self,
-        cancel_event: Optional[threading.Event] = None,
+        cancel_event: threading.Event | None = None,
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
@@ -215,9 +215,7 @@ class MusicScraper(QThread):
         # audio_quality only applies to lossy formats (mp3/m4a/opus).
         self.audio_format = audio_format if audio_format in SUPPORTED_FORMATS else "mp3"
         self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
-        self.include_track_number = (
-            include_track_number if include_track_number in SUPPORTED_OPTIONS else True
-        )
+        self.include_track_number = bool(include_track_number)
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
@@ -482,7 +480,7 @@ class MusicScraper(QThread):
             if filepath in self._in_flight_files:
                 if self.include_track_number:
                     filename = (
-                        f"{track_num}. {sanitized_title} - {sanitized_artists} [{track.id}].mp3"
+                        f"{track_num:02d}. {sanitized_title} - {sanitized_artists} [{track.id}].mp3"
                     )
                 else:
                     filename = f"{sanitized_title} - {sanitized_artists} [{track.id}].mp3"
@@ -873,7 +871,7 @@ class ScraperThread(QThread):
         self,
         spotify_link,
         music_folder=None,
-        cancel_event: Optional[threading.Event] = None,
+        cancel_event: threading.Event | None = None,
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
@@ -908,7 +906,7 @@ class ScraperThread(QThread):
             self.progress_update.emit(f"{e}")
 
 
-def _fetch_cover_bytes(url: str) -> Optional[bytes]:
+def _fetch_cover_bytes(url: str) -> bytes | None:
     """Download cover image bytes, returning None on any failure."""
     if not url:
         return None
@@ -921,7 +919,7 @@ def _fetch_cover_bytes(url: str) -> Optional[bytes]:
     return None
 
 
-def _write_metadata_mp3(filename: str, tags: dict, cover_bytes: Optional[bytes]) -> None:
+def _write_metadata_mp3(filename: str, tags: dict, cover_bytes: bytes | None) -> None:
     """Write ID3 tags + embedded cover art to an MP3."""
     audio = EasyID3(filename)
     audio["title"] = tags.get("title", "")
@@ -938,7 +936,7 @@ def _write_metadata_mp3(filename: str, tags: dict, cover_bytes: Optional[bytes])
         id3.save()
 
 
-def _write_metadata_m4a(filename: str, tags: dict, cover_bytes: Optional[bytes]) -> None:
+def _write_metadata_m4a(filename: str, tags: dict, cover_bytes: bytes | None) -> None:
     """Write iTunes atom tags + embedded cover art to an M4A/MP4."""
     from mutagen.mp4 import MP4, MP4Cover
 
@@ -957,7 +955,7 @@ def _write_metadata_m4a(filename: str, tags: dict, cover_bytes: Optional[bytes])
     audio.save()
 
 
-def _write_metadata_flac(filename: str, tags: dict, cover_bytes: Optional[bytes]) -> None:
+def _write_metadata_flac(filename: str, tags: dict, cover_bytes: bytes | None) -> None:
     """Write Vorbis comments + embedded cover art to a FLAC."""
     from mutagen.flac import FLAC, Picture
 
@@ -1098,7 +1096,7 @@ class SettingsDialog(QDialog):
         form.addRow("Download folder:", folder_row)
         form.addRow("Audio format:", self._format_cb)
         form.addRow("Audio quality:", self._quality_cb)
-        form.addRow("Track number in filename", self._include_track_number_cb)
+        form.addRow("Track number in filename:", self._include_track_number_cb)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
