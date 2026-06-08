@@ -1306,3 +1306,43 @@ class TestTrackNumberMetadata:
         # Confirm tracknumber was NOT written
         calls = [c for c in mock_easy.__setitem__.call_args_list if c.args[0] == "tracknumber"]
         assert len(calls) == 0
+
+
+class TestFilenameOrder:
+    """Tests for artist_first filename ordering."""
+
+    def test_track_first_when_artist_first_false(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(artist_first=False)
+        assert scraper._format_track_filename("Song", "Artist") == "Song - Artist.mp3"
+
+    def test_artist_first_when_artist_first_true(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(artist_first=True)
+        assert scraper._format_track_filename("Song", "Artist") == "Artist - Song.mp3"
+
+    def test_default_is_track_first(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        assert scraper._format_track_filename("Song", "Artist") == "Song - Artist.mp3"
+
+    def test_collision_suffix_artist_first(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(artist_first=True)
+        assert (
+            scraper._format_track_filename("Song", "Artist", suffix=" [abc123]")
+            == "Artist - Song [abc123].mp3"
+        )
+
+    def test_collision_suffix_track_first(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(artist_first=False)
+        assert (
+            scraper._format_track_filename("Song", "Artist", suffix=" [abc123]")
+            == "Song - Artist [abc123].mp3"
+        )
