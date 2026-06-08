@@ -77,6 +77,8 @@ a = Analysis(
     datas=[
         ('spotifydown_api.py', '.'),
         ('Template.py', '.'),
+        ('theme.py', '.'),
+        ('assets', 'assets'),
     ] + ffmpeg_datas,
     hiddenimports=[
         'PyQt5',

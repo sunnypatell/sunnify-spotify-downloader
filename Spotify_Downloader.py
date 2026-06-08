@@ -31,12 +31,11 @@ from PyQt5.QtCore import (
     QEasingCurve,
     QPropertyAnimation,
     QSize,
-    Qt,
     QThread,
     pyqtSignal,
     pyqtSlot,
 )
-from PyQt5.QtGui import QCursor, QImage, QPixmap
+from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -44,8 +43,8 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -64,6 +63,7 @@ from spotifydown_api import (
     extract_playlist_id,
     sanitize_filename,
 )
+import theme
 from Template import Ui_MainWindow
 
 
@@ -1046,13 +1046,18 @@ class SettingsDialog(QDialog):
         self._folder_label.setFrame(False)
         self._folder_label.setCursorPosition(0)
         self._folder_label.setToolTip(self._folder_label.text())
-        self._folder_label.setStyleSheet("QLineEdit { background: transparent; padding: 0; }")
+        self._folder_label.setStyleSheet(
+            "QLineEdit { background: transparent; color: #FFFFFF; border: none; padding: 0; }"
+        )
         browse = QPushButton("Choose folder")
         browse.clicked.connect(self._choose_folder)
 
         folder_row = QHBoxLayout()
         folder_row.addWidget(self._folder_label, 1)
         folder_row.addWidget(browse)
+
+        header = QLabel("Settings")
+        header.setObjectName("settingsHeader")
 
         self._format_cb = QComboBox()
         for key in SUPPORTED_FORMATS:
@@ -1075,9 +1080,17 @@ class SettingsDialog(QDialog):
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
+        ok_btn = btns.button(QDialogButtonBox.Ok)
+        ok_btn.setObjectName("settingsOkBtn")
+        cancel_btn = btns.button(QDialogButtonBox.Cancel)
+        cancel_btn.setObjectName("settingsCancelBtn")
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+        layout.addWidget(header)
         layout.addLayout(form)
+        form.setSpacing(12)
         layout.addWidget(btns)
 
     def _choose_folder(self):
@@ -1132,15 +1145,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._is_downloading = False  # Track download state for stop button
         self._cancel_event = threading.Event()  # Event for cooperative thread cancellation
 
-        self.SONGINFORMATION.setGraphicsEffect(
-            QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
-        )
+        self._panel_open_width = 340
+        self._panel_height = 480
+        self._window_narrow_width = 430
+        self._window_wide_width = self._window_narrow_width + self._panel_open_width + 20
+
         self.PlaylistLink.returnPressed.connect(self.on_returnButton)
         self.DownloadBtn.clicked.connect(self.on_returnButton)
 
         self.showPreviewCheck.stateChanged.connect(self.show_preview)
 
-        self.Closed.clicked.connect(self.exitprogram)
         self.Select_Home.clicked.connect(self.Linkedin)
         self.SettingsBtn.clicked.connect(self.open_settings)
 
@@ -1386,48 +1400,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.SongDownloadprogressBar.setValue(0)
         self.SongDownloadprogress.setValue(0)
 
-    # DRAGGLESS INTERFACE
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.m_drag = True
-            self.m_DragPosition = event.globalPos() - self.pos()
-            event.accept()
-            self.setCursor(QCursor(Qt.ClosedHandCursor))
-
-    def mouseMoveEvent(self, QMouseEvent):
-        try:
-            if Qt.LeftButton and self.m_drag:
-                self.move(QMouseEvent.globalPos() - self.m_DragPosition)
-                QMouseEvent.accept()
-        except AttributeError:
-            pass
-
-    def mouseReleaseEvent(self, QMouseEvent):
-        self.m_drag = False
-        self.setCursor(QCursor(Qt.ArrowCursor))
-
     def CloseSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(250)
-        self.animation.setEndValue(QSize(0, 440))
+        self.animation.setEndValue(QSize(0, self._panel_height))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.animation.finished.connect(self._shrink_window_after_close)
         self.animation.start()
 
+    def _shrink_window_after_close(self):
+        self.setFixedWidth(self._window_narrow_width)
+        if hasattr(self, "animation"):
+            try:
+                self.animation.finished.disconnect(self._shrink_window_after_close)
+            except TypeError:
+                pass
+
     def OpenSongInformation(self):
+        self.setFixedWidth(self._window_wide_width)
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
-        self.animation.setDuration(1000)
-        self.animation.setEndValue(QSize(350, 440))
+        self.animation.setDuration(350)
+        self.animation.setEndValue(QSize(self._panel_open_width, self._panel_height))
         self.animation.setEasingCurve(QEasingCurve.InOutQuad)
         self.animation.start()
 
     def show_preview(self, state):
         if state == 2:  # 2 corresponds to checked state
-            self.preview_window = self.OpenSongInformation()
+            self.OpenSongInformation()
         else:
             self.CloseSongInformation()
-
-    def exitprogram(self):
-        sys.exit()
 
     def Linkedin(self):
         webbrowser.open("https://www.linkedin.com/in/sunny-patel-30b460204/")
@@ -1436,10 +1437,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 # Main
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    theme.apply(app)
     Screen = MainWindow()
-    Screen.setFixedHeight(500)
-    Screen.setFixedWidth(750)
-    Screen.setWindowFlags(Qt.FramelessWindowHint)
-    Screen.setAttribute(Qt.WA_TranslucentBackground)
+    Screen.setWindowTitle("Sunnify")
+    Screen.setFixedHeight(520)
+    Screen.setFixedWidth(Screen._window_narrow_width)
     Screen.show()
     sys.exit(app.exec())
