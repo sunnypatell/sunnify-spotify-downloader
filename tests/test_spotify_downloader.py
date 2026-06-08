@@ -825,10 +825,10 @@ class TestParallelDownloads:
         playlist_folder.mkdir()
 
         tracks = [self._make_track(f"id{i}", f"Song {i}") for i in range(4)]
-        # Pre-create files for tracks 0 and 2 (track numbers 01 and 03,
-        # since iter_playlist_tracks yields position-1 as track_num)
+        # Pre-create files for tracks 0 and 2 (default include_track_number=False
+        # keeps the historical `Title - Artist.mp3` shape)
         for i in (0, 2):
-            (playlist_folder / f"{i + 1:02d}. Song {i} - Artist.mp3").touch()
+            (playlist_folder / f"Song {i} - Artist.mp3").touch()
 
         downloaded = []
 
@@ -957,22 +957,20 @@ class TestParallelDownloads:
         scraper._total_tracks = 2
 
         # Pre-claim the filename as if worker A got there first.
-        # include_track_number is on by default, so the primary path is
-        # padded `01. ...` and the collision-suffix path must be too.
-        base_name = "01. Song - Artist.mp3"
+        # Default include_track_number=False, so filenames keep the
+        # historical `Title - Artist.mp3` shape.
+        base_name = "Song - Artist.mp3"
         base_path = os.path.join(str(playlist_folder), base_name)
         with scraper._filename_lock:
             scraper._in_flight_files.add(base_path)
 
-        # Worker B arrives at track_num=1 too; should get a suffixed filename
-        scraper._download_one_track(tracks[1], str(playlist_folder), None, track_num=1)
+        # Worker B arrives - should get a suffixed filename
+        scraper._download_one_track(tracks[1], str(playlist_folder), None)
 
         assert len(claimed_paths) == 1
         claimed = claimed_paths[0]
         assert claimed != base_path
         assert "[id_b]" in claimed
-        # collision-suffix variant must also be zero-padded for sort consistency
-        assert os.path.basename(claimed).startswith("01. ")
 
     def test_parallel_mode_emits_song_meta_per_track(self, tmp_path):
         """In parallel mode, song_meta IS emitted per track.
@@ -1351,29 +1349,12 @@ class TestTrackNumberInFilename:
         ):
             setattr(scraper, sig, MagicMock())
 
-    def test_default_on_writes_padded_prefix(self, tmp_path):
-        """Default include_track_number=True; filenames get the `NN. ` prefix."""
+    def test_default_off_keeps_legacy_filename(self, tmp_path):
+        """Default is opt-out: `Title - Artist.mp3`, same as before this feature."""
         from Spotify_Downloader import MusicScraper
 
         scraper = MusicScraper()
-        self._stub(scraper)
-        captured = []
-        scraper.download_track_audio = lambda _q, d, **_kw: (
-            (
-                captured.append(d),
-                open(d, "wb").close(),
-            )
-            and d
-        )
-
-        scraper._download_one_track(self._track(), str(tmp_path), "", track_num=3)
-        assert captured[0].endswith("03. Title - Artist.mp3")
-
-    def test_disabled_omits_prefix(self, tmp_path):
-        """include_track_number=False keeps the historical `Title - Artist.mp3` shape."""
-        from Spotify_Downloader import MusicScraper
-
-        scraper = MusicScraper(include_track_number=False)
+        assert scraper.include_track_number is False
         self._stub(scraper)
         captured = []
         scraper.download_track_audio = lambda _q, d, **_kw: (
@@ -1388,6 +1369,24 @@ class TestTrackNumberInFilename:
         assert captured[0].endswith("Title - Artist.mp3")
         assert "03." not in os.path.basename(captured[0])
 
+    def test_enabled_writes_padded_prefix(self, tmp_path):
+        """When the user opts in, filenames get the zero-padded `NN. ` prefix."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(include_track_number=True)
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+
+        scraper._download_one_track(self._track(), str(tmp_path), "", track_num=3)
+        assert captured[0].endswith("03. Title - Artist.mp3")
+
     def test_collision_path_pads_consistently(self, tmp_path):
         """When a name collides, the `[id]` suffix variant must also be `NN. `-padded.
 
@@ -1396,7 +1395,7 @@ class TestTrackNumberInFilename:
         """
         from Spotify_Downloader import MusicScraper
 
-        scraper = MusicScraper()
+        scraper = MusicScraper(include_track_number=True)
         self._stub(scraper)
         # Pretend the primary name is already claimed by a sibling worker
         primary = str(tmp_path / "03. Title - Artist.mp3")

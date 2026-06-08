@@ -152,7 +152,7 @@ def load_config() -> dict:
         "download_path": None,
         "format": "mp3",
         "quality": "192",
-        "include_track_number": True,
+        "include_track_number": False,
     }
     try:
         with open(_config_path(), encoding="utf-8") as f:
@@ -165,7 +165,7 @@ def load_config() -> dict:
         if defaults["quality"] not in SUPPORTED_QUALITIES:
             defaults["quality"] = "192"
         if not isinstance(defaults["include_track_number"], bool):
-            defaults["include_track_number"] = True
+            defaults["include_track_number"] = False
         return defaults
     except (OSError, json.JSONDecodeError):
         return defaults
@@ -203,7 +203,7 @@ class MusicScraper(QThread):
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
-        include_track_number: bool = True,
+        include_track_number: bool = False,
     ):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
@@ -875,7 +875,7 @@ class ScraperThread(QThread):
         *,
         audio_format: str = "mp3",
         audio_quality: str = "192",
-        include_track_number: bool = True,
+        include_track_number: bool = False,
     ):
         super().__init__()
         self.spotify_link = spotify_link
@@ -1090,7 +1090,7 @@ class SettingsDialog(QDialog):
         self._on_format_change(self._format_cb.currentText())
 
         self._include_track_number_cb = QCheckBox()
-        self._include_track_number_cb.setChecked(self._config.get("include_track_number", True))
+        self._include_track_number_cb.setChecked(self._config.get("include_track_number", False))
 
         form = QFormLayout()
         form.addRow("Download folder:", folder_row)
@@ -1250,7 +1250,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     "download_path": self.download_path,
                     "format": new.get("format", "mp3"),
                     "quality": new.get("quality", "192"),
-                    "include_track_number": new.get("include_track_number", True),
+                    "include_track_number": new.get("include_track_number", False),
                 }
             )
             save_config(self._config)
@@ -1302,7 +1302,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 cancel_event=self._cancel_event,
                 audio_format=self._config.get("format", "mp3"),
                 audio_quality=self._config.get("quality", "192"),
-                include_track_number=self._config.get("include_track_number", True),
+                include_track_number=self._config.get("include_track_number", False),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
