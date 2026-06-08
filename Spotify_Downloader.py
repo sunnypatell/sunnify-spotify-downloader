@@ -359,6 +359,18 @@ class MusicScraper(QThread):
             return f"{track_title} (Extended Mix)"
         return track_title
 
+    def _extended_search_query(self, track_title, artists):
+        """Build the YouTube search for the extended cut.
+
+        Only the bare word "extended" is appended (not "extended mix audio").
+        Empirically the trailing "audio" token, and to a lesser extent "mix",
+        push genuine "(Extended Version)" uploads out of YouTube's top results
+        entirely, so the strict-extended leg never sees them. "extended" alone
+        is the most general qualifier and matches Extended Version/Mix/Edit via
+        the _EXTENDED_TITLE_KEYWORDS title filter applied in _select_youtube_match.
+        """
+        return f"ytsearch10:{track_title} {artists} extended"
+
     def _select_youtube_match(self, search_query, expected_duration_s, prefer_extended=False):
         """Return the best YouTube watch URL for a search, or None.
 
@@ -684,9 +696,7 @@ class MusicScraper(QThread):
             expected_dur = (track.duration_ms / 1000) if track.duration_ms else None
             try:
                 if self.extended_mix:
-                    search_query = (
-                        f"ytsearch10:{track_title} {artists} extended mix audio"
-                    )
+                    search_query = self._extended_search_query(track_title, artists)
                     final_path, used_extended = self.download_track_audio(
                         search_query,
                         filepath,
@@ -996,7 +1006,7 @@ class MusicScraper(QThread):
         expected_dur = (track.duration_ms / 1000) if track.duration_ms else None
         try:
             if self.extended_mix:
-                search_query = f"ytsearch10:{track_title} {artists} extended mix audio"
+                search_query = self._extended_search_query(track_title, artists)
                 final_path, used_extended = self.download_track_audio(
                     search_query,
                     filepath,

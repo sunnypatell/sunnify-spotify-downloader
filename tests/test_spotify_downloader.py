@@ -638,6 +638,24 @@ class TestExtendedMixDownload:
 
         return MusicScraper(extended_mix=extended_mix)
 
+    def test_extended_search_query_uses_broad_extended_phrase(self):
+        """Regression: the strict-extended query must append only "extended".
+
+        Appending "extended mix audio" (the old behavior) pushed genuine
+        "(Extended Version)" uploads out of YouTube's top results, so the
+        extended cut was never found (e.g. AWGAZI). Guard against re-adding the
+        "mix"/"audio" tokens.
+        """
+        from Spotify_Downloader import MusicScraper
+
+        query = MusicScraper(extended_mix=True)._extended_search_query(
+            "AWGAZI", "Palm Monkey, RUSSI, The Palm Tree Boy"
+        )
+        assert query.startswith("ytsearch10:")
+        assert "extended" in query
+        assert " mix" not in query
+        assert " audio" not in query
+
     def test_builds_strict_extended_plan_before_fallback(self):
         scraper = self._scraper()
         extended_q = "ytsearch10:Song Artist extended mix audio"
