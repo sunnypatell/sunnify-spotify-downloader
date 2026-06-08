@@ -468,6 +468,85 @@ class TestExtendedMixSelection:
             ctx.stop()
         assert url == "https://www.youtube.com/watch?v=club"
 
+    def test_no_duration_skips_hour_long_top_hit(self):
+        """Without Spotify duration, reject hour-long keyworded top hits."""
+        entries = [
+            {
+                "id": "fullmix",
+                "duration": 3124,
+                "title": "Beach House 2026 (Extended Mix) 1 hour mix",
+            },
+            {"id": "real", "duration": 420, "title": "Weekend Infinito (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", None, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=real"
+
+    def test_no_duration_returns_none_when_only_over_cap_keyworded(self):
+        """Without Spotify duration, over-cap keyworded results yield None."""
+        entries = [
+            {
+                "id": "fullmix",
+                "duration": 3124,
+                "title": "Beach House 2026 (Extended Mix) 1 hour mix",
+            },
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", None, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_no_duration_requires_extended_keyword(self):
+        """Without Spotify duration, non-keyworded candidates are rejected."""
+        entries = [
+            {"id": "real", "duration": 420, "title": "Weekend Infinito Official Audio"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", None, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_absolute_cap_excludes_keyworded_over_ratio_and_ceiling(self):
+        """Keyworded uploads beyond min(ratio*expected, abs cap) are excluded."""
+        entries = [
+            {"id": "djset", "duration": 4000, "title": "Song (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 300, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_already_extended_picks_closest_keyworded_within_cap(self):
+        """When Spotify track is already extended, pick closest keyworded cut."""
+        entries = [
+            {"id": "real", "duration": 410, "title": "X (Extended Mix)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch10:song extended mix", 420, prefer_extended=True
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=real"
+
 
 class TestExtendedMixDownload:
     """Tests for extended-mix two-stage download fallback."""

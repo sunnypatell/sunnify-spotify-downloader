@@ -312,6 +312,7 @@ class MusicScraper(QThread):
     _DURATION_TOLERANCE_S = 7
     _EXTENDED_TITLE_KEYWORDS = ("extended", "club mix")
     _EXTENDED_MAX_RATIO = 2.5  # an extended cut is longer than the edit but never an hour-long mix
+    _MAX_TRACK_DURATION_S = 1200  # 20 min absolute ceiling; longer = a DJ set / full mix, never a single extended cut
     _RADIO_EDIT_RE = re.compile(
         r"\s*[\(\[\-–—]\s*radio\s*edit\s*[\)\]]?\s*", re.IGNORECASE
     )
@@ -374,19 +375,47 @@ class MusicScraper(QThread):
         if not entries:
             return None
 
-        if prefer_extended and expected_duration_s:
+        if prefer_extended:
             timed = [e for e in entries if e.get("duration")]
-            lower = expected_duration_s + self._DURATION_TOLERANCE_S
-            upper = expected_duration_s * self._EXTENDED_MAX_RATIO
-            candidates = [
-                e
-                for e in timed
-                if self._extended_title_boost(e) and lower < e["duration"] <= upper
-            ]
-            if not candidates:
+            abs_cap = self._MAX_TRACK_DURATION_S
+            if expected_duration_s:
+                lower = expected_duration_s + self._DURATION_TOLERANCE_S
+                upper = min(expected_duration_s * self._EXTENDED_MAX_RATIO, abs_cap)
+                longer = [
+                    e
+                    for e in timed
+                    if self._extended_title_boost(e) and lower < e["duration"] <= upper
+                ]
+                if longer:
+                    chosen = max(longer, key=lambda e: e["duration"])
+                    return f"https://www.youtube.com/watch?v={chosen['id']}"
+                # No genuinely-longer cut (e.g. the Spotify track is ALREADY the extended
+                # version): take the keyworded candidate closest to the expected length,
+                # within the absolute cap. Else give up so the caller falls back.
+                sane_kw = [
+                    e
+                    for e in timed
+                    if self._extended_title_boost(e) and e["duration"] <= abs_cap
+                ]
+                if sane_kw:
+                    chosen = min(
+                        sane_kw, key=lambda e: abs(e["duration"] - expected_duration_s)
+                    )
+                    return f"https://www.youtube.com/watch?v={chosen['id']}"
                 return None
-            chosen = max(candidates, key=lambda e: e["duration"])
-            return f"https://www.youtube.com/watch?v={chosen['id']}"
+            else:
+                # No Spotify duration to gate on: NEVER take an unbounded top hit. Require
+                # the extended keyword AND a sane single-track length (<= abs_cap); pick the
+                # most relevant (first) such result, else return None to fall back.
+                sane_kw = [
+                    e
+                    for e in timed
+                    if self._extended_title_boost(e) and e["duration"] <= abs_cap
+                ]
+                if sane_kw:
+                    chosen = sane_kw[0]
+                    return f"https://www.youtube.com/watch?v={chosen['id']}"
+                return None
         else:
             chosen = entries[0]
             if expected_duration_s:
