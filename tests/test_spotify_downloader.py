@@ -1346,3 +1346,34 @@ class TestFilenameOrder:
             scraper._format_track_filename("Song", "Artist", suffix=" [abc123]")
             == "Song - Artist [abc123].mp3"
         )
+
+
+class TestMergeDialogSettings:
+    """MainWindow._merge_dialog_settings must persist EVERY dialog setting, not a
+    hand-maintained allowlist (regression: artist_first was silently dropped on
+    save, so the 'Artist - Track' toggle did nothing)."""
+
+    def test_persists_artist_first(self):
+        from Spotify_Downloader import MainWindow
+
+        config = {
+            "version": 1,
+            "download_path": "/old",
+            "format": "mp3",
+            "quality": "192",
+            "artist_first": False,
+        }
+        new = dict(config, quality="320", artist_first=True)
+        merged = MainWindow._merge_dialog_settings(config, new, "/downloads")
+        assert merged["artist_first"] is True
+        assert merged["quality"] == "320"
+        assert merged["download_path"] == "/downloads"
+        assert config["artist_first"] is False  # input not mutated
+
+    def test_unknown_future_key_also_persists(self):
+        from Spotify_Downloader import MainWindow
+
+        merged = MainWindow._merge_dialog_settings(
+            {"a": 1}, {"a": 1, "some_future_setting": "x"}, "/d"
+        )
+        assert merged["some_future_setting"] == "x"
