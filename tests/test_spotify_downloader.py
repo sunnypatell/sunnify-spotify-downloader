@@ -375,6 +375,165 @@ class TestYoutubeMatchSelection:
         assert url is None
 
 
+class TestDetectImageMime:
+    """Tests for _detect_image_mime image-format sniffing (closes #46).
+
+    Spotify currently serves JPEG cover art but the writer code now sniffs
+    the magic bytes so a future content-type change does not silently
+    produce broken APIC / covr / Picture frames mis-tagged as JPEG.
+    """
+
+    def test_jpeg_magic(self):
+        from Spotify_Downloader import _detect_image_mime
+
+        # JPEG: every variant starts with FF D8 FF (JFIF / Exif / SOI markers)
+        assert _detect_image_mime(b"\xff\xd8\xff\xe0\x00\x10JFIF") == "image/jpeg"
+        assert _detect_image_mime(b"\xff\xd8\xff\xdb") == "image/jpeg"
+
+    def test_png_magic(self):
+        from Spotify_Downloader import _detect_image_mime
+
+        # PNG: 8-byte signature per W3C spec section 5.2
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+        assert _detect_image_mime(png) == "image/png"
+
+    def test_unknown_falls_back_to_jpeg(self):
+        from Spotify_Downloader import _detect_image_mime
+
+        # Anything we can't identify (a future webp/avif response, say) is
+        # claimed as jpeg so we still hand the writer *something* coherent.
+        assert _detect_image_mime(b"RIFF\x00\x00\x00\x00WEBP") == "image/jpeg"
+        assert _detect_image_mime(b"") == "image/jpeg"
+
+
+class TestMp3MetadataIsV23:
+    """End-to-end verification that mp3 metadata writes are v2.3-compliant.
+
+    Real mutagen + real file, not mocks: we want to catch a regression where
+    the format byte slips back to v2.4 or the APIC encoding goes back to
+    UTF-8 (both of which are what was being shipped pre-2.0.8 and broke cover
+    display on iTunes / Windows Media Player / car head-units).
+    """
+
+    @staticmethod
+    def _minimal_mp3(path):
+        # MPEG-1 Layer III frame: sync + valid header + 417 zero bytes
+        # (same trick used by other tests). Not playable but mutagen treats
+        # it as a real mp3 for tag-write purposes. Seed an empty ID3v2 tag
+        # so EasyID3 has something to read (the production path is fine
+        # because yt-dlp + FFmpeg always emit a TSSE tag, but a freshly-
+        # constructed fixture file has no header).
+        from mutagen.id3 import ID3
+
+        with open(path, "wb") as f:
+            f.write(b"\xff\xfb\x90\x00" + b"\x00" * 417)
+        empty = ID3()
+        empty.save(path)
+
+    def test_writes_id3v23_header(self, tmp_path):
+        from Spotify_Downloader import _write_metadata_mp3
+
+        path = str(tmp_path / "v23.mp3")
+        self._minimal_mp3(path)
+        _write_metadata_mp3(
+            path,
+            {"title": "T", "artists": "A", "album": "Al", "releaseDate": "2025", "trackNumber": 1},
+            None,
+        )
+
+        # First 5 bytes of an ID3 tag are "ID3" + major + minor.
+        # We want major=3 (v2.3), not the mutagen default 4 (v2.4).
+        with open(path, "rb") as f:
+            head = f.read(5)
+        assert head[:3] == b"ID3"
+        assert head[3] == 3, f"expected ID3v2.3, got v2.{head[3]}"
+
+    def test_apic_frame_v23_encoding(self, tmp_path):
+        from mutagen.id3 import ID3
+
+        from Spotify_Downloader import _write_metadata_mp3
+
+        path = str(tmp_path / "apic.mp3")
+        self._minimal_mp3(path)
+        # Real JPEG header so the writer's sniffer picks image/jpeg.
+        cover = b"\xff\xd8\xff\xe0" + b"\x00" * 200
+        _write_metadata_mp3(
+            path,
+            {
+                "title": "T",
+                "artists": "A",
+                "album": "Al",
+                "releaseDate": "2025",
+                "trackNumber": 1,
+            },
+            cover,
+        )
+
+        id3 = ID3(path)
+        assert id3.version[1] == 3, f"expected v2.3, got v2.{id3.version[1]}"
+        apics = id3.getall("APIC")
+        assert len(apics) == 1, "exactly one APIC frame should be written"
+        apic = apics[0]
+        assert apic.mime == "image/jpeg"
+        assert apic.type == 3  # Cover (front) per the v2.3 enum
+        assert apic.desc == "Cover"
+        assert len(apic.data) == len(cover)
+        # v2.3 only defines encoding 0 (Latin-1) and 1 (UTF-16+BOM).
+        # encoding 3 (UTF-8) is the v2.4-only value that the pre-2.0.8
+        # code was writing and that older players reject.
+        assert apic.encoding in (0, 1), f"encoding {apic.encoding} is not v2.3-legal"
+
+    def test_unicode_text_frames_roundtrip(self, tmp_path):
+        """Non-ASCII titles/artists must survive the v2.3 downgrade."""
+        from mutagen.easyid3 import EasyID3
+
+        from Spotify_Downloader import _write_metadata_mp3
+
+        path = str(tmp_path / "unicode.mp3")
+        self._minimal_mp3(path)
+        _write_metadata_mp3(
+            path,
+            {
+                "title": "MONTAGEM BAILÃO",
+                "artists": "Tëst Ãrtist",
+                "album": "Ålbüm",
+                "releaseDate": "2025",
+                "trackNumber": 7,
+            },
+            None,
+        )
+
+        audio = EasyID3(path)
+        assert audio["title"][0] == "MONTAGEM BAILÃO"
+        assert audio["artist"][0] == "Tëst Ãrtist"
+        assert audio["album"][0] == "Ålbüm"
+        assert audio["tracknumber"][0] == "7"
+
+    def test_png_cover_writes_image_png_mime(self, tmp_path):
+        """A PNG-magic cover must produce APIC mime=image/png, not jpeg."""
+        from mutagen.id3 import ID3
+
+        from Spotify_Downloader import _write_metadata_mp3
+
+        path = str(tmp_path / "png.mp3")
+        self._minimal_mp3(path)
+        cover = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
+        _write_metadata_mp3(
+            path,
+            {
+                "title": "T",
+                "artists": "A",
+                "album": "Al",
+                "releaseDate": "2025",
+                "trackNumber": 1,
+            },
+            cover,
+        )
+
+        apic = ID3(path).getall("APIC")[0]
+        assert apic.mime == "image/png"
+
+
 class TestWritingMetaTagsThread:
     """Tests for WritingMetaTagsThread synchronous cover fetch."""
 
@@ -443,8 +602,10 @@ class TestWritingMetaTagsThread:
 
             # Verify synchronous requests.get was called (not DownloadCover QThread)
             mock_get.assert_called_once_with("https://example.com/cover.jpg", timeout=15)
-            # Verify APIC tag was set
-            mock_id3.return_value.__setitem__.assert_called_once()
+            # Verify APIC frame was added via id3.add(APIC(...)) and the tag
+            # was saved as v2.3 for max player compatibility (closes #46)
+            mock_id3.return_value.add.assert_called_once()
+            mock_id3.return_value.save.assert_called_with(v2_version=3)
             thread.tags_success.emit.assert_called_once_with("Tags added successfully")
 
     def test_cover_art_failure_does_not_crash(self):

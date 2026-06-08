@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.8] - 2026-06-08
+
+### Added
+- **optional track-number prefix in filenames** (closes #44). settings now exposes a "Track number in filename:" checkbox. when on, downloaded files are prefixed with their zero-padded playlist position (`01. song - artist.mp3`, `02. ...`, ... `12. ...`) so the folder sorts in playlist order in any file manager. default off, so existing downloads are byte-for-byte unchanged; the position number is the same `TRCK` value that's already written to the ID3 tag, so this just surfaces existing data in the filename. primary contribution by @r-a-cristian-93 in #44; cleanups (3.9 compat via `from __future__ import annotations`, padded collision-guard, redundant bool validation dropped, default-off, tests) layered on top before merge.
+
+### Fixed
+- **mp3 cover art (and text tags) not showing in older players, car head-units, and stock android** (closes #46). mutagen defaults to ID3v2.4 with UTF-8 text encoding, but the v2.3 spec only defines two text encodings: `$00` ISO-8859-1 and `$01` Unicode (UTF-16 with BOM); the v2.4-only `$03` UTF-8 byte makes strict parsers (older iTunes/Apple Music, Windows Media Player, most car head-units, stock android) reject the frame, which manifests as "cover shows in preview but missing once downloaded" and (sometimes) missing title/artist/album. tags + the APIC cover frame are now written as v2.3 via `EasyID3.save(v2_version=3)` plus `id3.add(APIC(encoding=1, ...))` + `id3.update_to_v23()` + `id3.save(v2_version=3)`, which is the lowest-common-denominator format that's understood everywhere modern v2.4 is. APIC uses `encoding=1` (UTF-16+BOM), `type=3` ("Cover (front)"), and `desc='Cover'`. canonical `id3.add(APIC(...))` replaces the dict-style `id3["APIC"] = ...` assignment. refs: [ID3v2.3 spec section 3.3](https://id3.org/id3v2.3.0) (defines encodings $00 / $01); [ID3v2.4 spec](https://id3.org/id3v2.4.0-frames) (adds $02 UTF-16BE, $03 UTF-8); [mutagen `update_to_v23()`](https://mutagen.readthedocs.io/en/latest/api/id3.html) (UTF-8 -> UTF-16 downgrade).
+- cover-art mime is now sniffed from the image's magic bytes for all three containers (mp3 APIC, m4a `covr`, FLAC `Picture`) instead of being hardcoded to `image/jpeg`. Spotify has served JPEG since at least 2015 (so today's behaviour doesn't change), but the previous code would silently produce a broken frame mis-tagged as JPEG if Spotify ever switches to PNG/WebP. refs: [JPEG SOI marker](https://www.w3.org/Graphics/JPEG/itu-t81.pdf) (`FF D8 FF`); [PNG signature](https://www.w3.org/TR/png/#5PNG-file-signature) (`89 50 4E 47 0D 0A 1A 0A`).
+
+### Notes
+- existing 2.0.7 downloads that have v2.4 + UTF-8 tags are not rewritten by 2.0.8; the change applies to new downloads. if you need to fix old files, re-downloading the affected track is the simplest path.
+- m4a (`covr`) and FLAC (`Picture`) cover art is unaffected by the v2.3 work; those containers don't have the v2.3/v2.4 encoding distinction and were already correctly written.
+
 ## [2.0.7] - 2026-05-26
 
 ### Added
@@ -175,7 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.7...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.8...HEAD
+[2.0.8]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.4...v2.0.5
