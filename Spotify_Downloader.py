@@ -312,6 +312,19 @@ class MusicScraper(QThread):
     _DURATION_TOLERANCE_S = 7
     _EXTENDED_TITLE_KEYWORDS = ("extended", "club mix")
     _EXTENDED_MAX_RATIO = 2.5  # an extended cut is longer than the edit but never an hour-long mix
+    _RADIO_EDIT_RE = re.compile(
+        r"\s*[\(\[\-–—]\s*radio\s*edit\s*[\)\]]?\s*", re.IGNORECASE
+    )
+
+    @staticmethod
+    def _strip_radio_edit(title: str) -> str:
+        """Remove a "Radio Edit" version descriptor from a title (used only in
+        extended-mix mode, where we fetch a longer cut). Leaves the rest of the
+        title — including unrelated words like "Radio Ga Ga" — intact."""
+        cleaned = MusicScraper._RADIO_EDIT_RE.sub(" ", title)
+        cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+        cleaned = cleaned.strip(" -–—")
+        return cleaned if cleaned else title
 
     @classmethod
     def _extended_title_boost(cls, entry: dict) -> int:
@@ -505,6 +518,8 @@ class MusicScraper(QThread):
             return None
 
         track_title = track.title
+        if self.extended_mix:
+            track_title = self._strip_radio_edit(track_title)
         artists = track.artists
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
@@ -848,6 +863,8 @@ class MusicScraper(QThread):
         self.Resetprogress_signal.emit(0)
 
         track_title = track.title
+        if self.extended_mix:
+            track_title = self._strip_radio_edit(track_title)
         artists = track.artists
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)

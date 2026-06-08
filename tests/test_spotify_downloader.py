@@ -554,6 +554,54 @@ class TestExtendedMixTitleTag:
         )
 
 
+class TestStripRadioEdit:
+    """Tests for MusicScraper._strip_radio_edit (extended-mix title cleanup)."""
+
+    @staticmethod
+    def _strip(title: str) -> str:
+        from Spotify_Downloader import MusicScraper
+
+        return MusicScraper._strip_radio_edit(title)
+
+    def test_dash_separator(self):
+        assert self._strip("Hold Me - Radio Edit") == "Hold Me"
+
+    def test_dash_separator_maye(self):
+        assert self._strip("Maye - Radio Edit") == "Maye"
+
+    def test_paren_separator(self):
+        assert self._strip("Song (Radio Edit)") == "Song"
+
+    def test_bracket_separator(self):
+        assert self._strip("Song [Radio Edit]") == "Song"
+
+    def test_case_insensitive(self):
+        assert self._strip("Track - RADIO EDIT") == "Track"
+
+    def test_unrelated_radio_preserved(self):
+        assert self._strip("Radio Ga Ga") == "Radio Ga Ga"
+
+    def test_unchanged_when_no_descriptor(self):
+        assert self._strip("Just a Song") == "Just a Song"
+
+    def test_only_radio_edit_removed(self):
+        assert self._strip("Song (Radio Edit) - Remastered") == "Song - Remastered"
+
+    def test_extended_mode_meta_title_integration(self):
+        from Spotify_Downloader import MusicScraper
+
+        assert (
+            MusicScraper(extended_mix=True)._meta_title(
+                MusicScraper._strip_radio_edit("Hold Me - Radio Edit")
+            )
+            == "Hold Me (Extended Mix)"
+        )
+        assert (
+            MusicScraper(extended_mix=False)._meta_title("Hold Me - Radio Edit")
+            == "Hold Me - Radio Edit"
+        )
+
+
 class TestWritingMetaTagsThread:
     """Tests for WritingMetaTagsThread synchronous cover fetch."""
 
