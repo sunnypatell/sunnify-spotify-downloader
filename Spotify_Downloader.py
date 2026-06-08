@@ -1425,6 +1425,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return True
         return False
 
+    @staticmethod
+    def _merge_dialog_settings(config: dict, new: dict, download_path: str) -> dict:
+        """Apply a SettingsDialog result onto the config.
+
+        Persists EVERY key the dialog returns rather than a hand-maintained
+        allowlist — the old allowlist silently dropped settings not listed in
+        it (e.g. max_extended_minutes), so changing them in Settings did
+        nothing. download_path is forced to the resolved value.
+        """
+        merged = dict(config)
+        merged.update(new)
+        merged["download_path"] = download_path
+        return merged
+
     def open_settings(self):
         """Full settings dialog: folder + audio format + bitrate."""
         cfg_for_dialog = dict(self._config)
@@ -1435,13 +1449,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if new.get("download_path"):
                 self.download_path = new["download_path"]
                 self._download_path_set = True
-            self._config.update(
-                {
-                    "download_path": self.download_path,
-                    "format": new.get("format", "mp3"),
-                    "quality": new.get("quality", "192"),
-                    "extended_mix": bool(new.get("extended_mix", False)),
-                }
+            self._config = self._merge_dialog_settings(
+                self._config, new, self.download_path
             )
             save_config(self._config)
             self.statusMsg.setText("Settings saved")

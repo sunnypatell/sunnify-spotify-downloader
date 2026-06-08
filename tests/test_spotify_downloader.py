@@ -1907,3 +1907,36 @@ class TestTrackNumberMetadata:
         # Confirm tracknumber was NOT written
         calls = [c for c in mock_easy.__setitem__.call_args_list if c.args[0] == "tracknumber"]
         assert len(calls) == 0
+
+
+class TestMergeDialogSettings:
+    """MainWindow._merge_dialog_settings must persist EVERY dialog setting, not a
+    hand-maintained allowlist (regression: max_extended_minutes was silently
+    dropped on save, so changing the max extended length did nothing)."""
+
+    def test_persists_extended_settings(self):
+        from Spotify_Downloader import MainWindow
+
+        config = {
+            "version": 1,
+            "download_path": "/old",
+            "format": "mp3",
+            "quality": "192",
+            "extended_mix": False,
+            "max_extended_minutes": 20,
+        }
+        new = dict(config, extended_mix=True, max_extended_minutes=45, quality="320")
+        merged = MainWindow._merge_dialog_settings(config, new, "/downloads")
+        assert merged["extended_mix"] is True
+        assert merged["max_extended_minutes"] == 45
+        assert merged["quality"] == "320"
+        assert merged["download_path"] == "/downloads"
+        assert config["max_extended_minutes"] == 20  # input not mutated
+
+    def test_unknown_future_key_also_persists(self):
+        from Spotify_Downloader import MainWindow
+
+        merged = MainWindow._merge_dialog_settings(
+            {"a": 1}, {"a": 1, "some_future_setting": "x"}, "/d"
+        )
+        assert merged["some_future_setting"] == "x"
