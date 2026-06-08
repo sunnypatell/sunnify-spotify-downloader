@@ -85,13 +85,17 @@ jobs:
 
       - name: Download FFmpeg
         run: |
-          curl -L -o ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          # using BtbN/FFmpeg-Builds (same source as the Windows job).
+          # the previous source (johnvansickle.com) started returning a
+          # 435-byte html error page in june 2026 instead of the tarball.
+          curl -fL -o ffmpeg.tar.xz \
+            https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
           tar -xf ffmpeg.tar.xz
           mkdir -p ffmpeg
-          cp ffmpeg-*-amd64-static/ffmpeg ffmpeg/
-          cp ffmpeg-*-amd64-static/ffprobe ffmpeg/
+          cp ffmpeg-master-latest-linux64-gpl/bin/ffmpeg ffmpeg/
+          cp ffmpeg-master-latest-linux64-gpl/bin/ffprobe ffmpeg/
           chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
-          rm -rf ffmpeg-*-amd64-static ffmpeg.tar.xz
+          rm -rf ffmpeg-master-latest-linux64-gpl ffmpeg.tar.xz
           ls -la ffmpeg/
 
       - name: Install dependencies
