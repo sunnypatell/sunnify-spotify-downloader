@@ -1,3 +1,39 @@
+# =============================================================================
+# Sunnify Release Pipeline
+# =============================================================================
+# Builds platform installers (Win/Linux/macOS), generates an SBOM, attaches
+# SLSA L3 build provenance attestations, uploads to a GitHub Release, and
+# auto-bumps the Homebrew cask.
+#
+# Triggered manually via workflow_dispatch with a tag input (e.g. v2.0.8).
+# The tag must already exist (created via `git tag -a vX.Y.Z && git push --tags`)
+# and a draft or published release must already exist for that tag (created via
+# `gh release create vX.Y.Z --notes-file <file>`); this workflow only uploads
+# assets + provenance + SBOM to it.
+#
+# -----------------------------------------------------------------------------
+# Bumping the bundled FFmpeg (one of these every few months)
+# -----------------------------------------------------------------------------
+# Windows + Linux use BtbN/FFmpeg-Builds (released to GitHub, same source for
+# both platforms). macOS uses evermeet.cx (their stable versioned release).
+# To bump:
+#   1. Pick a fresh BtbN autobuild from
+#      https://github.com/BtbN/FFmpeg-Builds/releases
+#      Update FFMPEG_BTBN_TAG + FFMPEG_BTBN_BUILD below.
+#   2. Pick the matching stable FFmpeg release from
+#      https://evermeet.cx/ffmpeg/
+#      Update FFMPEG_MAC_VERSION below.
+#   3. Compute SHA256s locally:
+#        curl -fL <BtbN-win-zip> | shasum -a 256
+#        curl -fL <BtbN-linux-tar-xz> | shasum -a 256
+#        curl -fL <evermeet-ffmpeg-zip> | shasum -a 256
+#        curl -fL <evermeet-ffprobe-zip> | shasum -a 256
+#      Update the four FFMPEG_*_SHA256 env vars below.
+# Each platform's Download step then refuses to proceed if the SHA mismatches,
+# so a CDN swap or a typo aborts the build instead of silently shipping the
+# wrong binary.
+# -----------------------------------------------------------------------------
+
 name: Build Release
 
 on:
@@ -12,10 +48,24 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # BtbN (Windows + Linux): pinned autobuild
+  FFMPEG_BTBN_TAG: "autobuild-2026-06-08-14-24"
+  FFMPEG_BTBN_BUILD: "N-124881-g6028720d70"
+  FFMPEG_WIN_SHA256: "2cd538df51b0753547030dc997902606b13378df11db3866c81db7ca07fe7a54"
+  FFMPEG_LINUX_SHA256: "404a23515343c8c568a74ca39270879387d0ec92b9f52a44d416ecf7d9961230"
+  # evermeet.cx (macOS): pinned to FFmpeg release 8.1.1
+  FFMPEG_MAC_VERSION: "8.1.1"
+  FFMPEG_MAC_FFMPEG_SHA256: "4610988e2f54c243c50da73a09e4e2c36d9bb77546f9aa6c84cb328dcb1a98c1"
+  FFMPEG_MAC_FFPROBE_SHA256: "aeade29dee3c3844e9bcc974f4ae4b29cc4f87994177d77003a8589fa531009e"
+
 jobs:
   build-windows:
     name: Build Windows
     runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -25,16 +75,25 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Download FFmpeg
+      - name: Download and verify FFmpeg
         shell: pwsh
         run: |
-          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-          Invoke-WebRequest -Uri $ffmpegUrl -OutFile ffmpeg.zip
+          $tag = "${{ env.FFMPEG_BTBN_TAG }}"
+          $build = "${{ env.FFMPEG_BTBN_BUILD }}"
+          $expected = "${{ env.FFMPEG_WIN_SHA256 }}"
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/$tag/ffmpeg-$build-win64-gpl.zip"
+          Write-Output "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          $actual = (Get-FileHash -Algorithm SHA256 ffmpeg.zip).Hash.ToLower()
+          if ($actual -ne $expected) {
+            Write-Error "FFmpeg SHA256 mismatch! expected=$expected actual=$actual"
+            exit 1
+          }
+          Write-Output "FFmpeg SHA256 verified: $actual"
           Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-temp
-          $ffmpegDir = Get-ChildItem -Path ffmpeg-temp -Directory | Select-Object -First 1
-          New-Item -ItemType Directory -Path ffmpeg -Force
-          Copy-Item -Path "$($ffmpegDir.FullName)\bin\ffmpeg.exe" -Destination ffmpeg\
-          Copy-Item -Path "$($ffmpegDir.FullName)\bin\ffprobe.exe" -Destination ffmpeg\
+          New-Item -ItemType Directory -Path ffmpeg -Force | Out-Null
+          Copy-Item -Path "ffmpeg-temp\ffmpeg-$build-win64-gpl\bin\ffmpeg.exe" -Destination ffmpeg\
+          Copy-Item -Path "ffmpeg-temp\ffmpeg-$build-win64-gpl\bin\ffprobe.exe" -Destination ffmpeg\
           Remove-Item -Recurse -Force ffmpeg-temp, ffmpeg.zip
           Get-ChildItem ffmpeg
 
@@ -46,19 +105,33 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller Sunnify.spec
 
-      - name: Rename executable
+      - name: Rename + sanity-check executable
+        shell: pwsh
         run: |
-          move dist\Sunnify.exe dist\Sunnify-Windows.exe
+          Move-Item dist\Sunnify.exe dist\Sunnify-Windows.exe
+          $exe = Get-Item dist\Sunnify-Windows.exe
+          # Refuse to ship anything obviously broken. A real PyInstaller build
+          # with FFmpeg + PyQt5 is >100MB; anything under 50MB is a corrupt
+          # build that would just generate user reports.
+          if ($exe.Length -lt 50MB) {
+            Write-Error ("Sunnify-Windows.exe is {0:N1} MB; expected >50MB. Build is corrupt." -f ($exe.Length / 1MB))
+            exit 1
+          }
+          Write-Output ("Sunnify-Windows.exe verified: {0:N1} MB" -f ($exe.Length / 1MB))
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: dist/Sunnify-Windows.exe
+          if-no-files-found: error
 
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -83,19 +156,22 @@ jobs:
             libxcb-render-util0 \
             libxcb-shape0
 
-      - name: Download FFmpeg
+      - name: Download and verify FFmpeg
         run: |
-          # using BtbN/FFmpeg-Builds (same source as the Windows job).
-          # the previous source (johnvansickle.com) started returning a
-          # 435-byte html error page in june 2026 instead of the tarball.
-          curl -fL -o ffmpeg.tar.xz \
-            https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          set -euo pipefail
+          TAG="${{ env.FFMPEG_BTBN_TAG }}"
+          BUILD="${{ env.FFMPEG_BTBN_BUILD }}"
+          EXPECTED="${{ env.FFMPEG_LINUX_SHA256 }}"
+          URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/ffmpeg-${BUILD}-linux64-gpl.tar.xz"
+          echo "Downloading ${URL}"
+          curl -fL -o ffmpeg.tar.xz "$URL"
+          echo "${EXPECTED}  ffmpeg.tar.xz" | sha256sum -c -
           tar -xf ffmpeg.tar.xz
           mkdir -p ffmpeg
-          cp ffmpeg-master-latest-linux64-gpl/bin/ffmpeg ffmpeg/
-          cp ffmpeg-master-latest-linux64-gpl/bin/ffprobe ffmpeg/
+          cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffmpeg" ffmpeg/
+          cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffprobe" ffmpeg/
           chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
-          rm -rf ffmpeg-master-latest-linux64-gpl ffmpeg.tar.xz
+          rm -rf "ffmpeg-${BUILD}-linux64-gpl" ffmpeg.tar.xz
           ls -la ffmpeg/
 
       - name: Install dependencies
@@ -106,20 +182,33 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller Sunnify.spec
 
-      - name: Rename and set permissions
+      - name: Rename + sanity-check binary
         run: |
+          set -euo pipefail
           mv dist/Sunnify dist/Sunnify-Linux
           chmod +x dist/Sunnify-Linux
+          size=$(stat -c %s dist/Sunnify-Linux)
+          # See Windows comment; <50MB means the build is missing something.
+          if [ "$size" -lt 52428800 ]; then
+            echo "Sunnify-Linux is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
+            exit 1
+          fi
+          file dist/Sunnify-Linux | grep -E 'ELF' >/dev/null || { echo "Not a valid ELF binary"; exit 1; }
+          echo "Sunnify-Linux verified: $((size / 1048576)) MB"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-build
           path: dist/Sunnify-Linux
+          if-no-files-found: error
 
   build-macos:
     name: Build macOS
     runs-on: macos-14
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -129,12 +218,20 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Download FFmpeg
+      - name: Download and verify FFmpeg
         run: |
-          curl -L -o ffmpeg.zip https://evermeet.cx/ffmpeg/getrelease/zip
-          unzip ffmpeg.zip -d ffmpeg-temp
-          curl -L -o ffprobe.zip https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip
-          unzip ffprobe.zip -d ffmpeg-temp
+          set -euo pipefail
+          VERSION="${{ env.FFMPEG_MAC_VERSION }}"
+          EXP_FF="${{ env.FFMPEG_MAC_FFMPEG_SHA256 }}"
+          EXP_FP="${{ env.FFMPEG_MAC_FFPROBE_SHA256 }}"
+
+          curl -fL -o ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
+          shasum -a 256 -c <(echo "${EXP_FF}  ffmpeg.zip")
+          curl -fL -o ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
+          shasum -a 256 -c <(echo "${EXP_FP}  ffprobe.zip")
+
+          unzip -o ffmpeg.zip -d ffmpeg-temp
+          unzip -o ffprobe.zip -d ffmpeg-temp
           mkdir -p ffmpeg
           mv ffmpeg-temp/ffmpeg ffmpeg/
           mv ffmpeg-temp/ffprobe ffmpeg/
@@ -150,99 +247,261 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller Sunnify.spec
 
-      - name: Create ZIP
+      - name: Create + sanity-check ZIP
         run: |
+          set -euo pipefail
           cd dist
+          test -d Sunnify.app || { echo "Sunnify.app missing"; exit 1; }
+          # Confirm bundled FFmpeg landed inside the .app before zipping. If
+          # PyInstaller missed it the user would just get an "FFmpeg not found"
+          # error at first download.
+          find Sunnify.app -name "ffmpeg" -type f | head -1 | grep -q ffmpeg || {
+            echo "Sunnify.app does not contain bundled FFmpeg"
+            exit 1
+          }
           zip -r Sunnify-macOS.zip Sunnify.app
+          size=$(stat -f %z Sunnify-macOS.zip)
+          if [ "$size" -lt 52428800 ]; then
+            echo "Sunnify-macOS.zip is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
+            exit 1
+          fi
+          echo "Sunnify-macOS.zip verified: $((size / 1048576)) MB"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
           path: dist/Sunnify-macOS.zip
+          if-no-files-found: error
 
   upload-release:
     name: Upload to Release
     runs-on: ubuntu-latest
     needs: [build-windows, build-linux, build-macos]
+    timeout-minutes: 15
     permissions:
-      contents: write
+      contents: write       # upload assets to the release
+      id-token: write       # request OIDC token for sigstore signing
+      attestations: write   # write provenance attestations
     steps:
+      - name: Checkout repository (needed for syft SBOM scan of req.txt)
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
-      - name: List artifacts
-        run: find ./artifacts -type f
+      - name: Pre-upload sanity check
+        run: |
+          set -euo pipefail
+          fail=0
+          # 1. All three artifacts present and >50MB.
+          for f in artifacts/windows-build/Sunnify-Windows.exe \
+                   artifacts/linux-build/Sunnify-Linux \
+                   artifacts/macos-build/Sunnify-macOS.zip; do
+            if [ ! -f "$f" ]; then
+              echo "MISSING: $f"
+              fail=1
+              continue
+            fi
+            size=$(stat -c %s "$f")
+            if [ "$size" -lt 52428800 ]; then
+              echo "TOO SMALL: $f is $((size / 1048576)) MB"
+              fail=1
+            fi
+            echo "OK: $f ($((size / 1048576)) MB)"
+          done
+          # 2. Format checks.
+          file artifacts/windows-build/Sunnify-Windows.exe | grep -E 'PE32|MS-DOS executable|PE executable' >/dev/null \
+            || { echo "Windows binary is not PE format"; fail=1; }
+          file artifacts/linux-build/Sunnify-Linux | grep -E 'ELF' >/dev/null \
+            || { echo "Linux binary is not ELF"; fail=1; }
+          # 3. macOS zip contains the .app and bundled FFmpeg.
+          unzip -l artifacts/macos-build/Sunnify-macOS.zip | grep -q 'Sunnify.app/' \
+            || { echo "macOS zip missing Sunnify.app"; fail=1; }
+          unzip -l artifacts/macos-build/Sunnify-macOS.zip | grep -qiE 'ffmpeg' \
+            || { echo "macOS zip missing FFmpeg"; fail=1; }
+          if [ "$fail" -ne 0 ]; then
+            echo "Pre-upload sanity check FAILED"
+            exit 1
+          fi
+          echo "All artifacts verified"
 
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      - name: Generate SBOM (CycloneDX, Python dependency tree)
+        # syft scans the repo: walks req.txt + the codebase, produces a
+        # CycloneDX 1.5 JSON SBOM. We then attest provenance for it too so
+        # consumers can verify the SBOM came from this exact workflow run.
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: "."
+          format: cyclonedx-json
+          output-file: sunnify-sbom.cdx.json
+          upload-release-assets: false
+
+      - name: Attest build provenance (SLSA L3 via sigstore)
+        # Generates a sigstore-signed in-toto attestation linking each binary
+        # to this exact workflow run + the source commit. Users can verify:
+        #   gh attestation verify Sunnify-Linux \
+        #       --repo sunnypatell/sunnify-spotify-downloader
+        # Attestations are published to GitHub's attestation API and visible
+        # under the repo's Releases > Attestations tab.
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            ./artifacts/windows-build/Sunnify-Windows.exe
+            ./artifacts/linux-build/Sunnify-Linux
+            ./artifacts/macos-build/Sunnify-macOS.zip
+            ./sunnify-sbom.cdx.json
+
+      - name: Compute artifact SHA256s (for release notes)
+        id: shas
+        run: |
+          set -euo pipefail
+          {
+            echo "## SHA256 checksums"
+            echo ''
+            echo '```'
+            sha256sum artifacts/windows-build/Sunnify-Windows.exe | sed 's|artifacts/windows-build/||'
+            sha256sum artifacts/linux-build/Sunnify-Linux | sed 's|artifacts/linux-build/||'
+            sha256sum artifacts/macos-build/Sunnify-macOS.zip | sed 's|artifacts/macos-build/||'
+            sha256sum sunnify-sbom.cdx.json
+            echo '```'
+          } > /tmp/checksums.md
+          cat /tmp/checksums.md
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event.inputs.tag }}
+          fail_on_unmatched_files: true
           files: |
             artifacts/windows-build/Sunnify-Windows.exe
             artifacts/linux-build/Sunnify-Linux
             artifacts/macos-build/Sunnify-macOS.zip
+            sunnify-sbom.cdx.json
 
   update-homebrew:
     name: Update Homebrew Cask
     runs-on: ubuntu-latest
     needs: [upload-release]
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - name: Validate tag input
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          # Strict allowlist for the tag input so we can safely interpolate
+          # it into shell commands and the cask file. semver + optional
+          # pre-release / build suffix.
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][a-zA-Z0-9.-]+)?$ ]]; then
+            echo "Invalid tag format: '$TAG' (expected vX.Y.Z[-suffix])"
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get macOS asset SHA256
+      - name: Fetch macOS asset + compute SHA256
         id: get-sha
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag }}
         run: |
-          # Wait for release assets to be fully available
-          sleep 10
-
-          # Get the SHA256 from the release asset digest
-          SHA256=$(gh api repos/${{ github.repository }}/releases/tags/${{ github.event.inputs.tag }} \
-            --jq '.assets[] | select(.name == "Sunnify-macOS.zip") | .digest' | sed 's/sha256://')
-
-          if [ -z "$SHA256" ]; then
-            echo "Failed to get SHA256, calculating manually..."
-            gh release download ${{ github.event.inputs.tag }} --pattern "Sunnify-macOS.zip" --dir /tmp
-            SHA256=$(sha256sum /tmp/Sunnify-macOS.zip | cut -d' ' -f1)
-          fi
-
-          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          # Poll for the asset to be available. softprops finishes uploading
+          # before this job starts, but GitHub's release API is eventually
+          # consistent; first call after upload can 404. ~60s budget.
+          for i in $(seq 1 12); do
+            if gh release download "$TAG" \
+                 --repo "${{ github.repository }}" \
+                 --pattern "Sunnify-macOS.zip" \
+                 --dir /tmp \
+                 --clobber 2>/dev/null; then
+              break
+            fi
+            echo "Attempt $i: asset not yet available, waiting 5s"
+            sleep 5
+          done
+          test -f /tmp/Sunnify-macOS.zip || { echo "Asset never appeared after 60s"; exit 1; }
+          SHA256=$(sha256sum /tmp/Sunnify-macOS.zip | cut -d' ' -f1)
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "SHA256: $SHA256"
 
-      - name: Extract version from tag
-        id: version
+      - name: Update cask file (python, validated)
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          SHA256: ${{ steps.get-sha.outputs.sha256 }}
         run: |
-          VERSION="${{ github.event.inputs.tag }}"
-          VERSION="${VERSION#v}"  # Remove 'v' prefix
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+          # Use Python with strict regex validation instead of sed -i with
+          # shell-interpolated values. Avoids two failure modes:
+          #   1. sed regex metacharacters (/, &, \) in the input breaking
+          #      the substitution silently or corrupting the file.
+          #   2. A future cask reformat (e.g. single quotes, raw strings)
+          #      causing the sed pattern to no-op without any error.
+          # Python validates both inputs against strict patterns first,
+          # asserts the file content was actually mutated, then writes.
+          python3 - <<'PYEOF'
+          import os
+          import re
+          import sys
 
-      - name: Update cask file
-        run: |
-          # Update version
-          sed -i 's/version "[^"]*"/version "${{ steps.version.outputs.version }}"/' Casks/sunnify.rb
+          tag = os.environ["TAG"]
+          sha = os.environ["SHA256"]
+          version = tag.lstrip("v")
 
-          # Update SHA256 (handles both quoted strings and :no_check symbol)
-          sed -i 's/sha256 "[^"]*"/sha256 "${{ steps.get-sha.outputs.sha256 }}"/' Casks/sunnify.rb
-          sed -i 's/sha256 :no_check/sha256 "${{ steps.get-sha.outputs.sha256 }}"/' Casks/sunnify.rb
+          if not re.fullmatch(r"[a-f0-9]{64}", sha):
+              sys.exit(f"Invalid SHA256: {sha!r}")
+          if not re.fullmatch(r"\d+\.\d+\.\d+([-+][a-zA-Z0-9.-]+)?", version):
+              sys.exit(f"Invalid version: {version!r}")
 
-          echo "Updated cask file:"
-          cat Casks/sunnify.rb
+          path = "Casks/sunnify.rb"
+          original = open(path).read()
+          updated = original
+
+          updated, n_version = re.subn(
+              r'version "[^"]*"', f'version "{version}"', updated, count=1
+          )
+          if n_version != 1:
+              sys.exit("Could not find version line to update")
+
+          # sha256 may appear as either "..." (normal) or :no_check (initial template)
+          updated, n_sha_str = re.subn(
+              r'sha256 "[^"]*"', f'sha256 "{sha}"', updated, count=1
+          )
+          updated, n_sha_sym = re.subn(
+              r'sha256 :no_check', f'sha256 "{sha}"', updated, count=1
+          )
+          if n_sha_str + n_sha_sym != 1:
+              sys.exit(
+                  f"Expected exactly one sha256 line; matched "
+                  f"{n_sha_str} quoted + {n_sha_sym} :no_check"
+              )
+
+          if updated == original:
+              sys.exit("Cask file unchanged after substitution; aborting")
+
+          open(path, "w").write(updated)
+          PYEOF
+          echo "Cask updated:"
+          head -10 Casks/sunnify.rb
 
       - name: Commit and push
+        env:
+          TAG: ${{ github.event.inputs.tag }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/sunnify.rb
-          git commit -m "chore(homebrew): auto-update cask to ${{ github.event.inputs.tag }}" || echo "No changes to commit"
+          if git diff --cached --quiet; then
+            echo "No cask changes to commit (already at $TAG)"
+            exit 0
+          fi
+          git commit -m "chore(homebrew): auto-update cask to $TAG"
           git push origin main
