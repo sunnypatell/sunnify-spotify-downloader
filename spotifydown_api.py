@@ -128,6 +128,7 @@ class SpotifyEmbedAPI:
     _EMBED_PLAYLIST_URL = "https://open.spotify.com/embed/playlist/{playlist_id}"
     _EMBED_ALBUM_URL = "https://open.spotify.com/embed/album/{playlist_id}"
     _EMBED_TRACK_URL = "https://open.spotify.com/embed/track/{track_id}"
+    _TRACK_PAGE_URL = "https://open.spotify.com/track/{track_id}"
     _OEMBED_URL = "https://open.spotify.com/oembed"
     _SPCLIENT_URL = "https://spclient.wg.spotify.com/playlist/v2/playlist/{playlist_id}"
     _NEXT_DATA_PATTERN = re.compile(r'<script id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
@@ -518,6 +519,38 @@ class SpotifyEmbedAPI:
             raw=dict(track),
         )
 
+    @staticmethod
+    def _parse_og_description_album(html: str) -> str | None:
+        """Extract album name from og:description on a Spotify track page"""
+        m = re.search(
+            r'<meta\s+[^>]*property="og:description"[^>]*content="([^"]*)"',
+            html,
+        )
+        if not m:
+            return None
+        parts = m.group(1).split(" · ")
+        # probably [artist, album, "Song", year] fingers crossed
+        if len(parts) >= 2:
+            return parts[1].strip()
+        return None
+
+    _OG_HEADERS = {
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+        "user-agent": "Mozilla/5.0",
+    }
+
+    def _fetch_track_album_from_page(self, track_id: str) -> str | None:
+        """Fetch album name from the regular Spotify track page via OG tags!!!"""
+        url = self._TRACK_PAGE_URL.format(track_id=track_id)
+        try:
+            resp = self._session.get(url, headers=self._OG_HEADERS, timeout=15)
+            if resp.status_code == 200:
+                return self._parse_og_description_album(resp.text)
+        except requests.RequestException:
+            pass
+        return None
+
     def _fetch_track_metadata(self, track_id: str) -> TrackInfo | None:
         """Fetch metadata for a single track from its embed page."""
         url = self._EMBED_TRACK_URL.format(track_id=track_id)
@@ -562,10 +595,11 @@ class SpotifyEmbedAPI:
         elif isinstance(rd, str):
             release_date = rd
 
-        # Try to get album name
         album = None
-        # Album info might be in relatedEntityUri or other fields
-        # For now, we'll leave it None as individual track embeds don't include album
+        if isinstance(entity.get("album"), dict):
+            album = entity["album"].get("name")
+        if not album:
+            album = self._fetch_track_album_from_page(track_id)
 
         return TrackInfo(
             id=track_id,
@@ -876,3 +910,4 @@ __all__ = [
     "extract_track_id",
     "sanitize_filename",
 ]
+ 
