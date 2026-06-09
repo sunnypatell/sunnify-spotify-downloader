@@ -562,6 +562,17 @@ class SpotifyEmbedAPI:
         album = parts[1].strip()
         return album or None
 
+    # Spotify serves DIFFERENT HTML for /track/{id} based on user-agent:
+    #   - browser-shaped UA (full Chrome) -> 6KB React shell, NO og:description
+    #   - social-crawler UA -> 28KB SEO page WITH og:description
+    # Verified empirically by hitting the endpoint with each UA. So we
+    # have to send a social-crawler UA - this is the canonical one
+    # (drives Facebook/Discord/iMessage link previews), is the smallest
+    # response Spotify will serve, and matches Spotify's incentive to
+    # keep stable: breaking it would break every link unfurl on the
+    # internet that points at a Spotify track.
+    _SOCIAL_CRAWLER_UA = "facebookexternalhit/1.1"
+
     def _fetch_track_album_from_page(self, track_id: str) -> str | None:
         """Fetch album name from the regular Spotify track page via og:description.
 
@@ -580,8 +591,12 @@ class SpotifyEmbedAPI:
         )
         def _go() -> str | None:
             url = self._TRACK_PAGE_URL.format(track_id=track_id)
+            # Override only the user-agent; keep accept + accept-language
+            # consistent with the embed fetches.
+            headers = dict(self._headers())
+            headers["user-agent"] = self._SOCIAL_CRAWLER_UA
             try:
-                resp = self._session.get(url, headers=self._headers(), timeout=15)
+                resp = self._session.get(url, headers=headers, timeout=15)
             except (requests.Timeout, requests.ConnectionError) as exc:
                 raise NetworkError(f"Network error fetching track page: {exc}") from exc
             except requests.RequestException:

@@ -1,7 +1,1 @@
-2.0.8
-FileVersion: 2,0,8,0
-ProductVersion: 2,0,8,0
-CompanyName: Sunny Jayendra Patel
-FileDescription: Sunnify (Spotify Downloader)
-InternalName: Sunnify (Spotify Downloader)
-LegalCopyright: Copyright (C) 2026 Sunny Jayendra Patel
+2.0.9

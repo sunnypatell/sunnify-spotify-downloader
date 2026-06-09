@@ -553,17 +553,17 @@ class TestFetchTrackAlbumFromPage:
         assert api._fetch_track_album_from_page("no-og") is None
         assert sess.get.call_count == 1
 
-    def test_fetcher_uses_default_user_agent(self):
-        """Use the existing Chrome UA constant rather than `Mozilla/5.0`
-        alone, which is short enough to trip Spotify's bot heuristics."""
-        from spotifydown_api import _DEFAULT_USER_AGENT
-
+    def test_fetcher_uses_social_crawler_user_agent(self):
+        """The /track/ HTML page serves a JS app shell (NO og:description)
+        when fetched with a browser-shaped UA and serves the SEO page
+        (WITH og:description) when fetched with a social-crawler UA.
+        Verified empirically by hitting the endpoint with each."""
         body = '<meta property="og:description" content="Artist · Album · Song · 2020">'
         sess = self._stub_session_returning(body)
         api = SpotifyEmbedAPI(session=sess)
         api._fetch_track_album_from_page("ua-test")
         _, kwargs = sess.get.call_args
-        assert kwargs["headers"]["user-agent"] == _DEFAULT_USER_AGENT
+        assert kwargs["headers"]["user-agent"] == "facebookexternalhit/1.1"
 
     def test_fetcher_retries_then_returns_none_on_persistent_network_error(self):
         """Transient network errors back off (3 attempts) and degrade

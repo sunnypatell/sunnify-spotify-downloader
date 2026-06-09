@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-06-09
+
+### Added
+- **album metadata on single-track downloads** (closes #53). single tracks now carry an `album` tag in the ID3/M4A/FLAC frame, matching what album downloads have always done. the embed page JSON genuinely does not expose album for single tracks, so the album name is scraped from the `og:description` meta tag on `open.spotify.com/track/{id}` (canonical `Artist · Album · Song · Year` format, stable for years because it drives social-share previews). primary contribution by @WhatDidYouExpect in #53; cleanups on top: retry/backoff via the same `@retry_on_network_error` discipline `_fetch_embed_data` uses, html.unescape so `Tom &amp; Jerry's Greatest Hits` doesn't end up encoded in the tag, attribute-order-agnostic regex for resilience against future Spotify HTML deploys, per-instance dict cache (256 entries, FIFO) so re-downloads don't re-hit Spotify, dead `entity.album` branch dropped, 13 unit tests covering the parser + fetcher.
+- **inline help under every setting** in the Settings dialog. each control now carries a one-line gray caption directly underneath explaining what it does, with the new `Track number in filename:` toggle showing concrete `Off → "Song - Artist.mp3"` / `On → "01. Song - Artist.mp3"` examples. the previous dialog gave four labels and four widgets with no indication of what the toggles did. implementation uses per-setting `QVBoxLayout` blocks (each owns its own height) instead of `QFormLayout` (sizes row to label height; word-wrapped hints got clipped); hint color is `rgba(255,255,255,0.65)` so it stays readable on both the current dark gradient and any future light theme. cocoa-rendered + verified visually before merge.
+
+### Notes
+- only the desktop app and the Python core are affected; the web client / backend continue to work the same way.
+
 ## [2.0.8] - 2026-06-08
 
 ### Added
@@ -188,7 +197,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.8...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.9...HEAD
+[2.0.9]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.5...v2.0.6

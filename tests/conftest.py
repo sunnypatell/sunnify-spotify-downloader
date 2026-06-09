@@ -33,6 +33,7 @@ def qapp():
     # Don't quit() on teardown - Python is about to exit anyway and quitting
     # mid-test cleanup can race with widget destruction.
 
+
 # Sample Spotify embed page HTML with __NEXT_DATA__
 SAMPLE_EMBED_HTML = """
 <!DOCTYPE html>

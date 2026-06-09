@@ -1764,10 +1764,30 @@ class TestSettingsDialog:
         from Spotify_Downloader import SettingsDialog
 
         for cfg in (
-            {"download_path": "/tmp", "format": "flac", "quality": "320", "include_track_number": True},
-            {"download_path": "/tmp", "format": "wav", "quality": "256", "include_track_number": False},
-            {"download_path": "/tmp", "format": "m4a", "quality": "128", "include_track_number": True},
-            {"download_path": "/tmp", "format": "opus", "quality": "192", "include_track_number": False},
+            {
+                "download_path": "/tmp",
+                "format": "flac",
+                "quality": "320",
+                "include_track_number": True,
+            },
+            {
+                "download_path": "/tmp",
+                "format": "wav",
+                "quality": "256",
+                "include_track_number": False,
+            },
+            {
+                "download_path": "/tmp",
+                "format": "m4a",
+                "quality": "128",
+                "include_track_number": True,
+            },
+            {
+                "download_path": "/tmp",
+                "format": "opus",
+                "quality": "192",
+                "include_track_number": False,
+            },
         ):
             dlg = SettingsDialog(None, cfg)
             assert dlg.sizeHint().width() > 0, f"size hint should be positive for {cfg}"

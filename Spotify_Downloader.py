@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.0.8"
+__version__ = "2.0.9"
 
 import concurrent.futures
 import os
@@ -1202,9 +1202,7 @@ class SettingsDialog(QDialog):
                 # rgba white works on both the dark gradient the app ships
                 # with and any future light theme, without hardcoding a
                 # gray that disappears on either.
-                hint.setStyleSheet(
-                    "color: rgba(255, 255, 255, 0.65); font-size: 11px;"
-                )
+                hint.setStyleSheet("color: rgba(255, 255, 255, 0.65); font-size: 11px;")
                 hint.setContentsMargins(LABEL_W + 12, 2, 4, 0)
                 hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 box.addWidget(hint)
