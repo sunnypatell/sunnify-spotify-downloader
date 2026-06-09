@@ -463,6 +463,150 @@ class TestSpotifyEmbedAPI:
         assert fetched_urls == ["https://open.spotify.com/embed/album/ALBUMID"]
 
 
+class TestParseOgDescriptionAlbum:
+    """Parser-level tests for the og:description -> album extraction.
+
+    The format `Artist · Album · Song · Year` is Spotify's social-share
+    canonical and has been stable for years. These tests pin the parser
+    to that contract and to the regex's attribute-order tolerance + HTML
+    entity decoding.
+    """
+
+    def test_extracts_album_from_canonical_format(self):
+        html = '<meta property="og:description" content="The Weeknd · After Hours · Song · 2020">'
+        assert SpotifyEmbedAPI._parse_og_description_album(html) == "After Hours"
+
+    def test_handles_attribute_order_reversed(self):
+        """Attribute order in HTML isn't guaranteed by spec; the regex
+        uses a lookahead so it matches either order. A Spotify deploy
+        that reorders meta attributes must not silently kill albums."""
+        html = (
+            '<meta content="Queen · A Night At The Opera · Song · 1975" property="og:description">'
+        )
+        assert SpotifyEmbedAPI._parse_og_description_album(html) == "A Night At The Opera"
+
+    def test_decodes_html_entities(self):
+        """Albums with `&` or `\"` get HTML-encoded in the meta content;
+        the parser must unescape before returning, otherwise the album
+        tag ends up `Tom &amp; Jerry` in the ID3 frame."""
+        html = (
+            '<meta property="og:description" '
+            'content="Tom &amp; Jerry · Greatest &quot;Hits&quot; · Song · 2010">'
+        )
+        assert SpotifyEmbedAPI._parse_og_description_album(html) == 'Greatest "Hits"'
+
+    def test_returns_none_when_tag_missing(self):
+        assert SpotifyEmbedAPI._parse_og_description_album("<html></html>") is None
+
+    def test_returns_none_when_format_too_short(self):
+        """One-part og:description (no album segment) returns None
+        rather than misreporting the artist as the album."""
+        html = '<meta property="og:description" content="Just one part">'
+        assert SpotifyEmbedAPI._parse_og_description_album(html) is None
+
+    def test_returns_none_when_album_empty_after_strip(self):
+        html = '<meta property="og:description" content="Artist ·     · Song · 2020">'
+        assert SpotifyEmbedAPI._parse_og_description_album(html) is None
+
+
+class TestFetchTrackAlbumFromPage:
+    """Tests for the per-track HTML scrape + caching + retry shell."""
+
+    def _stub_session_returning(self, body: str, status: int = 200):
+        """Build a fake session that returns one canned response."""
+        from unittest.mock import MagicMock
+
+        resp = MagicMock(status_code=status, text=body)
+        sess = MagicMock()
+        sess.get = MagicMock(return_value=resp)
+        return sess
+
+    def test_fetcher_returns_album_from_real_shape(self):
+        body = (
+            '<meta property="og:description" content="Linkin Park · Hybrid Theory · Song · 2000">'
+        )
+        api = SpotifyEmbedAPI(session=self._stub_session_returning(body))
+        assert api._fetch_track_album_from_page("abc123") == "Hybrid Theory"
+
+    def test_fetcher_returns_none_on_non_200(self):
+        """Spotify dropping a 404/500 must not corrupt downstream metadata."""
+        api = SpotifyEmbedAPI(session=self._stub_session_returning("error page", status=500))
+        assert api._fetch_track_album_from_page("abc123") is None
+
+    def test_fetcher_caches_result_to_avoid_re_fetch(self):
+        """Second call for the same track_id must NOT hit the session;
+        re-downloading the same playlist would otherwise re-pay the
+        HTTP cost per track."""
+        body = '<meta property="og:description" content="Daft Punk · Discovery · Song · 2001">'
+        sess = self._stub_session_returning(body)
+        api = SpotifyEmbedAPI(session=sess)
+        assert api._fetch_track_album_from_page("xyz") == "Discovery"
+        assert api._fetch_track_album_from_page("xyz") == "Discovery"
+        assert sess.get.call_count == 1
+
+    def test_fetcher_caches_none_too(self):
+        """A track without an og:description tag should also be cached as
+        None so a retry-loop in the caller doesn't repeatedly re-fetch."""
+        api = SpotifyEmbedAPI(session=self._stub_session_returning("<html></html>", status=200))
+        sess = api._session
+        assert api._fetch_track_album_from_page("no-og") is None
+        assert api._fetch_track_album_from_page("no-og") is None
+        assert sess.get.call_count == 1
+
+    def test_fetcher_uses_default_user_agent(self):
+        """Use the existing Chrome UA constant rather than `Mozilla/5.0`
+        alone, which is short enough to trip Spotify's bot heuristics."""
+        from spotifydown_api import _DEFAULT_USER_AGENT
+
+        body = '<meta property="og:description" content="Artist · Album · Song · 2020">'
+        sess = self._stub_session_returning(body)
+        api = SpotifyEmbedAPI(session=sess)
+        api._fetch_track_album_from_page("ua-test")
+        _, kwargs = sess.get.call_args
+        assert kwargs["headers"]["user-agent"] == _DEFAULT_USER_AGENT
+
+    def test_fetcher_retries_then_returns_none_on_persistent_network_error(self):
+        """Transient network errors back off (3 attempts) and degrade
+        gracefully to no album rather than blowing up the whole
+        per-track metadata fetch path."""
+        from unittest.mock import MagicMock
+
+        import requests as _requests
+
+        sess = MagicMock()
+        sess.get = MagicMock(side_effect=_requests.ConnectionError("boom"))
+        api = SpotifyEmbedAPI(session=sess)
+        assert api._fetch_track_album_from_page("flaky") is None
+        # 3 retry attempts before giving up
+        assert sess.get.call_count == 3
+
+    def test_cache_eviction_when_at_capacity(self):
+        """Cache is bounded at 256 entries; oldest gets evicted FIFO."""
+        from unittest.mock import MagicMock
+
+        # Build a session that returns the album corresponding to track_id
+        sess = MagicMock()
+
+        def _resp(url, **_kw):
+            tid = url.rsplit("/", 1)[-1]
+            r = MagicMock(status_code=200)
+            r.text = f'<meta property="og:description" content="A · album-{tid} · Song · 2020">'
+            return r
+
+        sess.get = MagicMock(side_effect=_resp)
+        api = SpotifyEmbedAPI(session=sess)
+        # Fill cache to capacity + 1
+        for i in range(257):
+            api._fetch_track_album_from_page(f"t{i}")
+        # t0 should be evicted, t1..t256 should still be cached
+        assert "t0" not in api._album_cache
+        assert "t256" in api._album_cache
+        # Re-fetching t0 hits the network again
+        before = sess.get.call_count
+        api._fetch_track_album_from_page("t0")
+        assert sess.get.call_count == before + 1
+
+
 class TestPlaylistClient:
     """Tests for PlaylistClient class."""
 
