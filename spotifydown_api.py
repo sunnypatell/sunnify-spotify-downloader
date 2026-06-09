@@ -98,6 +98,12 @@ class TrackInfo:
     duration_ms: int | None
     preview_url: str | None
     raw: dict[str, object]
+    # 1-based position in the playlist as Spotify presents it. None for tracks
+    # not yielded from a playlist context (e.g. single-track downloads), or as
+    # a fallback when the spclient ordering couldn't be resolved. Callers that
+    # care about playlist-position numbering should use this when present and
+    # fall back to their own enumerate index otherwise (closes #51).
+    position: int | None = None
 
     @property
     def spotify_id(self) -> str:
@@ -359,8 +365,13 @@ class SpotifyEmbedAPI:
         # downloader can write the album tag.
         album_name = entity.get("name") if content_type == "album" else None
 
-        # Yield tracks from embed page (up to ~100)
-        for track in track_list:
+        # Yield tracks from embed page (up to ~100). The embed page returns
+        # tracks in playlist display order, so a simple 1-based enumerate
+        # against the trackList slot is the playlist position. For playlists
+        # >100 tracks the spclient fallback below overrides these positions
+        # with the canonical ordering, but for the common ≤100-track case
+        # we never need to call spclient at all.
+        for slot_index, track in enumerate(track_list, start=1):
             if not isinstance(track, dict):
                 continue
 
@@ -373,6 +384,7 @@ class SpotifyEmbedAPI:
             if track_id in skip_ids:
                 continue
             info = self._parse_track(track, track_id)
+            info.position = slot_index
             if album_name and not info.album:
                 info.album = str(album_name)
             yield info
@@ -401,18 +413,27 @@ class SpotifyEmbedAPI:
             if total_tracks <= len(embed_track_ids):
                 return  # All tracks already yielded
 
-            # Get remaining track URIs from spclient
+            # Get remaining track URIs from spclient. spclient returns the
+            # full playlist in canonical display order, so use it to build a
+            # `track_id -> position` map. This is what makes the position
+            # value correct even though we yield in HTTP-completion order
+            # below (closes #51).
             contents = spc_data.get("contents", {})
             items = contents.get("items", [])
 
-            # Build the set of track ids that still need metadata and the
-            # lookup from id -> uri for the fallback TrackInfo on failure.
+            position_map: dict[str, int] = {}
             pending: list[tuple[str, str]] = []
-            for item in items:
+            for slot_index, item in enumerate(items, start=1):
                 uri = item.get("uri", "")
                 if not uri.startswith("spotify:track:"):
                     continue
                 track_id = uri.split(":")[-1]
+                # Always record the canonical position, even for tracks
+                # already yielded in phase 1 - they may be slightly off if
+                # the embed page omitted unavailable tracks but kept the
+                # slot count; we don't currently surface that, but storing
+                # the truth keeps the option open.
+                position_map[track_id] = slot_index
                 if track_id in embed_track_ids or track_id in skip_ids:
                     continue
                 pending.append((track_id, uri))
@@ -426,6 +447,12 @@ class SpotifyEmbedAPI:
             # streaming feel of pre-parallel versions without regressing the
             # thread-safe generator contract: we yield from the caller's
             # thread, the pool just speeds up the HTTP work.
+            #
+            # We yield in HTTP-completion order (not playlist order) so the
+            # downloader can start working on the first track that becomes
+            # available. The downloader uses TrackInfo.position to write the
+            # right number into the filename / TRCK tag, so this completion
+            # ordering is invisible in the final output.
             import concurrent.futures as _cf
 
             # Manual executor lifecycle so GeneratorExit (caller break on cancel)
@@ -442,10 +469,8 @@ class SpotifyEmbedAPI:
                         info = future.result()
                     except Exception:
                         info = None
-                    if info:
-                        yield info
-                    else:
-                        yield TrackInfo(
+                    if info is None:
+                        info = TrackInfo(
                             id=track_id,
                             title=f"Track {track_id}",
                             artists="Unknown Artist",
@@ -456,6 +481,8 @@ class SpotifyEmbedAPI:
                             preview_url=None,
                             raw={"uri": uri},
                         )
+                    info.position = position_map.get(track_id)
+                    yield info
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
 

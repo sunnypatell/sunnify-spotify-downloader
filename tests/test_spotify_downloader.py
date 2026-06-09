@@ -1559,6 +1559,136 @@ class TestTrackNumberInFilename:
         scraper._download_one_track(self._track(), str(tmp_path), "", track_num=3)
         assert captured[0].endswith("03. Title - Artist.mp3")
 
+    def test_uses_track_position_over_enumerate_idx(self, tmp_path):
+        """Regression for #51 - the scrape_playlist loop must use
+        track.position (the canonical playlist position) over enumerate
+        idx (the yield order). On >100-track playlists those diverge
+        because spclient yields in HTTP-completion order; the bug was
+        that filenames numbered 101+ matched yield-order not playlist
+        order, so a file named '113. ON FIRE.mp3' was actually playlist
+        position 112.
+        """
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import TrackInfo
+
+        # Simulate a 4-track yield where positions don't match enumerate
+        # idx: yield-1 has position 4, yield-2 has position 1, etc.
+        def trk(tid, position):
+            return TrackInfo(
+                id=tid,
+                title=f"T{tid}",
+                artists="A",
+                album=None,
+                release_date=None,
+                cover_url=None,
+                duration_ms=None,
+                preview_url=None,
+                raw={},
+                position=position,
+            )
+
+        # Yield order != playlist order (the bug shape on >100 tracks).
+        yielded_tracks = [
+            trk("d", 4),
+            trk("a", 1),
+            trk("c", 3),
+            trk("b", 2),
+        ]
+
+        scraper = MusicScraper(include_track_number=True)
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+
+        mock_api = MagicMock()
+        meta = MagicMock()
+        meta.name = "PL"
+        meta.owner = "O"
+        meta.cover_url = None
+        meta.track_count = 4
+        mock_api.get_playlist_metadata.return_value = meta
+        mock_api.iter_playlist_tracks.return_value = iter(yielded_tracks)
+        scraper.ensure_spotifydown_api = MagicMock(return_value=mock_api)
+        scraper.format_playlist_name = lambda _m: "PL"
+        # Single-worker so the order is deterministic and the assertion
+        # below maps cleanly to yield-order; the position assignment
+        # logic under test is identical in the parallel branch (same
+        # `_track_num_for` helper) so single-thread coverage is enough.
+        scraper.MAX_WORKERS = 1
+        scraper.prepare_playlist_folder = lambda _b, _n: str(tmp_path)
+
+        scraper.scrape_playlist("https://open.spotify.com/playlist/abc", str(tmp_path))
+
+        names = sorted(os.path.basename(p) for p in captured)
+        # Each file's NN prefix must equal its track's *position*, not its
+        # yield index. So track 'a' (yielded second, position 1) -> 01.;
+        # track 'b' (yielded fourth, position 2) -> 02.; etc.
+        assert names == [
+            "01. Ta - A.mp3",
+            "02. Tb - A.mp3",
+            "03. Tc - A.mp3",
+            "04. Td - A.mp3",
+        ]
+
+    def test_falls_back_to_enumerate_when_position_is_none(self, tmp_path):
+        """If a track has no position (e.g. albums, very small playlists
+        where TrackInfo wasn't stamped), the loop falls back to enumerate
+        idx so we don't regress the existing behaviour for those cases."""
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import TrackInfo
+
+        def trk(tid):
+            return TrackInfo(
+                id=tid,
+                title=f"T{tid}",
+                artists="A",
+                album=None,
+                release_date=None,
+                cover_url=None,
+                duration_ms=None,
+                preview_url=None,
+                raw={},
+                # position deliberately left as None
+            )
+
+        yielded = [trk("x"), trk("y"), trk("z")]
+
+        scraper = MusicScraper(include_track_number=True)
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+
+        mock_api = MagicMock()
+        meta = MagicMock()
+        meta.name = "PL"
+        meta.owner = "O"
+        meta.cover_url = None
+        meta.track_count = 3
+        mock_api.get_playlist_metadata.return_value = meta
+        mock_api.iter_playlist_tracks.return_value = iter(yielded)
+        scraper.ensure_spotifydown_api = MagicMock(return_value=mock_api)
+        scraper.format_playlist_name = lambda _m: "PL"
+        scraper.MAX_WORKERS = 1
+        scraper.prepare_playlist_folder = lambda _b, _n: str(tmp_path)
+
+        scraper.scrape_playlist("https://open.spotify.com/playlist/abc", str(tmp_path))
+
+        names = sorted(os.path.basename(p) for p in captured)
+        # No track.position -> filename prefix equals enumerate idx.
+        assert names == ["01. Tx - A.mp3", "02. Ty - A.mp3", "03. Tz - A.mp3"]
+
     def test_collision_path_pads_consistently(self, tmp_path):
         """When a name collides, the `[id]` suffix variant must also be `NN. `-padded.
 

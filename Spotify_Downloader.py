@@ -721,6 +721,15 @@ class MusicScraper(QThread):
         worker_count = 1 if len(tracks) < 3 else min(self.MAX_WORKERS, len(tracks))
         self._parallel_mode = worker_count > 1
 
+        # Prefer the canonical Spotify playlist position when the API gave
+        # one (it does for any playlist whose tracks went through the
+        # spclient fallback, which is the only place enumerate-of-yield-
+        # order would diverge from playlist order). Fall back to enumerate
+        # index for albums + small playlists where every track came from
+        # the embed page already in order. Closes #51.
+        def _track_num_for(track, idx):
+            return track.position if getattr(track, "position", None) else idx
+
         if worker_count == 1:
             for idx, track in enumerate(tracks, start=1):
                 if self.is_cancelled():
@@ -729,7 +738,10 @@ class MusicScraper(QThread):
                 # so the single-track UI behaves the way it always has.
                 self.Resetprogress_signal.emit(0)
                 self._download_one_track(
-                    track, playlist_folder_path, metadata.cover_url, track_num=idx
+                    track,
+                    playlist_folder_path,
+                    metadata.cover_url,
+                    track_num=_track_num_for(track, idx),
                 )
         else:
             try:
@@ -740,7 +752,7 @@ class MusicScraper(QThread):
                             track,
                             playlist_folder_path,
                             metadata.cover_url,
-                            idx,
+                            _track_num_for(track, idx),
                         )
                         for idx, track in enumerate(tracks, start=1)
                     ]

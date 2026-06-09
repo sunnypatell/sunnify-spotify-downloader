@@ -226,6 +226,193 @@ class TestSpotifyEmbedAPI:
             "https://open.spotify.com/embed/playlist/abc"
         )
 
+    def test_phase1_assigns_playlist_position_from_embed_slot(self):
+        """Every track yielded from the embed page carries its 1-based
+        position in trackList. Closes #51 - the prior code left position
+        unset, so the downloader had to enumerate yield-order which is
+        only correct as long as phase 2 (spclient) never runs."""
+        api = SpotifyEmbedAPI()
+        data = {
+            "props": {
+                "pageProps": {
+                    "state": {
+                        "data": {
+                            "entity": {
+                                "trackList": [
+                                    {
+                                        "uri": f"spotify:track:t{i}",
+                                        "title": f"Title {i}",
+                                        "subtitle": f"Artist {i}",
+                                        "duration": 100000,
+                                    }
+                                    for i in range(1, 6)
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        api._fetch_embed_data = lambda _url: data  # type: ignore[assignment]
+        api._session.get = lambda *_a, **_kw: AssertionError("spclient skipped")  # type: ignore[assignment]
+
+        tracks = list(api.iter_playlist_tracks("PL", content_type="playlist"))
+        assert [t.id for t in tracks] == ["t1", "t2", "t3", "t4", "t5"]
+        assert [t.position for t in tracks] == [1, 2, 3, 4, 5]
+
+    def test_phase2_assigns_position_from_spclient_order_not_yield_order(self):
+        """spclient yields in HTTP-completion order, NOT playlist order. The
+        position field must still reflect the canonical playlist order
+        (from spc_data.contents.items), so the downloader can write the
+        correct number into the filename + TRCK regardless of which fetch
+        finished first. This is the exact bug reported in #51 - on a
+        181-track playlist the user saw tracks 101+ numbered randomly."""
+
+        api = SpotifyEmbedAPI()
+        # Phase 1: only a tiny embed (positions 1-2 in the playlist).
+        embed = {
+            "props": {
+                "pageProps": {
+                    "state": {
+                        "data": {
+                            "entity": {
+                                "trackList": [
+                                    {
+                                        "uri": "spotify:track:p1",
+                                        "title": "P1",
+                                        "subtitle": "AP1",
+                                        "duration": 1,
+                                    },
+                                    {
+                                        "uri": "spotify:track:p2",
+                                        "title": "P2",
+                                        "subtitle": "AP2",
+                                        "duration": 1,
+                                    },
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        api._fetch_embed_data = lambda _url: embed  # type: ignore[assignment]
+        api._cached_token = "fake-token"
+
+        # spclient returns the FULL playlist in canonical order
+        # (p1 at slot 1, p2 at slot 2, then s3/s4/s5/s6 at 3-6).
+        spc_response_body = {
+            "length": 6,
+            "contents": {
+                "items": [
+                    {"uri": "spotify:track:p1"},
+                    {"uri": "spotify:track:p2"},
+                    {"uri": "spotify:track:s3"},
+                    {"uri": "spotify:track:s4"},
+                    {"uri": "spotify:track:s5"},
+                    {"uri": "spotify:track:s6"},
+                ],
+            },
+        }
+
+        class FakeResp:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return spc_response_body
+
+        api._session.get = lambda *_a, **_kw: FakeResp()  # type: ignore[assignment]
+
+        # Force the per-track metadata fetches to return in REVERSE playlist
+        # order (s6 first, then s5, s4, s3) — the worst case for the prior
+        # bug. _fetch_track_metadata is what the parallel pool calls.
+        completion_order = ["s6", "s5", "s4", "s3"]
+
+        def fake_fetch(tid):
+            return TrackInfo(
+                id=tid,
+                title=f"Title {tid}",
+                artists=f"Artist {tid}",
+                album=None,
+                release_date=None,
+                cover_url=None,
+                duration_ms=None,
+                preview_url=None,
+                raw={},
+            )
+
+        api._fetch_track_metadata = fake_fetch  # type: ignore[assignment]
+
+        # Force as_completed-style ordering: monkey-patch the pool's
+        # as_completed to return futures in the reverse order we want.
+        import concurrent.futures as cf
+
+        original_as_completed = cf.as_completed
+
+        def reverse_as_completed(fs):
+            # Re-sort futures by their bound track_id so s6 yields first.
+            pairs = [(f, fs[f]) for f in fs]  # fs is future -> (tid, uri)
+            pairs.sort(key=lambda p: completion_order.index(p[1][0]))
+            return [p[0] for p in pairs]
+
+        cf.as_completed = reverse_as_completed  # type: ignore[assignment]
+        try:
+            tracks = list(api.iter_playlist_tracks("PL", content_type="playlist"))
+        finally:
+            cf.as_completed = original_as_completed  # type: ignore[assignment]
+
+        # Yield order is: p1, p2 (phase 1), then s6, s5, s4, s3 (phase 2 in
+        # reverse completion). But POSITION must still match the playlist:
+        by_id = {t.id: t.position for t in tracks}
+        assert by_id == {"p1": 1, "p2": 2, "s3": 3, "s4": 4, "s5": 5, "s6": 6}
+
+    def test_phase2_failed_fetch_still_gets_correct_position(self):
+        """If a track's metadata fetch fails in phase 2, the fallback
+        TrackInfo (`title=f"Track {id}"`, `artists="Unknown Artist"`)
+        must still carry the correct playlist position so the user can
+        still see WHERE in the playlist the track that failed was."""
+        api = SpotifyEmbedAPI()
+        # Empty embed forces every track through phase 2.
+        api._fetch_embed_data = lambda _url: {  # type: ignore[assignment]
+            "props": {"pageProps": {"state": {"data": {"entity": {"trackList": []}}}}}
+        }
+        api._cached_token = "tok"
+        api._session.get = lambda *_a, **_kw: type(  # type: ignore[assignment]
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "json": staticmethod(
+                    lambda: {
+                        "length": 3,
+                        "contents": {
+                            "items": [
+                                {"uri": "spotify:track:a"},
+                                {"uri": "spotify:track:b"},
+                                {"uri": "spotify:track:c"},
+                            ]
+                        },
+                    }
+                ),
+            },
+        )()
+        # Every fetch raises - simulates a region-locked or 429 storm.
+        api._fetch_track_metadata = lambda _tid: (_ for _ in ()).throw(  # type: ignore[assignment]
+            RuntimeError("boom")
+        )
+
+        tracks = list(api.iter_playlist_tracks("PL", content_type="playlist"))
+        # All three should still come back, fallback-shaped, with correct
+        # positions matching the spclient ordering.
+        by_id = {t.id: t for t in tracks}
+        assert set(by_id) == {"a", "b", "c"}
+        assert by_id["a"].position == 1
+        assert by_id["b"].position == 2
+        assert by_id["c"].position == 3
+        assert by_id["a"].title == "Track a"
+        assert by_id["a"].artists == "Unknown Artist"
+
     def test_album_iteration_tags_album_name_and_skips_spclient(self):
         """Album iteration uses the album embed URL, tags every track with the
         album name, and never invokes the playlist-only spclient fallback."""
