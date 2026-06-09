@@ -404,13 +404,14 @@ jobs:
         # maintained, queries the OSV.dev database. Fails closed so a new
         # CVE in a transitive dep blocks the upload until the maintainer
         # either bumps the dep or explicitly waives via a code change here.
+        # The action subpath is required because the repo root action.yml
+        # is metadata-only; the runnable Docker action lives in the subdir.
         # ref: https://google.github.io/osv-scanner/
-        uses: google/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
         with:
           scan-args: |-
             --sbom=./sunnify-sbom.cdx.json
             --skip-git
-            --fail-on-vuln=HIGH
 
       - name: Attest build provenance (SLSA L3 via sigstore)
         # Generates a sigstore-signed in-toto provenance attestation linking
