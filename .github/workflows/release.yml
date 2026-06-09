@@ -557,7 +557,7 @@ jobs:
               f'- [build provenance for the binaries (Win / Linux / macOS)]({os.environ["BIN_URL"]})\n'
               f'- [sbom attestation for the binaries]({os.environ["SBOM_URL"]})\n'
               f'- [build provenance for the source tarball]({os.environ["SRC_URL"]})\n\n'
-              'these get auto-refreshed on every release re-build, so the IDs above always correspond to the binaries currently attached above.\n'
+              'these get auto-refreshed on every release re-build, so the links above always correspond to the binaries currently attached to this release.\n'
               f'{end_marker}'
           )
           # Strip prior marker block (idempotent)
