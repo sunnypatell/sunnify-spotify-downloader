@@ -1729,3 +1729,63 @@ class TestTrackNumberInFilename:
         # And load_config returns a defaults dict; sanity-check the bool key
         cfg = load_config()
         assert isinstance(cfg["include_track_number"], bool)
+
+
+class TestSettingsDialog:
+    """Construction tests for the Settings dialog.
+
+    These exist because the dialog mixes QHBoxLayout (download-folder row)
+    with QWidget (the rest), and a single forgotten `addLayout` vs
+    `addWidget` dispatch crashes on open. Headless construction is enough
+    to catch the regression class because QFormLayout / QVBoxLayout do
+    their type-checking at addRow/addWidget time.
+    """
+
+    def test_opens_with_default_config(self, qapp):
+        from Spotify_Downloader import SettingsDialog
+
+        # Same shape as load_config()'s defaults dict.
+        cfg = {
+            "download_path": None,
+            "format": "mp3",
+            "quality": "192",
+            "include_track_number": False,
+        }
+        dlg = SettingsDialog(None, cfg)
+        # If construction got past the layout assembly, the bug class
+        # (QHBoxLayout passed to addWidget) cannot fire.
+        assert dlg.sizeHint().width() > 0
+
+    def test_opens_with_track_number_on_and_lossless_format(self, qapp):
+        """Cover the cells the default-config test doesn't hit: every combo
+        of the on/off track-number toggle x lossy/lossless format gets a
+        slightly different rendering pass (the lossless branch disables
+        the bitrate combo)."""
+        from Spotify_Downloader import SettingsDialog
+
+        for cfg in (
+            {"download_path": "/tmp", "format": "flac", "quality": "320", "include_track_number": True},
+            {"download_path": "/tmp", "format": "wav", "quality": "256", "include_track_number": False},
+            {"download_path": "/tmp", "format": "m4a", "quality": "128", "include_track_number": True},
+            {"download_path": "/tmp", "format": "opus", "quality": "192", "include_track_number": False},
+        ):
+            dlg = SettingsDialog(None, cfg)
+            assert dlg.sizeHint().width() > 0, f"size hint should be positive for {cfg}"
+
+    def test_result_config_round_trips_every_key(self, qapp):
+        """The dialog's result_config() must return every key load_config()
+        produced, so saving doesn't drop the new include_track_number key."""
+        from Spotify_Downloader import SettingsDialog
+
+        cfg = {
+            "download_path": "/tmp/sunnify-music",
+            "format": "m4a",
+            "quality": "256",
+            "include_track_number": True,
+        }
+        dlg = SettingsDialog(None, cfg)
+        out = dlg.result_config()
+        assert out["format"] == "m4a"
+        assert out["quality"] == "256"
+        assert out["include_track_number"] is True
+        assert out["download_path"] == "/tmp/sunnify-music"

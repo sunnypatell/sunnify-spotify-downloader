@@ -1126,7 +1126,7 @@ class SettingsDialog(QDialog):
         self.resize(620, self.sizeHint().height())
         self._config = dict(config)
 
-        from PyQt5.QtWidgets import QLineEdit
+        from PyQt5.QtWidgets import QLabel, QLineEdit
 
         # QLineEdit (read-only) handles arbitrarily long paths cleanly: it
         # elides mid-path with horizontal scroll on focus, rather than
@@ -1161,18 +1161,93 @@ class SettingsDialog(QDialog):
         self._include_track_number_cb = QCheckBox()
         self._include_track_number_cb.setChecked(self._config.get("include_track_number", False))
 
-        form = QFormLayout()
-        form.addRow("Download folder:", folder_row)
-        form.addRow("Audio format:", self._format_cb)
-        form.addRow("Audio quality:", self._quality_cb)
-        form.addRow("Track number in filename:", self._include_track_number_cb)
+        # Per-setting QVBoxLayout block: each setting is a self-contained
+        # vertical mini-layout owning its own height. QFormLayout was tried
+        # earlier and wrapping hint labels got clipped because the row height
+        # was computed from the (empty) label column rather than from the
+        # word-wrapped value column. Owning the height per-block via QFrame
+        # + QVBoxLayout + Preferred size policy lets each hint expand to
+        # however many lines its text needs at the dialog's current width.
+        from PyQt5.QtWidgets import QFrame, QSizePolicy
+
+        LABEL_W = 200  # right-aligned setting names sit in this column width
+
+        def _setting_block(label_text: str, control, hint_text: str) -> QFrame:
+            container = QFrame()
+            box = QVBoxLayout(container)
+            box.setSpacing(4)
+            box.setContentsMargins(0, 0, 0, 12)  # visual gap between settings
+
+            # Top row: label + control side-by-side, label fixed-width so all
+            # the controls in different blocks line up vertically.
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            row.setContentsMargins(0, 0, 0, 0)
+            name = QLabel(label_text)
+            name.setMinimumWidth(LABEL_W)
+            name.setMaximumWidth(LABEL_W)
+            name.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            row.addWidget(name)
+            if isinstance(control, QHBoxLayout):
+                row.addLayout(control, 1)
+            else:
+                row.addWidget(control, 1)
+            box.addLayout(row)
+
+            # Hint below, indented to start under the control column so it
+            # visually associates with the control rather than the label.
+            if hint_text:
+                hint = QLabel(hint_text)
+                hint.setWordWrap(True)
+                # rgba white works on both the dark gradient the app ships
+                # with and any future light theme, without hardcoding a
+                # gray that disappears on either.
+                hint.setStyleSheet(
+                    "color: rgba(255, 255, 255, 0.65); font-size: 11px;"
+                )
+                hint.setContentsMargins(LABEL_W + 12, 2, 4, 0)
+                hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                box.addWidget(hint)
+            return container
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
+        layout.setSpacing(0)
+        layout.addWidget(
+            _setting_block(
+                "Download folder:",
+                folder_row,
+                "Each playlist or album becomes its own folder inside this directory.",
+            )
+        )
+        layout.addWidget(
+            _setting_block(
+                "Audio format:",
+                self._format_cb,
+                "mp3 plays everywhere. m4a is smaller at the same quality. "
+                "flac and wav are lossless (much larger files).",
+            )
+        )
+        layout.addWidget(
+            _setting_block(
+                "Audio quality:",
+                self._quality_cb,
+                "Applies to lossy formats only (mp3, m4a, opus). "
+                "320 kbps is the highest quality these formats support.",
+            )
+        )
+        layout.addWidget(
+            _setting_block(
+                "Track number in filename:",
+                self._include_track_number_cb,
+                'Off → "Song - Artist.mp3".   On → "01. Song - Artist.mp3".   '
+                "Files sort in playlist order in your file manager.",
+            )
+        )
+        layout.addStretch(1)
         layout.addWidget(btns)
 
     def _choose_folder(self):

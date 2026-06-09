@@ -2,7 +2,36 @@
 
 from __future__ import annotations
 
-import pytest  # noqa: F401
+# Force the offscreen Qt platform BEFORE any test imports PyQt5. Tests that
+# construct QApplication / QDialog without this hit the cocoa qFatal path on
+# headless CI and the macOS pytest run alike; conftest.py is collected before
+# the test modules so this env var is set in time.
+# Hard-assign (not setdefault) because the developer's environment may have
+# QT_QPA_PLATFORM exported for a different reason; tests need offscreen
+# regardless.
+import os
+
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
+import pytest  # noqa: F401, E402
+
+
+# Module-scoped QApplication so every Qt test in the session reuses one
+# instance. PyQt5 + macOS gets unhappy if QApplication is constructed
+# multiple times in the same process, and the cocoa platform's
+# QWidgetPrivate constructor will qFatal on what looks like a half-shutdown
+# Qt state. Providing a single managed instance side-steps that whole
+# class of pytest-Qt interaction bugs.
+@pytest.fixture(scope="session")
+def qapp():
+    from PyQt5.QtWidgets import QApplication
+
+    instance = QApplication.instance()
+    if instance is None:
+        instance = QApplication([])
+    yield instance
+    # Don't quit() on teardown - Python is about to exit anyway and quitting
+    # mid-test cleanup can race with widget destruction.
 
 # Sample Spotify embed page HTML with __NEXT_DATA__
 SAMPLE_EMBED_HTML = """
