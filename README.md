@@ -9,6 +9,12 @@
 
 <br/>
 
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/tests.yml/badge.svg?branch=main"></a>
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/codeql.yml/badge.svg?branch=main"></a>
+<a href="SECURITY.md#release-integrity"><img alt="SLSA L3" src="https://img.shields.io/badge/SLSA-L3-3D7BFF?logo=securityscorecard&logoColor=white"></a>
+
+<br/>
+
 <img src="./app.png" alt="Sunnify" height="96" />
 
 <p><em>🎧 Download entire Spotify playlists to local MP3s with embedded artwork and tags. Desktop app, Python core, and a full web stack in one repo.</em></p>

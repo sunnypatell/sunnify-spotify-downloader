@@ -73,13 +73,22 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Cache FFmpeg archive
+        id: ffmpeg-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ffmpeg-cache
+          # Cache is invalidated automatically the moment any env var
+          # in the key changes - so a version bump auto-busts the cache.
+          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
 
       - name: Download and verify FFmpeg
         shell: bash
@@ -92,14 +101,20 @@ jobs:
           BUILD="${{ env.FFMPEG_BTBN_BUILD }}"
           EXPECTED="${{ env.FFMPEG_WIN_SHA256 }}"
           URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/ffmpeg-${BUILD}-win64-gpl.zip"
-          echo "Downloading ${URL}"
-          curl -fL -o ffmpeg.zip "$URL"
-          echo "${EXPECTED}  ffmpeg.zip" | sha256sum -c -
-          unzip -q ffmpeg.zip
+          mkdir -p ffmpeg-cache
+          if [ -f "ffmpeg-cache/ffmpeg.zip" ]; then
+            echo "Using cached download"
+          else
+            echo "Downloading ${URL}"
+            curl -fL -o ffmpeg-cache/ffmpeg.zip "$URL"
+          fi
+          # Verify EVERY run, cache hit or miss - cache cannot bypass the SHA gate.
+          echo "${EXPECTED}  ffmpeg-cache/ffmpeg.zip" | sha256sum -c -
+          unzip -q ffmpeg-cache/ffmpeg.zip
           mkdir -p ffmpeg
           cp "ffmpeg-${BUILD}-win64-gpl/bin/ffmpeg.exe" ffmpeg/
           cp "ffmpeg-${BUILD}-win64-gpl/bin/ffprobe.exe" ffmpeg/
-          rm -rf "ffmpeg-${BUILD}-win64-gpl" ffmpeg.zip
+          rm -rf "ffmpeg-${BUILD}-win64-gpl"
           ls -la ffmpeg/
 
       - name: Install dependencies
@@ -125,7 +140,7 @@ jobs:
           echo "Sunnify-Windows.exe verified: $((size / 1048576)) MB"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-build
           path: dist/Sunnify-Windows.exe
@@ -138,10 +153,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
           cache: "pip"
@@ -161,6 +176,13 @@ jobs:
             libxcb-render-util0 \
             libxcb-shape0
 
+      - name: Cache FFmpeg archive
+        id: ffmpeg-cache-linux
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ffmpeg-cache
+          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
+
       - name: Download and verify FFmpeg
         run: |
           set -euo pipefail
@@ -168,15 +190,20 @@ jobs:
           BUILD="${{ env.FFMPEG_BTBN_BUILD }}"
           EXPECTED="${{ env.FFMPEG_LINUX_SHA256 }}"
           URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/ffmpeg-${BUILD}-linux64-gpl.tar.xz"
-          echo "Downloading ${URL}"
-          curl -fL -o ffmpeg.tar.xz "$URL"
-          echo "${EXPECTED}  ffmpeg.tar.xz" | sha256sum -c -
-          tar -xf ffmpeg.tar.xz
+          mkdir -p ffmpeg-cache
+          if [ -f "ffmpeg-cache/ffmpeg.tar.xz" ]; then
+            echo "Using cached download"
+          else
+            echo "Downloading ${URL}"
+            curl -fL -o ffmpeg-cache/ffmpeg.tar.xz "$URL"
+          fi
+          echo "${EXPECTED}  ffmpeg-cache/ffmpeg.tar.xz" | sha256sum -c -
+          tar -xf ffmpeg-cache/ffmpeg.tar.xz
           mkdir -p ffmpeg
           cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffmpeg" ffmpeg/
           cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffprobe" ffmpeg/
           chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
-          rm -rf "ffmpeg-${BUILD}-linux64-gpl" ffmpeg.tar.xz
+          rm -rf "ffmpeg-${BUILD}-linux64-gpl"
           ls -la ffmpeg/
 
       - name: Install dependencies
@@ -201,7 +228,7 @@ jobs:
           echo "Sunnify-Linux verified: $((size / 1048576)) MB"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-build
           path: dist/Sunnify-Linux
@@ -214,13 +241,29 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
           cache: "pip"
+
+      - name: Cache FFmpeg archive
+        id: ffmpeg-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ffmpeg-cache
+          # Cache is invalidated automatically the moment any env var
+          # in the key changes - so a version bump auto-busts the cache.
+          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
+
+      - name: Cache FFmpeg archive
+        id: ffmpeg-cache-mac
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ffmpeg-cache
+          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
 
       - name: Download and verify FFmpeg
         run: |
@@ -228,19 +271,22 @@ jobs:
           VERSION="${{ env.FFMPEG_MAC_VERSION }}"
           EXP_FF="${{ env.FFMPEG_MAC_FFMPEG_SHA256 }}"
           EXP_FP="${{ env.FFMPEG_MAC_FFPROBE_SHA256 }}"
-
-          curl -fL -o ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
-          shasum -a 256 -c <(echo "${EXP_FF}  ffmpeg.zip")
-          curl -fL -o ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
-          shasum -a 256 -c <(echo "${EXP_FP}  ffprobe.zip")
-
-          unzip -o ffmpeg.zip -d ffmpeg-temp
-          unzip -o ffprobe.zip -d ffmpeg-temp
+          mkdir -p ffmpeg-cache
+          if [ ! -f "ffmpeg-cache/ffmpeg.zip" ]; then
+            curl -fL -o ffmpeg-cache/ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
+          fi
+          if [ ! -f "ffmpeg-cache/ffprobe.zip" ]; then
+            curl -fL -o ffmpeg-cache/ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
+          fi
+          shasum -a 256 -c <(echo "${EXP_FF}  ffmpeg-cache/ffmpeg.zip")
+          shasum -a 256 -c <(echo "${EXP_FP}  ffmpeg-cache/ffprobe.zip")
+          unzip -o ffmpeg-cache/ffmpeg.zip -d ffmpeg-temp
+          unzip -o ffmpeg-cache/ffprobe.zip -d ffmpeg-temp
           mkdir -p ffmpeg
           mv ffmpeg-temp/ffmpeg ffmpeg/
           mv ffmpeg-temp/ffprobe ffmpeg/
           chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
-          rm -rf ffmpeg-temp ffmpeg.zip ffprobe.zip
+          rm -rf ffmpeg-temp
           ls -la ffmpeg/
 
       - name: Install dependencies
@@ -272,7 +318,7 @@ jobs:
           echo "Sunnify-macOS.zip verified: $((size / 1048576)) MB"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-build
           path: dist/Sunnify-macOS.zip
@@ -292,12 +338,12 @@ jobs:
         # Needed both for syft (req.txt + source tree) and for the source
         # tarball we attest below. Pinning to the tag is what makes the
         # source tarball deterministic per release.
-        uses: actions/checkout@v4
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
           ref: ${{ github.event.inputs.tag }}
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: ./artifacts
 
@@ -443,7 +489,7 @@ jobs:
           done
 
       - name: Upload assets to release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ github.event.inputs.tag }}
           # If dry_run, keep the release as a draft so it isn't user-visible.
@@ -456,6 +502,38 @@ jobs:
             sunnify-sbom.cdx.json
             sunnify-${{ github.event.inputs.tag }}-source.tar.gz
             checksums.txt
+
+      - name: Workflow summary
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## ${TAG} release - summary"
+            echo ""
+            if [ "$DRY" = "true" ]; then
+              echo "**DRY-RUN**: release marked as draft, Homebrew cask job skipped."
+              echo ""
+            fi
+            echo "### Assets uploaded"
+            echo ""
+            echo '```'
+            cat checksums.txt
+            echo '```'
+            echo ""
+            echo "### Attestations published"
+            echo ""
+            echo "Verify any binary against this release:"
+            echo ""
+            echo '```bash'
+            echo "gh attestation verify Sunnify-Linux \\"
+            echo "  --repo ${{ github.repository }}"
+            echo '```'
+            echo ""
+            echo "Predicate types signed (Sigstore via runner OIDC, Rekor log entry):"
+            echo "- \`https://slsa.dev/provenance/v1\` - build provenance for each binary + the source tarball"
+            echo "- \`https://cyclonedx.org/bom\` - SBOM attestation binding each binary to the SBOM"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   update-homebrew:
     name: Update Homebrew Cask
@@ -481,7 +559,7 @@ jobs:
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}

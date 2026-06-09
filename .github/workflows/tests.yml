@@ -15,8 +15,8 @@ permissions:
 
 jobs:
   python-tests:
-    name: Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Tests (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -26,12 +26,18 @@ jobs:
         # the load-bearing import that keeps PEP 604 unions (`X | None`)
         # working on 3.9; this matrix would catch a regression if anyone
         # removes it.
+        #
+        # We also fan across the three OSes we ship binaries for, so a
+        # platform-specific import or filesystem regression (e.g. case-
+        # sensitive paths only failing on Linux) lands on a red test
+        # before it lands on a user.
+        os: [ubuntu-latest, macos-14, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
