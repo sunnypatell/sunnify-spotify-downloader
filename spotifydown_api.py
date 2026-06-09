@@ -137,6 +137,13 @@ class SpotifyEmbedAPI:
         self._session = session or requests.Session()
         self._cached_token: str | None = None
         self._token_expiry: float = 0
+        # Per-instance album cache (track_id -> album name or None). FIFO-
+        # bounded at 256 entries. Used by `_fetch_track_album_from_page` so
+        # re-downloading the same track in one session does not re-hit
+        # Spotify's HTML page. Plain dict instead of @functools.lru_cache
+        # because the lru_cache decorator on a method keeps self alive for
+        # the lifetime of the process (B019).
+        self._album_cache: dict[str, str | None] = {}
 
     @staticmethod
     def _deep_find(data: dict, key: str, max_depth: int = 6) -> dict | None:
@@ -519,37 +526,83 @@ class SpotifyEmbedAPI:
             raw=dict(track),
         )
 
+    # og:description on Spotify's social-share page is the canonical source
+    # of album name for a single track. The /embed/track/{id} JSON does not
+    # carry an album field (verified empirically across diverse tracks) and
+    # the oEmbed endpoint only returns title + thumbnail. Format is
+    # `Artist · Album · Song · Year` separated by U+00B7. Used for SEO and
+    # rich-link previews on Twitter/Discord/iMessage, so it has strong
+    # incentive against breakage and has been stable for years.
+    #
+    # Regex uses a lookahead so it matches both attribute orders
+    # (`property=... content=...` and `content=... property=...`); HTML
+    # attribute order is not guaranteed by the spec and Spotify could
+    # silently reorder.
+    _OG_DESCRIPTION_RE = re.compile(
+        r'<meta\s+(?=[^>]*\bproperty="og:description")[^>]*\bcontent="([^"]*)"',
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def _parse_og_description_album(html: str) -> str | None:
-        """Extract album name from og:description on a Spotify track page"""
-        m = re.search(
-            r'<meta\s+[^>]*property="og:description"[^>]*content="([^"]*)"',
-            html,
-        )
-        if not m:
-            return None
-        parts = m.group(1).split(" · ")
-        # probably [artist, album, "Song", year] fingers crossed
-        if len(parts) >= 2:
-            return parts[1].strip()
-        return None
+        """Extract the album name from a Spotify track page's og:description.
 
-    _OG_HEADERS = {
-        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "accept-language": "en-US,en;q=0.9",
-        "user-agent": "Mozilla/5.0",
-    }
+        Returns None for missing tag, malformed format, or empty-after-strip.
+        Decodes HTML entities so titles like "Tom &amp; Jerry" come through
+        as "Tom & Jerry" before they hit the ID3 writer.
+        """
+        import html as _html_module
+
+        match = SpotifyEmbedAPI._OG_DESCRIPTION_RE.search(html)
+        if not match:
+            return None
+        parts = _html_module.unescape(match.group(1)).split(" · ")
+        if len(parts) < 2:
+            return None
+        album = parts[1].strip()
+        return album or None
 
     def _fetch_track_album_from_page(self, track_id: str) -> str | None:
-        """Fetch album name from the regular Spotify track page via OG tags!!!"""
-        url = self._TRACK_PAGE_URL.format(track_id=track_id)
+        """Fetch album name from the regular Spotify track page via og:description.
+
+        Cached per instance so a re-download of the same track in one
+        session doesn't re-pay the HTTP cost. Wraps the HTTP call in the
+        same retry/backoff `_fetch_embed_data` uses so transient network
+        errors don't silently drop the album tag for that track.
+        """
+        if track_id in self._album_cache:
+            return self._album_cache[track_id]
+
+        @retry_on_network_error(
+            max_attempts=3,
+            backoff_factor=1.0,
+            exceptions=(NetworkError, requests.Timeout, requests.ConnectionError),
+        )
+        def _go() -> str | None:
+            url = self._TRACK_PAGE_URL.format(track_id=track_id)
+            try:
+                resp = self._session.get(url, headers=self._headers(), timeout=15)
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                raise NetworkError(f"Network error fetching track page: {exc}") from exc
+            except requests.RequestException:
+                return None
+            if resp.status_code != 200:
+                return None
+            return self._parse_og_description_album(resp.text)
+
         try:
-            resp = self._session.get(url, headers=self._OG_HEADERS, timeout=15)
-            if resp.status_code == 200:
-                return self._parse_og_description_album(resp.text)
-        except requests.RequestException:
-            pass
-        return None
+            album = _go()
+        except NetworkError:
+            # Out of retry budget; treat as no album for this track but
+            # don't cache the failure (next session can try again).
+            return None
+        # Simple bound; evict oldest if we hit capacity. lru would be nicer
+        # but dict insertion order + popitem(last=False) gives FIFO which
+        # is plenty for a per-session deduplication cache.
+        if len(self._album_cache) >= 256:
+            self._album_cache.pop(next(iter(self._album_cache)))
+        self._album_cache[track_id] = album
+        return album
 
     def _fetch_track_metadata(self, track_id: str) -> TrackInfo | None:
         """Fetch metadata for a single track from its embed page."""
@@ -595,11 +648,11 @@ class SpotifyEmbedAPI:
         elif isinstance(rd, str):
             release_date = rd
 
-        album = None
-        if isinstance(entity.get("album"), dict):
-            album = entity["album"].get("name")
-        if not album:
-            album = self._fetch_track_album_from_page(track_id)
+        # The embed JSON for a single track has never included album
+        # (verified empirically across all currently-tested tracks); fall
+        # straight to the og:description scrape with no need for the
+        # `if entity.get("album")` branch that was sitting here dead.
+        album = self._fetch_track_album_from_page(track_id)
 
         return TrackInfo(
             id=track_id,
@@ -910,4 +963,3 @@ __all__ = [
     "extract_track_id",
     "sanitize_filename",
 ]
- 
