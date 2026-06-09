@@ -385,6 +385,147 @@ class TestYoutubeMatchSelection:
             ctx.stop()
         assert url is None
 
+    def test_rejects_wrong_song_by_right_artist_close_duration(self):
+        """The Mi Gente / Mi Chico failure mode (closes #52).
+
+        Spotify says `Mi Gente` by `DJ Goja` is 114.8s. YouTube's top hit
+        for that search is `Dj Goja - Mi Chico` at 117s - same artist,
+        almost identical duration, completely different song. The prior
+        duration-only matcher trusted the top hit and shipped Mi Chico
+        audio under Mi Gente metadata. With title-and-artist matching,
+        Mi Chico fails the title test, no other candidate has both `Mi
+        Gente` AND `DJ Goja` in its YouTube title, so we return None and
+        the user gets a clear `not found` instead of wrong audio.
+        """
+        entries = [
+            {"id": "michico", "duration": 117, "title": "Dj Goja - Mi Chico (Official Video)"},
+            {"id": "remix", "duration": 126, "title": "Mi Gente Remix by SkywiinPROD"},
+            {"id": "balvin", "duration": 192, "title": "J Balvin Mi Gente (Bass Boost)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Mi Gente DJ Goja audio",
+                expected_duration_s=114.8,
+                expected_title="Mi Gente",
+                expected_artists="DJ Goja",
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_picks_artist_and_title_match_over_artist_only(self):
+        """Given the title-match passes for several candidates, prefer the
+        one that also has the artist in the YouTube title."""
+        entries = [
+            {"id": "remix", "duration": 200, "title": "Blinding Lights Remix (by SomeoneElse)"},
+            {"id": "right", "duration": 200, "title": "The Weeknd - Blinding Lights (Official)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Blinding Lights The Weeknd audio",
+                expected_duration_s=200,
+                expected_title="Blinding Lights",
+                expected_artists="The Weeknd",
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=right"
+
+    def test_youtube_artist_song_format_doesnt_get_split(self):
+        """Regression for an intermediate bug: an early variant-strip in
+        the normalizer split `The Weeknd - Blinding Lights` into just
+        `The Weeknd` and lost the song name, killing every legitimate
+        match. The fix only strips variants from the Spotify side.
+        """
+        entries = [
+            {"id": "yt", "duration": 200, "title": "The Weeknd - Blinding Lights (Official Audio)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Blinding Lights The Weeknd audio",
+                expected_duration_s=200,
+                expected_title="Blinding Lights",
+                expected_artists="The Weeknd",
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=yt"
+
+    def test_strips_spotify_variant_suffix(self):
+        """Spotify ` - Remastered YYYY` / ` - Live` / etc. shouldn't keep
+        legitimate YouTube uploads from matching."""
+        entries = [
+            {"id": "queen", "duration": 354, "title": "Queen - Bohemian Rhapsody (Official Video)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Bohemian Rhapsody Queen audio",
+                expected_duration_s=354,
+                expected_title="Bohemian Rhapsody - Remastered 2011",
+                expected_artists="Queen",
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=queen"
+
+    def test_rejects_when_only_match_has_wildly_wrong_duration(self):
+        """Even when title+artist both match, a candidate that's >30s off
+        the Spotify duration is almost certainly a live cover or extended
+        edit; shipping it would still corrupt the user's library."""
+        entries = [
+            {"id": "live", "duration": 500, "title": "Queen - Bohemian Rhapsody (Live Aid 1985)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Bohemian Rhapsody Queen audio",
+                expected_duration_s=354,
+                expected_title="Bohemian Rhapsody",
+                expected_artists="Queen",
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_handles_collaboration_artists_via_any_match(self):
+        """For tracks with multiple artists (Spotify `Artist A, Artist B`),
+        ANY of the artists appearing in the YouTube title is sufficient
+        - YouTube uploads often credit only the primary artist in the title."""
+        entries = [
+            {"id": "fonsi", "duration": 228, "title": "Luis Fonsi - Despacito (Audio)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Despacito Luis Fonsi audio",
+                expected_duration_s=228,
+                expected_title="Despacito",
+                expected_artists="Luis Fonsi, Daddy Yankee",
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=fonsi"
+
+    def test_normalize_strips_apostrophes_without_creating_word_breaks(self):
+        """`I'm Yours` -> `im yours` (not `i m yours`) so it matches a YT
+        upload titled `Jason Mraz - I'm Yours`."""
+        from Spotify_Downloader import MusicScraper
+
+        assert MusicScraper._normalize_title("I'm Yours") == "im yours"
+        assert MusicScraper._normalize_title("Don't Stop Me Now") == "dont stop me now"
+
+    def test_normalize_strips_diacritics(self):
+        """Café -> cafe (NFKD); MONTAGEM BAILÃO -> montagem bailao."""
+        from Spotify_Downloader import MusicScraper
+
+        assert MusicScraper._normalize_title("Café") == "cafe"
+        assert MusicScraper._normalize_title("MONTAGEM BAILÃO") == "montagem bailao"
+        assert MusicScraper._normalize_title("Beyoncé") == "beyonce"
+
 
 class TestDetectImageMime:
     """Tests for _detect_image_mime image-format sniffing (closes #46).

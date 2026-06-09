@@ -46,7 +46,6 @@ from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
-    QFormLayout,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QMainWindow,
@@ -316,17 +315,110 @@ class MusicScraper(QThread):
     # filename is right. Matching on duration steers us to the real audio.
     _DURATION_TOLERANCE_S = 7
 
-    def _select_youtube_match(self, search_query, expected_duration_s):
+    # Wider tolerance for the title-and-duration combined check: if a candidate
+    # has the right title but its duration is wildly off (>30s), it's almost
+    # certainly a remix / live / extended edit of the right song rather than
+    # the original. Better to fail loudly than ship something that fades out
+    # in the wrong place.
+    _DURATION_TOLERANCE_S_WIDE = 30
+
+    @staticmethod
+    def _normalize_title(s: str | None) -> str:
+        """Lowercase, strip diacritics, drop bracketed segments + `feat./ft.`
+        tails, collapse to alphanumerics + spaces. Used on BOTH sides of
+        title comparison.
+
+        Critically: this does NOT split on ` - ` because YouTube titles
+        commonly use the `Artist - Song` convention; splitting would turn
+        "The Weeknd - Blinding Lights" into just "The Weeknd" and lose the
+        song name. Spotify-side variant stripping (`Title - Remastered`)
+        is handled separately in `_spotify_title_core`.
+        """
+        if not s:
+            return ""
+        import unicodedata
+
+        # NFKD + drop combining marks: "Café" -> "Cafe"
+        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+        s = s.lower()
+        s = re.sub(r"\([^)]*\)", " ", s)  # "Hello (Remix)" -> "Hello "
+        s = re.sub(r"\[[^\]]*\]", " ", s)  # "Hello [Edit]" -> "Hello "
+        s = re.sub(r"\b(feat\.?|ft\.?)\s+.*$", "", s, flags=re.IGNORECASE)
+        # Strip apostrophes BEFORE the general punctuation->space step so
+        # "I'm" becomes "im" not "i m".
+        s = s.replace("'", "").replace("’", "")
+        s = re.sub(r"[^a-z0-9\s]", " ", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    @staticmethod
+    def _spotify_title_core(s: str | None) -> str:
+        """Drop the ` - Variant` suffix Spotify adds to differentiate releases.
+
+        Examples:
+            "Bohemian Rhapsody - Remastered 2011" -> "Bohemian Rhapsody"
+            "Hello - Live"                        -> "Hello"
+            "Sweet Disposition - Remix Edit"      -> "Sweet Disposition"
+            "Take-Off"                            -> "Take-Off" (literal hyphen, no spaces)
+            "Mi Gente"                            -> "Mi Gente"
+
+        Only applied to the Spotify-side title before fuzzy comparison so
+        a YouTube upload titled just "Bohemian Rhapsody" still matches.
+        Don't apply this to YouTube titles - they use ` - ` for
+        `Artist - Song` and the strip would lose the song name.
+        """
+        if not s:
+            return ""
+        return s.split(" - ", 1)[0]
+
+    @classmethod
+    def _title_plausibly_matches(cls, yt_title: str | None, expected_title: str | None) -> bool:
+        """True when the YouTube candidate's title could reasonably be the
+        Spotify track. The Spotify side gets its variant suffix dropped
+        first so "Hello - Live" matches a plain "Hello" upload; the YouTube
+        side is normalized as-is (its ` - ` is usually `Artist - Song`).
+        Substring match for titles >= 4 chars, word-boundary match for
+        shorter ones (so a single-letter song name like "i" doesn't match
+        every YouTube video)."""
+        yt = cls._normalize_title(yt_title)
+        target = cls._normalize_title(cls._spotify_title_core(expected_title))
+        if not target or not yt:
+            return False
+        if len(target) >= 4:
+            return target in yt
+        return target in yt.split()
+
+    def _select_youtube_match(
+        self, search_query, expected_duration_s, expected_title=None, expected_artists=None
+    ):
         """Return the best YouTube watch URL for a search, or None.
 
-        Flat-searches the query (fast, metadata only). The top hit is trusted
-        by default (YouTube's relevance ranking is usually right), so behavior
-        matches earlier versions for the common case. We only override it when
-        its length is clearly off from the Spotify track (the music-video /
-        extended-edit case), and then we pick the closest-length candidate.
-        This avoids second-guessing a correct top result and accidentally
-        preferring a same-length-but-wrong edit (sped-up, nightcore, remix).
-        Skips entries with no usable id.
+        Selection policy (closes #52):
+          1. Filter to candidates whose title plausibly matches the Spotify
+             track title (substring / word match on a normalized form).
+             Rules out the failure mode where YouTube's top hit is a
+             DIFFERENT track by the SAME artist with a similar duration -
+             e.g. searching "Mi Gente DJ Goja audio" returns "Dj Goja -
+             Mi Chico" at the top, only ~2s off the real Mi Gente, and the
+             prior pure-duration matcher would happily pick it and write
+             Mi Gente metadata onto Mi Chico audio.
+          2. Prefer the subset that ALSO has an artist plausibly appearing
+             in the YouTube title. Falls back to the title-only pool if no
+             candidate matches both - artist isn't always in the YouTube
+             title for legitimate uploads.
+          3. Among the resulting pool, pick the duration-closest if duration
+             is known, but reject the whole result if even the best
+             candidate's duration is >30s off the Spotify track - that means
+             the closest title-matching upload is a remix / live cover /
+             extended edit, and shipping a 5-minute remix under a 2-minute
+             track's metadata still corrupts the library.
+          4. If no candidate's title passes, return None. The caller treats
+             that as "not found on YouTube" - strictly better than shipping
+             the wrong audio under the right cover.
+
+        `expected_title` + `expected_artists` are optional so legacy callers
+        that haven't been updated still work via the older trust-the-top-
+        hit-unless-duration-is-clearly-off policy.
         """
         select_opts = {
             "quiet": True,
@@ -347,20 +439,85 @@ class MusicScraper(QThread):
         if not entries:
             return None
 
+        if expected_title:
+            title_ok = [
+                e for e in entries if self._title_plausibly_matches(e.get("title"), expected_title)
+            ]
+            if not title_ok:
+                return None
+
+            # When the artists are known, require at least one to appear in
+            # the YouTube title alongside the song name. This rejects
+            # "right-song-name, wrong-uploader's-remix" - e.g. Spotify's
+            # Mi Gente by DJ Goja vs YouTube's SkywiinPROD's Mi Gente Remix.
+            # User feedback (#52) was crystal clear: prefer not-found over
+            # wrong audio. Falls back to title-only matching when no
+            # expected_artists is given (legacy callers, single-track flows
+            # before the v2.0.9 wire-up).
+            pool = title_ok
+            if expected_artists:
+                # Split FIRST on collaboration separators (commas / ampersands
+                # / `feat`), then normalize each artist independently. Doing
+                # this in the other order loses commas during normalization
+                # (they become spaces) and collapses the whole multi-artist
+                # string into one token nobody would match.
+                raw_tokens = re.split(
+                    r"[,&]+|\s+(?:feat\.?|ft\.?)\s+",
+                    expected_artists,
+                    flags=re.IGNORECASE,
+                )
+                artist_tokens = [self._normalize_title(t) for t in raw_tokens]
+                artist_tokens = [t for t in artist_tokens if t]
+                if artist_tokens:
+                    pool = [
+                        e
+                        for e in title_ok
+                        if any(
+                            artist in self._normalize_title(e.get("title") or "")
+                            for artist in artist_tokens
+                        )
+                    ]
+                    if not pool:
+                        return None
+
+            chosen = pool[0]
+            if expected_duration_s:
+                timed = [e for e in pool if e.get("duration")]
+                if timed:
+                    chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
+                    # Even if title+artist both match, refuse a candidate
+                    # whose duration is wildly off the Spotify track - that
+                    # means it's a live cover / extended mix and shipping
+                    # it under the original's metadata still corrupts the
+                    # library.
+                    if (
+                        abs(chosen["duration"] - expected_duration_s)
+                        > self._DURATION_TOLERANCE_S_WIDE
+                    ):
+                        return None
+            return f"https://www.youtube.com/watch?v={chosen['id']}"
+
+        # Legacy path - kept for any caller that hasn't been updated yet.
         chosen = entries[0]
         if expected_duration_s:
             top_duration = chosen.get("duration")
             top_off = top_duration is None or (
                 abs(top_duration - expected_duration_s) > self._DURATION_TOLERANCE_S
             )
-            # Only look past the top hit when its length is clearly wrong.
             if top_off:
                 timed = [e for e in entries if e.get("duration")]
                 if timed:
                     chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
         return f"https://www.youtube.com/watch?v={chosen['id']}"
 
-    def download_track_audio(self, search_query, destination, expected_duration_s=None):
+    def download_track_audio(
+        self,
+        search_query,
+        destination,
+        expected_duration_s=None,
+        expected_title=None,
+        expected_artists=None,
+    ):
         # Check for FFmpeg first
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
@@ -409,7 +566,12 @@ class MusicScraper(QThread):
             queries.append(fallback)
 
         for query in queries:
-            video_url = self._select_youtube_match(query, expected_duration_s)
+            video_url = self._select_youtube_match(
+                query,
+                expected_duration_s,
+                expected_title=expected_title,
+                expected_artists=expected_artists,
+            )
             if not video_url:
                 continue
             try:
@@ -549,7 +711,11 @@ class MusicScraper(QThread):
             expected_dur = (track.duration_ms / 1000) if track.duration_ms else None
             try:
                 final_path = self.download_track_audio(
-                    search_query, filepath, expected_duration_s=expected_dur
+                    search_query,
+                    filepath,
+                    expected_duration_s=expected_dur,
+                    expected_title=track_title,
+                    expected_artists=artists,
                 )
             except Exception as error_status:
                 error_msg = self._get_user_friendly_error(error_status, track_title)
