@@ -8,6 +8,7 @@ import sys
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 
 
@@ -51,6 +52,11 @@ class TestGetFfmpegPath:
             result = get_ffmpeg_path()
             assert result == str(ffmpeg_dir)
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX path probe; os.path.join uses backslash on Windows so the "
+        "exists() mock keyed on '/opt/homebrew/bin/ffmpeg' never matches",
+    )
     def test_homebrew_ffmpeg(self, tmp_path):
         """Test homebrew FFmpeg detection."""
         from Spotify_Downloader import get_ffmpeg_path
@@ -70,6 +76,11 @@ class TestGetFfmpegPath:
             result = get_ffmpeg_path()
             assert result == "/opt/homebrew/bin"
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX path probe; os.path.join uses backslash on Windows so the "
+        "exists() mock keyed on '/usr/bin/ffmpeg' never matches",
+    )
     def test_system_ffmpeg_linux(self, tmp_path):
         """Test system FFmpeg detection on Linux."""
         from Spotify_Downloader import get_ffmpeg_path

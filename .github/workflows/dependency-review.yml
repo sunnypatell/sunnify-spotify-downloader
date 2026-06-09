@@ -1,0 +1,34 @@
+name: Dependency Review
+
+# PR-only check: refuses to merge a PR that introduces a dependency with
+# a known CVE. Does NOT email, does NOT open auto-PRs, does NOT run on push;
+# it just blocks unsafe diffs as a PR status check. (Distinct from Dependabot,
+# which is what generates the email storm and is intentionally disabled.)
+#
+# Action reference: https://github.com/actions/dependency-review-action
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: dep-review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write   # post a single inline review summary on the PR
+
+jobs:
+  review:
+    name: Review dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          # Comment a summary once per PR instead of stacking new ones.
+          comment-summary-in-pr: on-failure
