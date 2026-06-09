@@ -432,13 +432,16 @@ jobs:
         # "provenance" predicate above), so consumers can ask the supply-chain
         # question "what's IN this binary?" against the same chain of trust as
         # "where did this binary come from?".
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        # Using actions/attest directly with a CycloneDX predicate-type
+        # because actions/attest-sbom is now a deprecated wrapper.
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: |
             ./artifacts/windows-build/Sunnify-Windows.exe
             ./artifacts/linux-build/Sunnify-Linux
             ./artifacts/macos-build/Sunnify-macOS.zip
-          sbom-path: ./sunnify-sbom.cdx.json
+          predicate-type: "https://cyclonedx.org/bom/v1.5"
+          predicate-path: ./sunnify-sbom.cdx.json
 
       - name: Build + attest source tarball
         # Deterministic source tarball at the release commit. Lets consumers
