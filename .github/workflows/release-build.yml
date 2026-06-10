@@ -1,0 +1,320 @@
+# =============================================================================
+# Sunnify Release Build (reusable workflow)
+# =============================================================================
+# Builds ONE platform binary and attests its provenance, in isolation from the
+# calling workflow. This file existing as a separate `workflow_call` unit is
+# not cosmetic: GitHub's artifact attestations are SLSA Build L2 when the
+# attest step runs in a normal workflow, and Build L3 when the build + attest
+# steps run inside a reusable workflow, because the build instructions are
+# then isolated from (and not editable by) the caller's run.
+# ref: https://docs.github.com/actions/security-guides/using-artifact-attestations-and-reusable-workflows-to-achieve-slsa-v1-build-level-3
+#
+# Strict verification that a binary came from THIS builder:
+#   gh attestation verify Sunnify-Linux \
+#     --repo sunnypatell/sunnify-spotify-downloader \
+#     --signer-workflow sunnypatell/sunnify-spotify-downloader/.github/workflows/release-build.yml
+#
+# Called once per platform (windows / linux / macos) by release.yml. Each call
+# checks out the release TAG (not the dispatch ref), so the provenance binds
+# the binary to the tagged commit even if the workflow was dispatched from a
+# branch that has since moved.
+#
+# -----------------------------------------------------------------------------
+# Bumping the bundled FFmpeg (one of these every few months)
+# -----------------------------------------------------------------------------
+# Windows + Linux use BtbN/FFmpeg-Builds (released to GitHub). macOS uses
+# evermeet.cx (their stable versioned release). To bump:
+#   1. Pick a fresh BtbN autobuild from
+#      https://github.com/BtbN/FFmpeg-Builds/releases
+#      Update FFMPEG_BTBN_TAG + FFMPEG_BTBN_BUILD below.
+#   2. Pick the matching stable FFmpeg release from
+#      https://evermeet.cx/ffmpeg/
+#      Update FFMPEG_MAC_VERSION below.
+#   3. Compute SHA256s locally and update the four FFMPEG_*_SHA256 env vars:
+#        curl -fsL "<url>" | shasum -a 256
+# If a SHA mismatches at download time the build aborts before extraction, so
+# a CDN swap or a typo can never silently ship the wrong binary.
+# -----------------------------------------------------------------------------
+
+name: Release Build
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to build (checked out as the build ref)"
+        required: true
+        type: string
+      platform:
+        description: "One of: windows, linux, macos"
+        required: true
+        type: string
+      runner:
+        description: "runs-on label (windows-latest / ubuntu-latest / macos-14)"
+        required: true
+        type: string
+      asset:
+        description: "Final asset filename (e.g. Sunnify-Windows.exe)"
+        required: true
+        type: string
+
+env:
+  # BtbN (Windows + Linux): pinned autobuild
+  FFMPEG_BTBN_TAG: "autobuild-2026-06-08-14-24"
+  FFMPEG_BTBN_BUILD: "N-124881-g6028720d70"
+  FFMPEG_WIN_SHA256: "2cd538df51b0753547030dc997902606b13378df11db3866c81db7ca07fe7a54"
+  FFMPEG_LINUX_SHA256: "404a23515343c8c568a74ca39270879387d0ec92b9f52a44d416ecf7d9961230"
+  # evermeet.cx (macOS): pinned to FFmpeg release 8.1.1
+  FFMPEG_MAC_VERSION: "8.1.1"
+  FFMPEG_MAC_FFMPEG_SHA256: "4610988e2f54c243c50da73a09e4e2c36d9bb77546f9aa6c84cb328dcb1a98c1"
+  FFMPEG_MAC_FFPROBE_SHA256: "aeade29dee3c3844e9bcc974f4ae4b29cc4f87994177d77003a8589fa531009e"
+
+jobs:
+  build:
+    name: Build ${{ inputs.platform }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write       # request OIDC token for sigstore signing
+      attestations: write   # write the provenance attestation
+    steps:
+      - name: Harden runner (egress audit)
+        # Audit, not block, on purpose - see SECURITY.md.
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Validate platform input
+        shell: bash
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          case "$PLATFORM" in
+            windows|linux|macos) ;;
+            *) echo "Unknown platform: $PLATFORM"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-build.txt
+
+      - name: Cache FFmpeg archive
+        # Poisoning-safe: every restore is SHA256-verified below before use.
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ffmpeg-cache
+          # Cache is invalidated automatically the moment any env var
+          # in the key changes - so a version bump auto-busts the cache.
+          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
+
+      - name: Download and verify FFmpeg (Windows)
+        if: inputs.platform == 'windows'
+        shell: bash
+        # bash on windows-latest gets curl.exe; matches Linux/macOS exactly
+        # and gives us -fL fail-on-HTTP-error parity that Invoke-WebRequest
+        # silently lacks on -OutFile.
+        run: |
+          set -euo pipefail
+          TAG="${FFMPEG_BTBN_TAG}"
+          BUILD="${FFMPEG_BTBN_BUILD}"
+          EXPECTED="${FFMPEG_WIN_SHA256}"
+          URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/ffmpeg-${BUILD}-win64-gpl.zip"
+          mkdir -p ffmpeg-cache
+          if [ -f "ffmpeg-cache/ffmpeg.zip" ]; then
+            echo "Using cached download"
+          else
+            echo "Downloading ${URL}"
+            curl -fL -o ffmpeg-cache/ffmpeg.zip "$URL"
+          fi
+          # Verify EVERY run, cache hit or miss - cache cannot bypass the SHA gate.
+          echo "${EXPECTED}  ffmpeg-cache/ffmpeg.zip" | sha256sum -c -
+          unzip -q ffmpeg-cache/ffmpeg.zip
+          mkdir -p ffmpeg
+          cp "ffmpeg-${BUILD}-win64-gpl/bin/ffmpeg.exe" ffmpeg/
+          cp "ffmpeg-${BUILD}-win64-gpl/bin/ffprobe.exe" ffmpeg/
+          rm -rf "ffmpeg-${BUILD}-win64-gpl"
+          ls -la ffmpeg/
+
+      - name: Install system dependencies (Linux)
+        if: inputs.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb-xinerama0 \
+            libxcb-cursor0 \
+            libxkbcommon-x11-0 \
+            libegl1 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0
+
+      - name: Download and verify FFmpeg (Linux)
+        if: inputs.platform == 'linux'
+        run: |
+          set -euo pipefail
+          TAG="${FFMPEG_BTBN_TAG}"
+          BUILD="${FFMPEG_BTBN_BUILD}"
+          EXPECTED="${FFMPEG_LINUX_SHA256}"
+          URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/ffmpeg-${BUILD}-linux64-gpl.tar.xz"
+          mkdir -p ffmpeg-cache
+          if [ -f "ffmpeg-cache/ffmpeg.tar.xz" ]; then
+            echo "Using cached download"
+          else
+            echo "Downloading ${URL}"
+            curl -fL -o ffmpeg-cache/ffmpeg.tar.xz "$URL"
+          fi
+          echo "${EXPECTED}  ffmpeg-cache/ffmpeg.tar.xz" | sha256sum -c -
+          tar -xf ffmpeg-cache/ffmpeg.tar.xz
+          mkdir -p ffmpeg
+          cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffmpeg" ffmpeg/
+          cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffprobe" ffmpeg/
+          chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
+          rm -rf "ffmpeg-${BUILD}-linux64-gpl"
+          ls -la ffmpeg/
+
+      - name: Download and verify FFmpeg (macOS)
+        if: inputs.platform == 'macos'
+        run: |
+          set -euo pipefail
+          VERSION="${FFMPEG_MAC_VERSION}"
+          EXP_FF="${FFMPEG_MAC_FFMPEG_SHA256}"
+          EXP_FP="${FFMPEG_MAC_FFPROBE_SHA256}"
+          mkdir -p ffmpeg-cache
+          if [ ! -f "ffmpeg-cache/ffmpeg.zip" ]; then
+            curl -fL -o ffmpeg-cache/ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
+          fi
+          if [ ! -f "ffmpeg-cache/ffprobe.zip" ]; then
+            curl -fL -o ffmpeg-cache/ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
+          fi
+          shasum -a 256 -c <(echo "${EXP_FF}  ffmpeg-cache/ffmpeg.zip")
+          shasum -a 256 -c <(echo "${EXP_FP}  ffmpeg-cache/ffprobe.zip")
+          unzip -o ffmpeg-cache/ffmpeg.zip -d ffmpeg-temp
+          unzip -o ffmpeg-cache/ffprobe.zip -d ffmpeg-temp
+          mkdir -p ffmpeg
+          mv ffmpeg-temp/ffmpeg ffmpeg/
+          mv ffmpeg-temp/ffprobe ffmpeg/
+          chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
+          rm -rf ffmpeg-temp
+          ls -la ffmpeg/
+
+      - name: Install dependencies (hash-locked)
+        shell: bash
+        # Every wheel must match its lock hash; regen command is in
+        # requirements-build.in.
+        run: |
+          pip install --require-hashes -r requirements-build.txt
+
+      - name: Build with PyInstaller
+        shell: bash
+        # PYTHONHASHSEED + SOURCE_DATE_EPOCH: pyinstaller's documented
+        # determinism knobs. ref: https://pyinstaller.org/en/stable/advanced-topics.html
+        env:
+          PYTHONHASHSEED: "0"
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          pyinstaller Sunnify.spec
+
+      - name: Package + sanity-check (Windows)
+        if: inputs.platform == 'windows'
+        shell: bash
+        env:
+          ASSET: ${{ inputs.asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          mv dist/Sunnify.exe "out/${ASSET}"
+          size=$(stat -c %s "out/${ASSET}" 2>/dev/null || stat -f %z "out/${ASSET}")
+          # A real PyInstaller build with FFmpeg + PyQt5 is >100MB; anything
+          # under 50MB is a corrupt build that would just generate user reports.
+          if [ "$size" -lt 52428800 ]; then
+            echo "${ASSET} is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
+            exit 1
+          fi
+          echo "${ASSET} verified: $((size / 1048576)) MB"
+
+      - name: Package + sanity-check (Linux)
+        if: inputs.platform == 'linux'
+        env:
+          ASSET: ${{ inputs.asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          mv dist/Sunnify "out/${ASSET}"
+          chmod +x "out/${ASSET}"
+          size=$(stat -c %s "out/${ASSET}")
+          if [ "$size" -lt 52428800 ]; then
+            echo "${ASSET} is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
+            exit 1
+          fi
+          file "out/${ASSET}" | grep -E 'ELF' >/dev/null || { echo "Not a valid ELF binary"; exit 1; }
+          echo "${ASSET} verified: $((size / 1048576)) MB"
+
+      - name: Sign, package + sanity-check (macOS)
+        if: inputs.platform == 'macos'
+        # Intact ad-hoc seal = "Open Anyway" instead of the dead-end
+        # "damaged" dialog. ditto (not zip -r) because zip dereferences Qt
+        # framework symlinks, which can break the seal we just verified.
+        env:
+          ASSET: ${{ inputs.asset }}
+        run: |
+          set -euo pipefail
+          test -d dist/Sunnify.app || { echo "Sunnify.app missing"; exit 1; }
+          # Confirm bundled FFmpeg landed inside the .app before zipping. If
+          # PyInstaller missed it the user would just get an "FFmpeg not found"
+          # error at first download.
+          find dist/Sunnify.app -name "ffmpeg" -type f | head -1 | grep -q ffmpeg || {
+            echo "Sunnify.app does not contain bundled FFmpeg"
+            exit 1
+          }
+          codesign --force --deep --sign - dist/Sunnify.app
+          codesign --verify --deep --strict --verbose=2 dist/Sunnify.app
+          mkdir -p out
+          ditto -c -k --keepParent dist/Sunnify.app "out/${ASSET}"
+          size=$(stat -f %z "out/${ASSET}")
+          if [ "$size" -lt 52428800 ]; then
+            echo "${ASSET} is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
+            exit 1
+          fi
+          echo "${ASSET} verified: $((size / 1048576)) MB"
+
+      - name: Attest build provenance (SLSA Build L3)
+        id: attest
+        # Must run inside this reusable workflow - that placement is the L3.
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: out/${{ inputs.asset }}
+
+      - name: Stage attestation bundle + URL
+        shell: bash
+        # <asset>.sigstore.json becomes a release asset (offline verify);
+        # <asset>.attestation-url.txt feeds the release-notes injection.
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+          ATTEST_URL: ${{ steps.attest.outputs.attestation-url }}
+          ASSET: ${{ inputs.asset }}
+        run: |
+          set -euo pipefail
+          cp "$BUNDLE_PATH" "out/${ASSET}.sigstore.json"
+          printf '%s' "$ATTEST_URL" > "out/${ASSET}.attestation-url.txt"
+          ls -la out/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.platform }}-build
+          path: out/
+          if-no-files-found: error

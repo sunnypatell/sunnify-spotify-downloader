@@ -2,8 +2,9 @@ name: Dependency Review
 
 # PR-only check: refuses to merge a PR that introduces a dependency with
 # a known CVE. Does NOT email, does NOT open auto-PRs, does NOT run on push;
-# it just blocks unsafe diffs as a PR status check. (Distinct from Dependabot,
-# which is what generates the email storm and is intentionally disabled.)
+# it just blocks unsafe diffs as a PR status check. (Dependabot version
+# updates are configured separately in dependabot.yml - grouped + monthly
+# precisely so they never become an email storm.)
 #
 # Action reference: https://github.com/actions/dependency-review-action
 
@@ -26,6 +27,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
 
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:

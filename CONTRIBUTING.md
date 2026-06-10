@@ -161,6 +161,7 @@ npm run format:check
 
 Hooks run automatically on `git commit`:
 - **Python**: ruff lint + format via pre-commit
+- **Workflows**: actionlint + zizmor (any change under `.github/workflows/` must keep actions pinned to full commit SHAs - CI enforces this)
 - **Webclient**: eslint + prettier via husky/lint-staged
 
 To run manually:
@@ -225,6 +226,12 @@ cd web-app/sunnify-webclient && npx lint-staged
 - Update docs when changing behavior
 - Avoid unrelated refactors in the same PR
 - Write descriptive commit messages
+
+---
+
+## Releases
+
+Releases are cut by the maintainer; the full runbook lives in [RELEASING.md](RELEASING.md). Contributors never need to touch version numbers, `CHANGELOG.md` release headers, or `Casks/sunnify.rb` (the pipeline bumps the cask automatically).
 
 ---
 

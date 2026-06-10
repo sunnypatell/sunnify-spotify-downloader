@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you reference this project, please cite it as below."
+title: "Sunnify (Spotify Downloader)"
+type: software
+authors:
+  - family-names: Patel
+    given-names: Sunny Jayendra
+repository-code: "https://github.com/sunnypatell/sunnify-spotify-downloader"
+url: "https://github.com/sunnypatell/sunnify-spotify-downloader"
+abstract: "Educational student project: Spotify playlist downloader with a PyQt5 desktop app, Flask backend, and Next.js web client."
+keywords:
+  - spotify
+  - music
+  - pyqt5
+  - python
+license-url: "https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/LICENSE"

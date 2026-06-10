@@ -21,7 +21,7 @@
 QPushButton#Closed{
 	background-color: rgba(0, 0,0, 0);
 	color:rgba(10,15,155,255);
-	
+
 	border-radius:5px;
 }
 QPushButton#Closed:hover{

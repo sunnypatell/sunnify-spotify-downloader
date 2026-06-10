@@ -12,6 +12,7 @@
 <a href="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/tests.yml/badge.svg?branch=main"></a>
 <a href="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/codeql.yml/badge.svg?branch=main"></a>
 <a href="SECURITY.md#release-integrity"><img alt="SLSA L3" src="https://img.shields.io/badge/SLSA-L3-3D7BFF?logo=securityscorecard&logoColor=white"></a>
+<a href="https://scorecard.dev/viewer/?uri=github.com/sunnypatell/sunnify-spotify-downloader"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/sunnypatell/sunnify-spotify-downloader/badge"></a>
 
 <br/>
 
@@ -85,8 +86,6 @@ root
 ├─ Template.py / Template.ui      (Generated UI for the desktop app)
 ├─ scripts/
 │  └─ check_api_status.py         (Diagnostics for embed API and yt-dlp)
-├─ dist/
-│  └─ Sunnify (Spotify Downloader).exe   (Prebuilt Windows executable)
 ├─ web-app/
 │  ├─ sunnify-backend/            (Flask API: SSE + JSON responses)
 │  │  ├─ app.py                   (/api/scrape-playlist, /api/download)
@@ -159,20 +158,21 @@ sudo apt install -y ffmpeg
 <details>
 <summary><strong>macOS: Unsigned app instructions</strong></summary>
 
-The macOS app is not notarized. After downloading and extracting:
+The macOS app is ad-hoc signed but not notarized (no paid Apple Developer account). The zero-friction path is the Homebrew tap below: the cask verifies the archive's SHA256 and removes quarantine at install, so the app just opens.
+
+For direct downloads from the releases page, either:
 
 ```bash
-# Remove quarantine attribute (required for unsigned apps)
-sudo xattr -cr /Applications/Sunnify.app
-
-# Or if you extracted elsewhere:
-sudo xattr -cr ~/Downloads/Sunnify.app
+# fast path: remove the quarantine attribute (no sudo needed for files you own)
+xattr -r -d com.apple.quarantine /Applications/Sunnify.app
 ```
 
-If you see "app is damaged" or "unidentified developer":
-1. Open System Preferences → Security & Privacy → General
-2. Click "Open Anyway" next to the Sunnify message
-3. Or run the `xattr` command above
+or use the Gatekeeper flow (macOS Sequoia and later removed the old right-click-Open bypass):
+1. Double-click Sunnify.app once; it gets blocked - click "Done"
+2. System Settings → Privacy & Security → scroll down → "Open Anyway"
+3. Confirm and authenticate (the button only appears for about an hour after step 1)
+
+You can verify what you downloaded came from this repo's release pipeline before opening it: see [SECURITY.md](SECURITY.md#release-integrity).
 
 </details>
 
@@ -225,7 +225,7 @@ Build a Windows EXE with PyInstaller:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-pyinstaller "Sunnify (Spotify Downloader).spec"
+pyinstaller Sunnify.spec
 ```
 
 Output files are placed in `dist/`.
@@ -372,8 +372,7 @@ Example output shows embed API status, large playlist fallback, and YouTube sear
 - **Embed API fails**: check if `open.spotify.com` is accessible from your network.
 - **Hosted backend cold starts**: free tiers can sleep; first call might take seconds.
 - **Permission errors**: choose a download path you have write access to.
-- **macOS "app is damaged"**: run `sudo xattr -cr /path/to/Sunnify.app` to remove quarantine.
-- **macOS "unidentified developer"**: open System Preferences → Security & Privacy → click "Open Anyway".
+- **macOS "app is damaged" / "could not verify"**: run `xattr -r -d com.apple.quarantine /path/to/Sunnify.app`, or System Settings → Privacy & Security → "Open Anyway". Installing via the Homebrew tap avoids this entirely.
 
 <hr/>
 
