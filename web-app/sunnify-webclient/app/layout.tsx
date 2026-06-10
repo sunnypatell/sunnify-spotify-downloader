@@ -15,16 +15,30 @@ const geistMono = localFont({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://sunnify-spotify-downloader.vercel.app"),
   title: "Sunnify - Spotify Playlist Downloader",
   description:
     "Download entire Spotify playlists to local MP3s with embedded artwork and tags. Free, open-source, no account required.",
+  applicationName: "Sunnify",
   keywords: ["spotify", "downloader", "mp3", "playlist", "music", "converter"],
-  authors: [{ name: "Sunny Jayendra Patel" }],
+  authors: [{ name: "Sunny Jayendra Patel", url: "https://github.com/sunnypatell" }],
+  creator: "Sunny Jayendra Patel",
+  publisher: "Sunny Jayendra Patel",
+  alternates: { canonical: "/" },
+  icons: { icon: "/icon.png", apple: "/icon.png" },
   openGraph: {
     title: "Sunnify - Spotify Playlist Downloader",
     description: "Download Spotify playlists to MP3 with artwork and tags",
+    url: "/",
+    siteName: "Sunnify",
     type: "website",
   },
+  twitter: {
+    card: "summary",
+    title: "Sunnify - Spotify Playlist Downloader",
+    description: "Download Spotify playlists to MP3 with artwork and tags",
+  },
+  robots: { index: true, follow: true },
 }
 
 export default function RootLayout({
