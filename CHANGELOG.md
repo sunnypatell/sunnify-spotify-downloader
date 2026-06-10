@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.10] - 2026-06-09
+
+### Changed
+- **release pipeline rebuilt around a dedicated trusted builder** (#54). binaries are now built and attested inside the `release-build.yml` reusable workflow, which upgrades build provenance from slsa build L2 to L3 ([github's guidance](https://docs.github.com/actions/security-guides/using-artifact-attestations-and-reusable-workflows-to-achieve-slsa-v1-build-level-3)); build inputs are hash-locked (`pip install --require-hashes`, every wheel sha256-pinned across all three platforms, pyinstaller included), builds check out the release tag itself, and `PYTHONHASHSEED` + `SOURCE_DATE_EPOCH` are set per pyinstaller's reproducibility docs. no app-code changes; binaries are rebuilt from the same source as 2.0.9 with newer locked deps (notably yt-dlp 2026.6.9).
+- **macos packaging**: explicit ad-hoc re-sign plus a `codesign --verify --strict` gate, and `ditto -c -k --keepParent` instead of `zip -r` (zip dereferences qt framework symlinks, which can silently break the signature seal). an intact seal turns a blocked first launch into the recoverable "open anyway" path instead of the dead-end "damaged" dialog.
+- **homebrew cask**: postflight now strips quarantine after brew has verified the archive's sha256 against the cask, so `brew install --cask sunnify` opens with zero prompts; the old `sudo xattr -cr` instruction is gone (sudo was never needed, `-c` was over-broad).
+
+### Added
+- `<binary>.sigstore.json` offline verification bundles attached to every release asset set (verify with `gh attestation verify <bin> --bundle <bin>.sigstore.json`).
+- openssf scorecard (weekly score + readme badge + sarif), actionlint + zizmor gating workflow changes, tuned dependabot (grouped, monthly, 7-day cooldown where supported), RELEASING.md runbook, SUPPORT.md, GOVERNANCE.md, CITATION.cff; SECURITY.md now leads with github private vulnerability reporting.
+
+### Fixed
+- the `actions/checkout` sha pin inherited across all workflows was orphaned by an upstream retag (unreachable in actions/checkout history); repinned to the commit v6.0.3 actually dereferences to. caught by the new workflow-lint gate on its first run.
+- `.secrets.baseline` was gitignored, so the detect-secrets pre-commit hook failed for anyone who ran it; the baseline is now tracked.
+
 ## [2.0.9] - 2026-06-09
 
 ### Fixed
@@ -200,7 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.9...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.10...HEAD
+[2.0.10]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.9...v2.0.10
 [2.0.9]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.6...v2.0.7
