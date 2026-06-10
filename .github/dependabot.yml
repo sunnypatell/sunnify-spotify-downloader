@@ -1,6 +1,14 @@
 # Keeps SHA pins + lockfiles fresh without manual work or email noise:
 # grouped (one PR per ecosystem), monthly, 7-day cooldown so a compromised
 # release (tj-actions pattern) gets caught upstream before a bump lands here.
+#
+# Two guardrails learned the hard way (see PRs #56/#57):
+# - pyqt5-qt5 is hand-pinned per-platform in requirements-build.in (no win32
+#   wheels past 5.15.2); dependabot bumping it breaks the Windows build, so
+#   it's ignored here.
+# - webclient framework majors (next/react/tailwind/eslint/ts) are hands-on
+#   migrations, not bumps; grouped, they produce an unmergeable PR. Majors are
+#   ignored; minor+patch still flow.
 
 version: 2
 updates:
@@ -13,6 +21,23 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "pip"
+    directories:
+      - "/"
+      - "/web-app/sunnify-backend"
+    schedule:
+      interval: "monthly"
+    groups:
+      python:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "pyqt5-qt5"
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 2
@@ -30,21 +55,6 @@ updates:
       prefix: "chore(deps)"
     open-pull-requests-limit: 2
 
-  - package-ecosystem: "pip"
-    directories:
-      - "/"
-      - "/web-app/sunnify-backend"
-    schedule:
-      interval: "monthly"
-    groups:
-      python:
-        patterns: ["*"]
-    cooldown:
-      default-days: 7
-    commit-message:
-      prefix: "chore(deps)"
-    open-pull-requests-limit: 2
-
   - package-ecosystem: "npm"
     directory: "/web-app/sunnify-webclient"
     schedule:
@@ -54,6 +64,9 @@ updates:
         patterns: ["*"]
     cooldown:
       default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 2
