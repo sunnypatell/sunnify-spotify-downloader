@@ -2,6 +2,29 @@
   "name": "sunnify-webclient",
   "version": "0.1.0",
   "private": true,
+  "description": "Web client for Sunnify - fetch Spotify playlist and track metadata in the browser. Companion to the desktop downloader.",
+  "keywords": [
+    "spotify",
+    "playlist",
+    "music",
+    "metadata",
+    "nextjs",
+    "react"
+  ],
+  "homepage": "https://sunnify-spotify-downloader.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sunnypatell/sunnify-spotify-downloader.git",
+    "directory": "web-app/sunnify-webclient"
+  },
+  "author": {
+    "name": "Sunny Jayendra Patel",
+    "url": "https://github.com/sunnypatell"
+  },
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "bugs": {
+    "url": "https://github.com/sunnypatell/sunnify-spotify-downloader/issues"
+  },
   "engines": {
     "node": ">=20",
     "npm": ">=10"
@@ -29,7 +52,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^11.5.4",
     "lucide-react": "^0.439.0",
-    "next": "14.2.8",
+    "next": "15.5.19",
     "react": "^18",
     "react-dom": "^18",
     "react-hot-toast": "^2.4.1",
@@ -42,7 +65,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",
-    "eslint-config-next": "14.2.8",
+    "eslint-config-next": "15.5.19",
     "husky": "^9.1.7",
     "lint-staged": "^15.3.0",
     "postcss": "^8",
@@ -50,5 +73,9 @@
     "prettier-plugin-tailwindcss": "^0.6.9",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@typescript-eslint/parser": "^8",
+    "@typescript-eslint/eslint-plugin": "^8"
   }
 }
