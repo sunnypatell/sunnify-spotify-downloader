@@ -118,7 +118,7 @@ jobs:
         # Needed both for syft (req.txt + source tree) and for the source
         # tarball we attest below. Pinning to the tag is what makes the
         # source tarball deterministic per release.
-        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ github.event.inputs.tag }}
           persist-credentials: false
@@ -424,7 +424,7 @@ jobs:
       - name: Checkout repository
         # persist-credentials stays ON for this checkout only: the final step
         # pushes the cask bump to main with the workflow token.
-        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3 # zizmor: ignore[artipacked]
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3 # zizmor: ignore[artipacked]
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
