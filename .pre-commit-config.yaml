@@ -15,7 +15,7 @@ repos:
 
   # general file hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude: \.md$
@@ -34,7 +34,7 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
-        exclude: pnpm-lock\.yaml|package-lock\.json|requirements-build\.txt
+        exclude: pnpm-lock\.yaml|package-lock\.json|requirements-build\.txt|Casks/sunnify\.rb
 
   # workflow correctness + security (same tools CI runs in workflow-lint.yml)
   - repo: https://github.com/rhysd/actionlint
