@@ -1,36 +1,29 @@
 # =============================================================================
 # Sunnify Release Pipeline
 # =============================================================================
-# Builds platform installers (Win/Linux/macOS), generates a CycloneDX SBOM,
-# attaches SLSA L3 build provenance + SBOM attestations (sigstore-signed via
-# the runner's OIDC identity, verifiable with `gh attestation verify`),
-# uploads everything to a GitHub Release, and auto-bumps the Homebrew cask.
+# Orchestrates platform builds (Win/Linux/macOS) via the reusable
+# release-build.yml workflow (which builds AND attests each binary - that
+# split is what makes the provenance SLSA Build L3 instead of L2), generates
+# a CycloneDX SBOM, attaches SBOM + source-tarball attestations
+# (sigstore-signed via the runner's OIDC identity, verifiable with
+# `gh attestation verify`), uploads everything to a GitHub Release, and
+# auto-bumps the Homebrew cask.
 #
 # Triggered manually via workflow_dispatch with a tag input (e.g. v2.0.8).
 # The tag must already exist (created via `git tag -a vX.Y.Z && git push --tags`)
-# and a draft or published release must already exist for that tag (created via
-# `gh release create vX.Y.Z --notes-file <file>`); this workflow only uploads
-# assets + attestations to it.
+# and a DRAFT release must already exist for that tag (created via
+# `gh release create vX.Y.Z --draft --notes-file <file>`); this workflow
+# uploads assets + attestations to it and publishes it at the end.
+# Draft-first matters: it keeps the release invisible until assets are
+# attached, and it is the flow that stays compatible if/when immutable
+# releases are enabled on the repo (assets lock at publish time).
+# Full runbook: RELEASING.md.
 #
 # Pass dry_run=true to test the pipeline end-to-end on a throwaway tag without
-# touching main (skips the cask-update job entirely).
+# touching main (skips the cask-update job entirely, keeps the release draft).
 #
-# -----------------------------------------------------------------------------
-# Bumping the bundled FFmpeg (one of these every few months)
-# -----------------------------------------------------------------------------
-# Windows + Linux use BtbN/FFmpeg-Builds (released to GitHub). macOS uses
-# evermeet.cx (their stable versioned release). To bump:
-#   1. Pick a fresh BtbN autobuild from
-#      https://github.com/BtbN/FFmpeg-Builds/releases
-#      Update FFMPEG_BTBN_TAG + FFMPEG_BTBN_BUILD below.
-#   2. Pick the matching stable FFmpeg release from
-#      https://evermeet.cx/ffmpeg/
-#      Update FFMPEG_MAC_VERSION below.
-#   3. Compute SHA256s locally and update the four FFMPEG_*_SHA256 env vars:
-#        curl -fsL "<url>" | shasum -a 256
-# If a SHA mismatches at download time the build aborts before extraction, so
-# a CDN swap or a typo can never silently ship the wrong binary.
-# -----------------------------------------------------------------------------
+# FFmpeg version pins + bump procedure live in release-build.yml.
+# =============================================================================
 
 name: Build Release
 
@@ -54,293 +47,81 @@ concurrency:
   group: release-${{ github.event.inputs.tag }}
   cancel-in-progress: false
 
-env:
-  # BtbN (Windows + Linux): pinned autobuild
-  FFMPEG_BTBN_TAG: "autobuild-2026-06-08-14-24"
-  FFMPEG_BTBN_BUILD: "N-124881-g6028720d70"
-  FFMPEG_WIN_SHA256: "2cd538df51b0753547030dc997902606b13378df11db3866c81db7ca07fe7a54"
-  FFMPEG_LINUX_SHA256: "404a23515343c8c568a74ca39270879387d0ec92b9f52a44d416ecf7d9961230"
-  # evermeet.cx (macOS): pinned to FFmpeg release 8.1.1
-  FFMPEG_MAC_VERSION: "8.1.1"
-  FFMPEG_MAC_FFMPEG_SHA256: "4610988e2f54c243c50da73a09e4e2c36d9bb77546f9aa6c84cb328dcb1a98c1"
-  FFMPEG_MAC_FFPROBE_SHA256: "aeade29dee3c3844e9bcc974f4ae4b29cc4f87994177d77003a8589fa531009e"
+permissions: {}
 
 jobs:
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Cache FFmpeg archive
-        id: ffmpeg-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ffmpeg-cache
-          # Cache is invalidated automatically the moment any env var
-          # in the key changes - so a version bump auto-busts the cache.
-          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
-
-      - name: Download and verify FFmpeg
-        shell: bash
-        # bash on windows-latest gets curl.exe; matches Linux/macOS exactly
-        # and gives us -fL fail-on-HTTP-error parity that Invoke-WebRequest
-        # silently lacks on -OutFile.
-        run: |
-          set -euo pipefail
-          TAG="${{ env.FFMPEG_BTBN_TAG }}"
-          BUILD="${{ env.FFMPEG_BTBN_BUILD }}"
-          EXPECTED="${{ env.FFMPEG_WIN_SHA256 }}"
-          URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/ffmpeg-${BUILD}-win64-gpl.zip"
-          mkdir -p ffmpeg-cache
-          if [ -f "ffmpeg-cache/ffmpeg.zip" ]; then
-            echo "Using cached download"
-          else
-            echo "Downloading ${URL}"
-            curl -fL -o ffmpeg-cache/ffmpeg.zip "$URL"
-          fi
-          # Verify EVERY run, cache hit or miss - cache cannot bypass the SHA gate.
-          echo "${EXPECTED}  ffmpeg-cache/ffmpeg.zip" | sha256sum -c -
-          unzip -q ffmpeg-cache/ffmpeg.zip
-          mkdir -p ffmpeg
-          cp "ffmpeg-${BUILD}-win64-gpl/bin/ffmpeg.exe" ffmpeg/
-          cp "ffmpeg-${BUILD}-win64-gpl/bin/ffprobe.exe" ffmpeg/
-          rm -rf "ffmpeg-${BUILD}-win64-gpl"
-          ls -la ffmpeg/
-
-      - name: Install dependencies
-        run: |
-          pip install -r req.txt
-          pip install pyinstaller
-
-      - name: Build with PyInstaller
-        run: pyinstaller Sunnify.spec
-
-      - name: Rename + sanity-check executable
-        shell: bash
-        run: |
-          set -euo pipefail
-          mv dist/Sunnify.exe dist/Sunnify-Windows.exe
-          size=$(stat -c %s dist/Sunnify-Windows.exe 2>/dev/null || stat -f %z dist/Sunnify-Windows.exe)
-          # A real PyInstaller build with FFmpeg + PyQt5 is >100MB; anything
-          # under 50MB is a corrupt build that would just generate user reports.
-          if [ "$size" -lt 52428800 ]; then
-            echo "Sunnify-Windows.exe is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
-            exit 1
-          fi
-          echo "Sunnify-Windows.exe verified: $((size / 1048576)) MB"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: windows-build
-          path: dist/Sunnify-Windows.exe
-          if-no-files-found: error
-
-  build-linux:
-    name: Build Linux
+  validate:
+    name: Validate tag
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate tag input
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          # Strict semver allowlist, enforced BEFORE any build minutes are
+          # spent and before the tag string reaches git/gh CLI invocations
+          # downstream (rules out option-injection shapes like `-foo`).
+          # Pre-release/build suffix must start with an alphanumeric (rules
+          # out v1.0.0--bad and similar typos) and only one of -<pre-release>
+          # or +<build> is allowed (matching the strict SemVer 2.0.0 grammar
+          # minus simultaneous pre-release+build).
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9][a-zA-Z0-9.-]*|\+[a-zA-Z0-9][a-zA-Z0-9.-]*)?$ ]]; then
+            echo "Invalid tag format: '$TAG' (expected vX.Y.Z[-prerelease] or vX.Y.Z[+build])"
+            exit 1
+          fi
+
+  build:
+    name: Build
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            asset: Sunnify-Windows.exe
+          - platform: linux
+            runner: ubuntu-latest
+            asset: Sunnify-Linux
+          - platform: macos
+            runner: macos-14
+            asset: Sunnify-macOS.zip
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libxcb-xinerama0 \
-            libxcb-cursor0 \
-            libxkbcommon-x11-0 \
-            libegl1 \
-            libxcb-icccm4 \
-            libxcb-image0 \
-            libxcb-keysyms1 \
-            libxcb-randr0 \
-            libxcb-render-util0 \
-            libxcb-shape0
-
-      - name: Cache FFmpeg archive
-        id: ffmpeg-cache-linux
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ffmpeg-cache
-          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
-
-      - name: Download and verify FFmpeg
-        run: |
-          set -euo pipefail
-          TAG="${{ env.FFMPEG_BTBN_TAG }}"
-          BUILD="${{ env.FFMPEG_BTBN_BUILD }}"
-          EXPECTED="${{ env.FFMPEG_LINUX_SHA256 }}"
-          URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/${TAG}/ffmpeg-${BUILD}-linux64-gpl.tar.xz"
-          mkdir -p ffmpeg-cache
-          if [ -f "ffmpeg-cache/ffmpeg.tar.xz" ]; then
-            echo "Using cached download"
-          else
-            echo "Downloading ${URL}"
-            curl -fL -o ffmpeg-cache/ffmpeg.tar.xz "$URL"
-          fi
-          echo "${EXPECTED}  ffmpeg-cache/ffmpeg.tar.xz" | sha256sum -c -
-          tar -xf ffmpeg-cache/ffmpeg.tar.xz
-          mkdir -p ffmpeg
-          cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffmpeg" ffmpeg/
-          cp "ffmpeg-${BUILD}-linux64-gpl/bin/ffprobe" ffmpeg/
-          chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
-          rm -rf "ffmpeg-${BUILD}-linux64-gpl"
-          ls -la ffmpeg/
-
-      - name: Install dependencies
-        run: |
-          pip install -r req.txt
-          pip install pyinstaller
-
-      - name: Build with PyInstaller
-        run: pyinstaller Sunnify.spec
-
-      - name: Rename + sanity-check binary
-        run: |
-          set -euo pipefail
-          mv dist/Sunnify dist/Sunnify-Linux
-          chmod +x dist/Sunnify-Linux
-          size=$(stat -c %s dist/Sunnify-Linux)
-          if [ "$size" -lt 52428800 ]; then
-            echo "Sunnify-Linux is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
-            exit 1
-          fi
-          file dist/Sunnify-Linux | grep -E 'ELF' >/dev/null || { echo "Not a valid ELF binary"; exit 1; }
-          echo "Sunnify-Linux verified: $((size / 1048576)) MB"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: linux-build
-          path: dist/Sunnify-Linux
-          if-no-files-found: error
-
-  build-macos:
-    name: Build macOS
-    runs-on: macos-14
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Cache FFmpeg archive
-        id: ffmpeg-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ffmpeg-cache
-          # Cache is invalidated automatically the moment any env var
-          # in the key changes - so a version bump auto-busts the cache.
-          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
-
-      - name: Cache FFmpeg archive
-        id: ffmpeg-cache-mac
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ffmpeg-cache
-          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
-
-      - name: Download and verify FFmpeg
-        run: |
-          set -euo pipefail
-          VERSION="${{ env.FFMPEG_MAC_VERSION }}"
-          EXP_FF="${{ env.FFMPEG_MAC_FFMPEG_SHA256 }}"
-          EXP_FP="${{ env.FFMPEG_MAC_FFPROBE_SHA256 }}"
-          mkdir -p ffmpeg-cache
-          if [ ! -f "ffmpeg-cache/ffmpeg.zip" ]; then
-            curl -fL -o ffmpeg-cache/ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
-          fi
-          if [ ! -f "ffmpeg-cache/ffprobe.zip" ]; then
-            curl -fL -o ffmpeg-cache/ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
-          fi
-          shasum -a 256 -c <(echo "${EXP_FF}  ffmpeg-cache/ffmpeg.zip")
-          shasum -a 256 -c <(echo "${EXP_FP}  ffmpeg-cache/ffprobe.zip")
-          unzip -o ffmpeg-cache/ffmpeg.zip -d ffmpeg-temp
-          unzip -o ffmpeg-cache/ffprobe.zip -d ffmpeg-temp
-          mkdir -p ffmpeg
-          mv ffmpeg-temp/ffmpeg ffmpeg/
-          mv ffmpeg-temp/ffprobe ffmpeg/
-          chmod +x ffmpeg/ffmpeg ffmpeg/ffprobe
-          rm -rf ffmpeg-temp
-          ls -la ffmpeg/
-
-      - name: Install dependencies
-        run: |
-          pip install -r req.txt
-          pip install pyinstaller
-
-      - name: Build with PyInstaller
-        run: pyinstaller Sunnify.spec
-
-      - name: Create + sanity-check ZIP
-        run: |
-          set -euo pipefail
-          cd dist
-          test -d Sunnify.app || { echo "Sunnify.app missing"; exit 1; }
-          # Confirm bundled FFmpeg landed inside the .app before zipping. If
-          # PyInstaller missed it the user would just get an "FFmpeg not found"
-          # error at first download.
-          find Sunnify.app -name "ffmpeg" -type f | head -1 | grep -q ffmpeg || {
-            echo "Sunnify.app does not contain bundled FFmpeg"
-            exit 1
-          }
-          zip -r Sunnify-macOS.zip Sunnify.app
-          size=$(stat -f %z Sunnify-macOS.zip)
-          if [ "$size" -lt 52428800 ]; then
-            echo "Sunnify-macOS.zip is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
-            exit 1
-          fi
-          echo "Sunnify-macOS.zip verified: $((size / 1048576)) MB"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: macos-build
-          path: dist/Sunnify-macOS.zip
-          if-no-files-found: error
+      id-token: write       # forwarded to release-build.yml for sigstore signing
+      attestations: write   # forwarded to release-build.yml for provenance writes
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag: ${{ github.event.inputs.tag }}
+      platform: ${{ matrix.platform }}
+      runner: ${{ matrix.runner }}
+      asset: ${{ matrix.asset }}
 
   upload-release:
     name: Upload to Release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-linux, build-macos]
+    needs: [build]
     timeout-minutes: 15
     permissions:
-      contents: write       # upload assets + (optionally) toggle draft
+      contents: write       # upload assets + publish the draft
       id-token: write       # request OIDC token for sigstore signing
-      attestations: write   # write provenance + SBOM attestations
+      attestations: write   # write SBOM + source attestations
     steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
       - name: Checkout repository at the release tag
         # Needed both for syft (req.txt + source tree) and for the source
         # tarball we attest below. Pinning to the tag is what makes the
         # source tarball deterministic per release.
-        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ github.event.inputs.tag }}
+          persist-credentials: false
 
       - name: Download all artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -351,7 +132,8 @@ jobs:
         run: |
           set -euo pipefail
           fail=0
-          # 1. All three artifacts present and >50MB.
+          # 1. All three binaries present and >50MB, each with its sigstore
+          #    bundle staged by release-build.yml.
           for f in artifacts/windows-build/Sunnify-Windows.exe \
                    artifacts/linux-build/Sunnify-Linux \
                    artifacts/macos-build/Sunnify-macOS.zip; do
@@ -363,6 +145,10 @@ jobs:
             size=$(stat -c %s "$f")
             if [ "$size" -lt 52428800 ]; then
               echo "TOO SMALL: $f is $((size / 1048576)) MB"
+              fail=1
+            fi
+            if [ ! -f "$f.sigstore.json" ]; then
+              echo "MISSING ATTESTATION BUNDLE: $f.sigstore.json"
               fail=1
             fi
             echo "OK: $f ($((size / 1048576)) MB)"
@@ -414,26 +200,14 @@ jobs:
             source
             --sbom=./sunnify-sbom.cdx.json
 
-      - name: Attest build provenance (SLSA L3 via sigstore)
-        id: attest-binaries
-        # Generates a sigstore-signed in-toto provenance attestation linking
-        # each binary to this exact workflow run + source commit. Users verify:
-        #   gh attestation verify Sunnify-Linux \
-        #       --repo sunnypatell/sunnify-spotify-downloader
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-path: |
-            ./artifacts/windows-build/Sunnify-Windows.exe
-            ./artifacts/linux-build/Sunnify-Linux
-            ./artifacts/macos-build/Sunnify-macOS.zip
-
       - name: Attest SBOM
         id: attest-sbom
-        # Separate sigstore-signed attestation binding each binary's digest to
-        # the SBOM digest. This is the in-toto "SBOM" predicate (not the
-        # "provenance" predicate above), so consumers can ask the supply-chain
-        # question "what's IN this binary?" against the same chain of trust as
-        # "where did this binary come from?".
+        # Sigstore-signed attestation binding each binary's digest to the
+        # SBOM digest. This is the in-toto "SBOM" predicate (the "provenance"
+        # predicate is produced per-binary inside release-build.yml), so
+        # consumers can ask the supply-chain question "what's IN this
+        # binary?" against the same chain of trust as "where did this binary
+        # come from?".
         # Using actions/attest directly with a CycloneDX predicate-type
         # because actions/attest-sbom is now a deprecated wrapper.
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
@@ -450,7 +224,6 @@ jobs:
         # ask "what source actually corresponds to this binary?" without
         # trusting GitHub's rendered "Source code (zip)" autoreleases (which
         # have no provenance attestation and can be regenerated server-side).
-        # The provenance attestation we already produce above covers it too.
         env:
           TAG: ${{ github.event.inputs.tag }}
         run: |
@@ -479,8 +252,11 @@ jobs:
           {
             sha256sum \
               artifacts/windows-build/Sunnify-Windows.exe \
+              artifacts/windows-build/Sunnify-Windows.exe.sigstore.json \
               artifacts/linux-build/Sunnify-Linux \
+              artifacts/linux-build/Sunnify-Linux.sigstore.json \
               artifacts/macos-build/Sunnify-macOS.zip \
+              artifacts/macos-build/Sunnify-macOS.zip.sigstore.json \
               sunnify-sbom.cdx.json \
               "sunnify-${TAG}-source.tar.gz" \
               | sed -E 's|artifacts/[^/]+/||'
@@ -494,14 +270,19 @@ jobs:
         # stale artifact bytes from the first attempt would persist alongside
         # fresh ones. Delete-then-upload makes the job exactly idempotent.
         # `|| true` because 404 is the normal case on the first run.
+        # (Once a release is published with immutable releases enabled, this
+        # whole job can no longer touch it - fixes ship as a new patch tag.)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag }}
         run: |
           for asset in \
               Sunnify-Windows.exe \
+              Sunnify-Windows.exe.sigstore.json \
               Sunnify-Linux \
+              Sunnify-Linux.sigstore.json \
               Sunnify-macOS.zip \
+              Sunnify-macOS.zip.sigstore.json \
               sunnify-sbom.cdx.json \
               "sunnify-${TAG}-source.tar.gz" \
               checksums.txt; do
@@ -519,19 +300,23 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             artifacts/windows-build/Sunnify-Windows.exe
+            artifacts/windows-build/Sunnify-Windows.exe.sigstore.json
             artifacts/linux-build/Sunnify-Linux
+            artifacts/linux-build/Sunnify-Linux.sigstore.json
             artifacts/macos-build/Sunnify-macOS.zip
+            artifacts/macos-build/Sunnify-macOS.zip.sigstore.json
             sunnify-sbom.cdx.json
             sunnify-${{ github.event.inputs.tag }}-source.tar.gz
             checksums.txt
 
       - name: Append run-specific attestation URLs to release notes
-        # The three attest steps above each emit an `attestation-url` output
-        # pointing at the GitHub Releases-Attestations UI for that specific
-        # attestation. We splice them into the release body so users get
-        # clickable links straight from the release page (the API-driven
-        # `gh attestation verify` flow is also documented in the static body,
-        # but the per-run URLs are the most discoverable path). The block is
+        # release-build.yml stages each binary's attestation URL in a
+        # <asset>.attestation-url.txt file inside its artifact; the SBOM and
+        # source attest steps above emit theirs as step outputs. We splice
+        # all five into the release body so users get clickable links
+        # straight from the release page (the API-driven `gh attestation
+        # verify` flow is also documented in the static body, but the
+        # per-run URLs are the most discoverable path). The block is
         # delimited by an HTML comment marker so a re-run replaces it cleanly
         # instead of accreting copies.
         # Skipped on dry-run so we don't litter a draft release with these.
@@ -539,11 +324,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag }}
-          BIN_URL: ${{ steps.attest-binaries.outputs.attestation-url }}
           SBOM_URL: ${{ steps.attest-sbom.outputs.attestation-url }}
           SRC_URL: ${{ steps.attest-source.outputs.attestation-url }}
         run: |
           set -euo pipefail
+          WIN_URL="$(cat artifacts/windows-build/Sunnify-Windows.exe.attestation-url.txt)"
+          LINUX_URL="$(cat artifacts/linux-build/Sunnify-Linux.attestation-url.txt)"
+          MAC_URL="$(cat artifacts/macos-build/Sunnify-macOS.zip.attestation-url.txt)"
+          export WIN_URL LINUX_URL MAC_URL
           gh release view "$TAG" --json body --jq '.body' > /tmp/current-body.md
           python3 - <<'PYEOF' > /tmp/new-body.md
           import os, re
@@ -553,11 +341,13 @@ jobs:
           new_section = (
               f'\n\n{marker}\n'
               '\n## attestations from this build\n\n'
-              'direct links to each attestation generated by the workflow run that produced these binaries (sigstore-signed, public-good rekor log entry):\n\n'
-              f'- [build provenance for the binaries (Win / Linux / macOS)]({os.environ["BIN_URL"]})\n'
+              'direct links to each attestation generated by the workflow run that produced these binaries (sigstore-signed, public-good rekor log entry, SLSA build L3 via the release-build.yml reusable workflow):\n\n'
+              f'- [build provenance: Sunnify-Windows.exe]({os.environ["WIN_URL"]})\n'
+              f'- [build provenance: Sunnify-Linux]({os.environ["LINUX_URL"]})\n'
+              f'- [build provenance: Sunnify-macOS.zip]({os.environ["MAC_URL"]})\n'
               f'- [sbom attestation for the binaries]({os.environ["SBOM_URL"]})\n'
               f'- [build provenance for the source tarball]({os.environ["SRC_URL"]})\n\n'
-              'these get auto-refreshed on every release re-build, so the links above always correspond to the binaries currently attached to this release.\n'
+              'the `*.sigstore.json` assets attached above are the same attestations as offline-verifiable bundles. these get auto-refreshed on every release re-build, so the links above always correspond to the binaries currently attached to this release.\n'
               f'{end_marker}'
           )
           # Strip prior marker block (idempotent)
@@ -596,11 +386,12 @@ jobs:
             echo ""
             echo '```bash'
             echo "gh attestation verify Sunnify-Linux \\"
-            echo "  --repo ${{ github.repository }}"
+            echo "  --repo ${{ github.repository }} \\"
+            echo "  --signer-workflow ${{ github.repository }}/.github/workflows/release-build.yml"
             echo '```'
             echo ""
             echo "Predicate types signed (Sigstore via runner OIDC, Rekor log entry):"
-            echo "- \`https://slsa.dev/provenance/v1\` - build provenance for each binary + the source tarball"
+            echo "- \`https://slsa.dev/provenance/v1\` - build provenance for each binary (SLSA Build L3, signed by release-build.yml) + the source tarball"
             echo "- \`https://cyclonedx.org/bom\` - SBOM attestation binding each binary to the SBOM"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -614,21 +405,26 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
       - name: Validate tag input
         env:
           TAG: ${{ github.event.inputs.tag }}
         run: |
-          # Strict semver allowlist. Pre-release/build suffix must start with
-          # an alphanumeric (rules out v1.0.0--bad and similar typos) and only
-          # one of -<pre-release> or +<build> is allowed (matching the strict
-          # SemVer 2.0.0 grammar minus simultaneous pre-release+build).
+          # Re-validated here (not just in the validate job) because this job
+          # writes to main; defense in depth costs three lines.
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9][a-zA-Z0-9.-]*|\+[a-zA-Z0-9][a-zA-Z0-9.-]*)?$ ]]; then
             echo "Invalid tag format: '$TAG' (expected vX.Y.Z[-prerelease] or vX.Y.Z[+build])"
             exit 1
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        # persist-credentials stays ON for this checkout only: the final step
+        # pushes the cask bump to main with the workflow token.
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3 # zizmor: ignore[artipacked]
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -67,7 +67,8 @@ test-results/
 logs/
 
 # ---------- Secrets ----------
-.secrets.baseline
+# (.secrets.baseline is deliberately tracked: it's not a secret, it's the
+# detect-secrets allowlist - the pre-commit hook fails without it)
 *.pem
 *.key
 credentials.json

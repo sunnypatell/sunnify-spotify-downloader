@@ -5,7 +5,7 @@
 repos:
   # ruff - fast python linter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.15.16
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
@@ -34,7 +34,18 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .secrets.baseline]
-        exclude: pnpm-lock\.yaml|package-lock\.json
+        exclude: pnpm-lock\.yaml|package-lock\.json|requirements-build\.txt
+
+  # workflow correctness + security (same tools CI runs in workflow-lint.yml)
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.25.2
+    hooks:
+      - id: zizmor
+        args: [--min-severity=medium] # same gate as CI (workflow-lint.yml)
 
 # ci configuration
 ci:

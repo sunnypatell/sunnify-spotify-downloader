@@ -5,7 +5,7 @@ description = "Spotify playlist downloader with PyQt5 GUI, Flask backend, and Ne
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Custom - Educational Use Only" }
-authors = [{ name = "Sunny Jayendra Patel", email = "sunnypatell124555@gmail.com" }]
+authors = [{ name = "Sunny Jayendra Patel", email = "sunnypatel124555@gmail.com" }]
 keywords = ["spotify", "downloader", "playlist", "music", "pyqt5"]
 
 [project.urls]

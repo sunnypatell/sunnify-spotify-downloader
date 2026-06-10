@@ -11,9 +11,13 @@ on:
   workflow_dispatch:
     # Allow manual triggering
 
+# No checkout, no API writes - this job needs zero token scopes.
+permissions: {}
+
 jobs:
   health-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Ping Render health endpoint
         run: |
