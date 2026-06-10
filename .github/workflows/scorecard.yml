@@ -22,6 +22,7 @@ jobs:
     permissions:
       security-events: write # upload SARIF to code scanning
       id-token: write        # publish results (signed via OIDC)
+      contents: read         # matches the official template
 
     steps:
       - name: Checkout repository

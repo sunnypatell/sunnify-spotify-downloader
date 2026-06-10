@@ -95,7 +95,9 @@ root
 │     ├─ app/page.tsx             (Renders <SunnifyApp />)
 │     └─ components/sunnify-app.tsx  (Main UI + API integration)
 ├─ req.txt                        (Desktop app Python deps)
-├─ Sunnify (Spotify Downloader).spec  (PyInstaller build spec)
+├─ requirements-build.txt         (Hash-locked release-build deps)
+├─ Sunnify.spec                   (PyInstaller build spec)
+├─ RELEASING.md                   (Release runbook)
 └─ README.md
 ```
 

@@ -6,7 +6,7 @@ version: 2
 updates:
   # note: cooldown is not supported for the github-actions ecosystem
   # (per the dependabot options reference); monthly cadence is the buffer.
-  - package-ecosystem: "github-actions"
+  - package-ecosystem: "github-actions" # zizmor: ignore[dependabot-cooldown]
     directory: "/"
     schedule:
       interval: "monthly"
