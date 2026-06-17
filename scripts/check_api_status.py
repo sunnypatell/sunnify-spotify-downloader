@@ -4,7 +4,10 @@ Tests:
 1. Embed page API (primary) - /embed/playlist/{id}
 2. spclient API (fallback for large playlists)
 3. oEmbed API (quick validation)
-4. YouTube search via yt-dlp
+4. Track-page album scrape (og:description via facebookexternalhit UA, v2.0.9)
+5. YouTube raw reachability via yt-dlp (ytsearch1)
+6. YouTube real download selector (ytsearch5 + MusicScraper._select_youtube_match,
+   i.e. the actual title/artist/duration matching the app uses since v2.0.9)
 """
 
 from __future__ import annotations
@@ -21,6 +24,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Import the real download selector so the YouTube check exercises the same
+# path the app does (ytsearch5 + title/artist/duration filter), not a stale
+# ytsearch1 top-hit. Bare instance avoids spinning up the QThread/Qt stack.
+from Spotify_Downloader import MusicScraper  # noqa: E402
 from spotifydown_api import (  # noqa: E402
     PlaylistClient,
     SpotifyDownAPIError,
@@ -170,31 +177,86 @@ def check_youtube_search(query: str) -> EndpointResult:
         )
 
 
-def check_youtube_download(track: TrackInfo) -> EndpointResult:
-    """Check if yt-dlp can find audio for a track."""
-    query = f"{track.title} {track.artists} audio"
-    search = f"ytsearch1:{query}"
+def check_youtube_match(track: TrackInfo) -> EndpointResult:
+    """Check the REAL download selector: ytsearch5 + _select_youtube_match.
+
+    This is what the app actually runs since v2.0.9 (title + artist + duration
+    filtering), so it's the meaningful "can we still resolve audio" signal -
+    unlike a bare ytsearch1 top-hit, which can pass while the real selector
+    rejects everything (or vice versa).
+    """
+    search = f"ytsearch5:{track.title} {track.artists} audio"
+    # Bare instance: skip QThread.__init__ (no Qt), the selector only needs the
+    # class's static/class methods + duration constants.
+    matcher = MusicScraper.__new__(MusicScraper)
+    duration_s = (track.duration_ms / 1000) if track.duration_ms else None
     try:
-        with YoutubeDL({"quiet": True}) as ydl:
-            info = ydl.extract_info(search, download=False)
-            if info.get("entries"):
-                info = info["entries"][0]
-            title = info.get("title", "<unknown title>")
-            url = info.get("webpage_url", "<unknown url>")
-            notes = f"Track '{track.title}' resolved to: {title} ({url})"
+        url = matcher._select_youtube_match(
+            search,
+            duration_s,
+            expected_title=track.title,
+            expected_artists=track.artists,
+        )
+        if url:
             return EndpointResult(
-                name="youtube_track_search",
+                name="youtube_match_selector",
                 url=search,
                 method="yt-dlp",
                 ok=True,
                 status_code=None,
-                notes=notes,
+                notes=f"Track '{track.title}' matched by real selector -> {url}",
             )
-    except Exception as exc:  # pragma: no cover - diagnostic script
         return EndpointResult(
-            name="youtube_track_search",
+            name="youtube_match_selector",
             url=search,
             method="yt-dlp",
+            ok=False,
+            status_code=None,
+            notes=(
+                f"Track '{track.title}' returned no match from _select_youtube_match "
+                "(title/artist/duration filter rejected all candidates)"
+            ),
+        )
+    except Exception as exc:  # pragma: no cover - diagnostic script
+        return EndpointResult(
+            name="youtube_match_selector",
+            url=search,
+            method="yt-dlp",
+            ok=False,
+            status_code=None,
+            notes=str(exc),
+        )
+
+
+def check_track_album_scrape(api: SpotifyEmbedAPI, track_id: str) -> EndpointResult:
+    """Check the v2.0.9 album scrape: og:description on the track page via the
+    facebookexternalhit UA. This is a live external dependency now (single-track
+    downloads get their album tag from here), so it earns its own probe."""
+    url = f"https://open.spotify.com/track/{track_id}"
+    try:
+        album = api._fetch_track_album_from_page(track_id)
+        if album:
+            return EndpointResult(
+                name="track_album_scrape",
+                url=url,
+                method="GET",
+                ok=True,
+                status_code=200,
+                notes=f"Album resolved from og:description: {album}",
+            )
+        return EndpointResult(
+            name="track_album_scrape",
+            url=url,
+            method="GET",
+            ok=False,
+            status_code=None,
+            notes="No album in og:description (Spotify may have changed the track page HTML)",
+        )
+    except Exception as exc:  # pragma: no cover - diagnostic script
+        return EndpointResult(
+            name="track_album_scrape",
+            url=url,
+            method="GET",
             ok=False,
             status_code=None,
             notes=str(exc),
@@ -255,6 +317,7 @@ def main() -> int:
     playlist_id = "37i9dQZF1DXcBWIGoYBM5M"  # Spotify's "Today's Top Hits"
     large_playlist_id = "37i9dQZF1DX5Ejj0EkURtP"  # "All Out 2010s" - 150 tracks
     query = "Rick Astley Never Gonna Give You Up"
+    album_probe_track_id = "4PTG3Z6ehGkBFwjybzWkR8"  # "Never Gonna Give You Up"
 
     embed_api = SpotifyEmbedAPI()
     playlist_client = PlaylistClient()
@@ -275,12 +338,15 @@ def main() -> int:
     # Check large playlist fallback (spclient + individual embeds)
     results.append(check_large_playlist_fallback(playlist_client, large_playlist_id))
 
-    # Check YouTube search (fallback for audio)
+    # Check the track-page album scrape (v2.0.9 og:description path)
+    results.append(check_track_album_scrape(embed_api, album_probe_track_id))
+
+    # Check YouTube raw reachability (does search respond at all)
     results.append(check_youtube_search(query))
 
-    # Check YouTube can find a specific track
+    # Check the REAL download selector (ytsearch5 + _select_youtube_match)
     if first_track is not None:
-        results.append(check_youtube_download(first_track))
+        results.append(check_youtube_match(first_track))
 
     # Print summary
     print("\n" + "=" * 60)
