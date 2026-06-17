@@ -1,474 +1,199 @@
 <div align="center">
 
-<h1>Sunnify (Spotify Downloader)</h1>
+<img src="./readmeAssets/social-preview.png" alt="Sunnify — Spotify Playlist Downloader: download Spotify playlists, albums, and tracks to local MP3s with artwork and tags" width="860" />
 
-<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/sunnypatell/sunnify-spotify-downloader?style=social"></a>
-<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/issues"><img alt="Issues" src="https://img.shields.io/github/issues/sunnypatell/sunnify-spotify-downloader"></a>
-<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/pulls"><img alt="PRs" src="https://img.shields.io/github/issues-pr/sunnypatell/sunnify-spotify-downloader"></a>
-<a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Custom-important"></a>
+<h1>Sunnify &middot; Spotify Playlist Downloader</h1>
 
-<br/>
+<p><strong>Download Spotify playlists, albums, and tracks to local MP3s with embedded artwork and tags.</strong><br/>
+Free, open source, cross-platform desktop app. No account, no subscription, no command line.</p>
 
-<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/tests.yml/badge.svg?branch=main"></a>
-<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/codeql.yml"><img alt="CodeQL" src="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/codeql.yml/badge.svg?branch=main"></a>
-<a href="SECURITY.md#release-integrity"><img alt="SLSA L3" src="https://img.shields.io/badge/SLSA-L3-3D7BFF?logo=securityscorecard&logoColor=white"></a>
-<a href="https://scorecard.dev/viewer/?uri=github.com/sunnypatell/sunnify-spotify-downloader"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/sunnypatell/sunnify-spotify-downloader/badge"></a>
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/sunnypatell/sunnify-spotify-downloader?style=flat-square&logo=github&label=download&color=8B2BE6&labelColor=0d1117"></a>
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/sunnypatell/sunnify-spotify-downloader/total?style=flat-square&label=downloads&color=1ED760&labelColor=0d1117"></a>
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/sunnypatell/sunnify-spotify-downloader?style=flat-square&logo=github&label=stars&color=eac54f&labelColor=0d1117"></a>
+<img alt="Runs on macOS, Windows, and Linux" src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Windows%20%7C%20Linux-555?style=flat-square&labelColor=0d1117">
+<a href="https://github.com/sunnypatell/sunnify-spotify-downloader/actions/workflows/tests.yml"><img alt="Tests status" src="https://img.shields.io/github/actions/workflow/status/sunnypatell/sunnify-spotify-downloader/tests.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=tests&labelColor=0d1117"></a>
+<a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Custom-8B2BE6?style=flat-square&labelColor=0d1117"></a>
 
-<br/>
+<br/><br/>
 
-<img src="./app.png" alt="Sunnify" height="96" />
-
-<p><em>🎧 Download entire Spotify playlists to local MP3s with embedded artwork and tags. Desktop app, Python core, and a full web stack in one repo.</em></p>
+<strong><a href="#download">Download</a> &nbsp;&middot;&nbsp; <a href="#features">Features</a> &nbsp;&middot;&nbsp; <a href="#how-to-use">How to use</a> &nbsp;&middot;&nbsp; <a href="#build-from-source">Build from source</a> &nbsp;&middot;&nbsp; <a href="#legal-disclaimer">Disclaimer</a></strong>
 
 </div>
 
 > [!CAUTION]
-> **⚠️ EDUCATIONAL PROJECT DISCLAIMER**
->
-> This software was developed as a **student portfolio project** for educational purposes only. It is intended to demonstrate software engineering skills including API integration, multi-threading, cross-platform development, and full-stack architecture.
->
-> **By using this software, you acknowledge that:**
-> - You will only use it in jurisdictions where downloading copyrighted content for personal use is permitted
-> - You are responsible for complying with all applicable laws in your region
-> - This tool should only be used with content you own or have explicit permission to download
-> - The developer assumes no liability for misuse of this software
->
-> **See [full disclaimer](#legal-disclaimer) below and read [DISCLAIMER.md](DISCLAIMER.md) for complete legal terms.**
+> **Educational / student portfolio project.** Sunnify is a technical demonstration, not a piracy tool. Use it only for content you own or are permitted to download, and only where doing so is legal in your jurisdiction. See the [full legal disclaimer](#legal-disclaimer) and [DISCLAIMER.md](DISCLAIMER.md).
 
-<p align="center">
-    <a href="#table-of-contents">Jump to Table of Contents</a>
-</p>
+---
 
-<hr/>
+## What is Sunnify?
 
-## Table of Contents
+**Sunnify is a free, open-source Spotify playlist downloader for macOS, Windows, and Linux.** Paste any Spotify playlist, album, or track link and Sunnify saves it as local audio files (MP3, M4A, FLAC, Opus, or WAV) with the cover art, title, artist, album, year, and track number written straight into the file's tags. No Spotify account, no API keys, no command line, no separate FFmpeg install.
 
-1. Overview
-2. Architecture
-3. Features
-4. Requirements
-5. Quick Start (3 Paths)
-6. Desktop App Setup (Windows and cross-platform)
-7. Web App Setup (Backend and Frontend)
-8. Configuration
-9. Usage Guide
-10. Diagnostics
-11. Troubleshooting
-12. Notes and Roadmap
-13. **⚖️ Legal Disclaimer**
-14. Contributing and Community
-15. Author
+It is a desktop GUI built with Python and PyQt5. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine.
 
-<hr/>
+<div align="center">
+<img src="./readmeAssets/demonstration%201.jpg" alt="Sunnify desktop app downloading a Spotify playlist to local MP3s" width="760" />
+</div>
 
-## Overview
+---
 
-Sunnify is built to be resilient, fast, and simple:
+## Download
 
-- Uses Spotify's embed page API to fetch playlist/track metadata without credentials.
-- Downloads audio via YouTube search using `yt-dlp` with FFmpeg.
-- Writes clean ID3 tags and embeds cover art for your library.
-- Ships as a PyQt desktop app, a Flask API, and a modern Next.js web client.
-- Supports both individual track and full playlist downloads (v2.0.0+).
+| Platform | Get it | Notes |
+| :--- | :--- | :--- |
+| **macOS** | [`Sunnify-macOS.zip`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) or Homebrew (below) | Apple Silicon + Intel |
+| **Windows** | [`Sunnify-Windows.exe`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Run directly, no install |
+| **Linux** | [`Sunnify-Linux`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | `chmod +x Sunnify-Linux` then run |
 
-Screenshots from the desktop app in action:
+FFmpeg is bundled inside every prebuilt app, so there is nothing else to install.
 
-<img src="/readmeAssets/demonstration%201.jpg" alt="Download" width="48%"/> <img src="/readmeAssets/demonstration%202.jpg" alt="Preview" width="48%"/>
+### Homebrew (macOS)
 
-<hr/>
-
-## Architecture
-
-```
-root
-├─ Spotify_Downloader.py          (PyQt5 desktop app)
-├─ spotifydown_api.py             (Spotify embed page API client)
-├─ Template.py / Template.ui      (Generated UI for the desktop app)
-├─ scripts/
-│  └─ check_api_status.py         (Diagnostics for embed API and yt-dlp)
-├─ web-app/
-│  ├─ sunnify-backend/            (Flask API: SSE + JSON responses)
-│  │  ├─ app.py                   (/api/scrape-playlist, /api/download)
-│  │  ├─ requirements.txt         (Backend dependencies)
-│  │  └─ Procfile                 (gunicorn entry)
-│  └─ sunnify-webclient/          (Next.js 14 + Tailwind + shadcn/ui)
-│     ├─ app/page.tsx             (Renders <SunnifyApp />)
-│     └─ components/sunnify-app.tsx  (Main UI + API integration)
-├─ req.txt                        (Desktop app Python deps)
-├─ requirements-build.txt         (Hash-locked release-build deps)
-├─ Sunnify.spec                   (PyInstaller build spec)
-├─ RELEASING.md                   (Release runbook)
-└─ README.md
+```bash
+brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader
+brew install --cask sunnify
 ```
 
-<hr/>
-
-## Features
-
-- 🎼 Full playlist and single track downloader (tagged MP3 library)
-- ⚡ Parallel track downloads (4 concurrent workers by default, ~4x speedup on large playlists)
-- 🖼️ Artwork and tagging (title, artists, album, release date, cover art)
-- 🚦 Spotify embed page API (no credentials required)
-- 🎯 YouTube audio via `yt-dlp` with FFmpeg conversion
-- 🪟 Clean desktop UI (progress, preview panel, settings, download location picker)
-- 🌐 Web experience (Flask backend and Next.js client)
-
-<hr/>
-
-## Requirements
-
-**Pre-built apps**: No dependencies required. FFmpeg is bundled.
-
-**Building from source**:
-- Python 3.9 or newer
-- FFmpeg on PATH (for MP3 conversion)
-- Node.js 18+ (for web client only)
-- Internet access to `open.spotify.com` and YouTube
+The cask verifies the download's checksum and clears macOS quarantine for you, so the app opens normally on first launch.
 
 <details>
-<summary>Install FFmpeg for building from source</summary>
+<summary><strong>macOS: opening the app from a direct download</strong></summary>
 
-Windows:
-```powershell
-winget install Gyan.FFmpeg
-```
-
-macOS:
-```bash
-brew install ffmpeg
-```
-
-Linux:
-```bash
-sudo apt install -y ffmpeg
-```
-
-</details>
-
-<hr/>
-
-## Quick Start (3 Paths)
-
-### Download Pre-built Apps
-
-| Platform | Download | Notes |
-|----------|----------|-------|
-| **Windows** | [Sunnify.exe](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Run directly, no install needed |
-| **macOS** | [Sunnify.app](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | See macOS notes below |
-| **Linux** | [Sunnify](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Make executable: `chmod +x Sunnify` |
-
-<details>
-<summary><strong>macOS: Unsigned app instructions</strong></summary>
-
-The macOS app is ad-hoc signed but not notarized (no paid Apple Developer account). The zero-friction path is the Homebrew tap below: the cask verifies the archive's SHA256 and removes quarantine at install, so the app just opens.
-
-For direct downloads from the releases page, either:
+The app is ad-hoc signed but not notarized (notarization needs a paid Apple Developer account; this is an unfunded student project). The Homebrew install above is friction-free. For a direct `.zip` download from the Releases page, remove the quarantine flag once:
 
 ```bash
-# fast path: remove the quarantine attribute (no sudo needed for files you own)
 xattr -r -d com.apple.quarantine /Applications/Sunnify.app
 ```
 
-or use the Gatekeeper flow (macOS Sequoia and later removed the old right-click-Open bypass):
-1. Double-click Sunnify.app once; it gets blocked - click "Done"
-2. System Settings → Privacy & Security → scroll down → "Open Anyway"
-3. Confirm and authenticate (the button only appears for about an hour after step 1)
-
-You can verify what you downloaded came from this repo's release pipeline before opening it: see [SECURITY.md](SECURITY.md#release-integrity).
+Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy & Security → Open Anyway** (macOS Sequoia and later removed the old right-click-Open shortcut).
 
 </details>
 
-### Other Install Methods
+---
 
-- **Python users**: `pip install -r req.txt` then `python Spotify_Downloader.py`
-- **Homebrew (macOS)**:
-  ```bash
-  brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader
-  brew install --cask sunnify
-  ```
-- **Web stack**: run the Flask backend and Next.js client under `web-app/`
+## Features
 
-<hr/>
+- **Playlists, albums, and single tracks.** Paste a normal link, an `intl-xx` locale link, or a `spotify:` URI copied from the desktop app. Each playlist or album downloads into its own folder.
+- **Five audio formats.** MP3, M4A, Opus (lossy at 128 / 192 / 256 / 320 kbps) and FLAC / WAV (lossless). Your choice is remembered between sessions.
+- **Real metadata, written correctly.** Title, artist(s), album, year, and track number are embedded for every format, with the front cover art baked in. MP3 tags are written for maximum player compatibility, so artwork and tags show up everywhere, including older car head-units, stock Android, and Windows Media Player.
+- **Per-track cover art.** Each song gets its own artwork, not one shared playlist cover.
+- **Parallel downloads.** Multiple songs download at once, so a playlist finishes much faster, with a cooperative Stop that takes effect immediately.
+- **Resume large playlists.** A per-folder manifest records what already landed, so a playlist throttled by rate limits finishes across multiple sessions instead of starting over.
+- **Optional track-number prefixes.** Turn on `01. Song - Artist.mp3` so the folder sorts in playlist order in any file manager.
+- **Unicode-safe filenames.** Accented, CJK, and Cyrillic titles are preserved; only characters your filesystem actually rejects are stripped.
+- **Accurate audio matching.** Sunnify matches on title, artist, and duration rather than grabbing the first search hit, so you get the real recording, not a remix or a sped-up edit.
+- **Bundled FFmpeg, no account.** Everything needed ships inside the app, and nothing asks you to log in.
 
-## Desktop App Setup (Windows and cross-platform)
+<div align="center">
+<img src="./readmeAssets/demonstration%202.jpg" alt="Sunnify settings showing audio format and quality options" width="680" />
+</div>
 
-Windows PowerShell commands:
+---
 
-```powershell
-# Clone
-git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git
-cd sunnify-spotify-downloader
+## How to use
 
-# Create and activate a venv (recommended)
-py -3 -m venv .venv; .\.venv\Scripts\Activate.ps1
+1. **Copy a Spotify link** for a playlist, album, or track (the Share menu, or copy the URL from your browser).
+2. **Paste it** into Sunnify.
+3. **Pick a format and quality** in Settings, and choose where files should go (defaults to your Music folder).
+4. **Download.** Watch per-track progress; press Stop anytime.
 
-# Install dependencies
-pip install -r req.txt
+Your downloads land in a folder named after the playlist or album, tagged and ready for any music library.
 
-# Ensure FFmpeg is on PATH
-ffmpeg -version
+---
 
-# Launch the PyQt app
-python .\Spotify_Downloader.py
-```
+## Build from source
 
-macOS/Linux equivalent:
+Requires **Python 3.9+**. FFmpeg must be available (bundled in the prebuilt apps; otherwise install via Homebrew, your package manager, or PATH).
 
 ```bash
 git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git
 cd sunnify-spotify-downloader
-python3 -m venv .venv && source .venv/bin/activate
 pip install -r req.txt
-ffmpeg -version
 python Spotify_Downloader.py
 ```
 
-Build a Windows EXE with PyInstaller:
+To produce a standalone app with [PyInstaller](https://pyinstaller.org/):
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-pyinstaller Sunnify.spec
+```bash
+pip install pyinstaller
+pyinstaller Sunnify.spec     # output in dist/
 ```
 
-Output files are placed in `dist/`.
+---
 
-<hr/>
+## Verify your download
 
-## Web App Setup (Backend and Frontend)
+Every release since 2.0.8 ships a verifiable supply-chain trail. Each binary carries **SLSA Build Level 3 provenance** binding it to the exact source commit and the isolated builder workflow, plus a CycloneDX SBOM and offline Sigstore bundles, all logged to the public Rekor transparency log.
 
-### Backend (Flask)
+```bash
+# plain checksums, no extra tooling
+sha256sum -c checksums.txt --ignore-missing
 
-```powershell
-cd web-app\sunnify-backend
-py -3 -m venv .venv; .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python .\app.py
-# Serves on http://127.0.0.1:5000
+# cryptographic provenance (GitHub CLI)
+gh attestation verify Sunnify-Linux --repo sunnypatell/sunnify-spotify-downloader
 ```
 
-Endpoints:
+Full details and the threat model are in [SECURITY.md](SECURITY.md#release-integrity).
 
-- `POST /api/scrape-playlist` processes a playlist and emits progress or completion events.
-- `GET /api/download/<filename>?path=<dir>` serves a file from a directory.
+---
 
-The local server can stream Server-Sent Events (SSE). Each event looks like:
-`{"event":"progress"|"complete"|"error","data":{...}}`.
+## How it works
 
-Production style run with gunicorn:
+Sunnify reads track metadata from Spotify's public embed pages (no authentication), finds the matching audio via a YouTube search through [yt-dlp](https://github.com/yt-dlp/yt-dlp), transcodes it to your chosen format with the bundled FFmpeg, and writes the tags and cover art with [Mutagen](https://mutagen.readthedocs.io/). It is a pure-Python core wrapped in a PyQt5 interface, packaged per-platform with PyInstaller.
 
-```powershell
-pip install gunicorn
-gunicorn app:app --bind 0.0.0.0:5000
-```
-
-### Frontend (Next.js)
-
-```powershell
-cd ..\sunnify-webclient
-npm install
-npm run dev
-# Opens http://localhost:3000
-```
-
-Configure API base in `.env.local` (recommended):
-
-```dotenv
-NEXT_PUBLIC_API_BASE=http://127.0.0.1:5000
-```
-
-Then update `components/sunnify-app.tsx` to use `process.env.NEXT_PUBLIC_API_BASE + '/api/scrape-playlist'`.
-
-Local production simulation:
-
-```powershell
-npm run build
-npm start
-```
-
-Note: the web client points to a Render-hosted backend by default. The free tier spins down after inactivity, so the first request may take up to 50 seconds. For local development, update the API URL in `components/sunnify-app.tsx`.
-
-<hr/>
-
-## Configuration
-
-- `NEXT_PUBLIC_API_BASE` base URL for the webclient backend (set via `.env.local`)
-- Desktop app download location: click the ⚙ (settings) button to change
-
-<details>
-<summary>Advanced configuration tips</summary>
-
-- Corporate networks may block `open.spotify.com`. Allowlist this domain.
-- Increase request timeouts only if your network is unusually slow. See `spotifydown_api.py` for defaults.
-- Ensure download paths have write permissions.
-
-</details>
-
-<hr/>
-
-## Usage Guide
-
-Desktop app (GUI):
-
-1. Launch Sunnify.
-2. Paste a Spotify URL:
-   - Playlist: `https://open.spotify.com/playlist/<ID>`
-   - Single track: `https://open.spotify.com/track/<ID>`
-3. Click the green **Download** button (or press Enter) to start.
-4. Optional: click ⚙ to change download location.
-5. Optional: enable **Show Preview** to see the cover and meta.
-6. Optional: enable **Add Meta Tags** to embed ID3 and artwork.
-7. Output appears in your chosen download folder (default: `music/`).
-
-Web client:
-
-1. Start Flask backend and Next.js client.
-2. Open `http://localhost:3000`.
-3. Enter playlist URL and a writable download path.
-4. Click Process Playlist and watch progress.
-
-<hr/>
-
-## Deep Dive: How It Works
-
-### Provider Strategy (spotifydown_api.py)
-
-- `SpotifyEmbedAPI` fetches playlist/track data from Spotify's embed pages (`/embed/playlist/{id}`, `/embed/track/{id}`).
-- Extracts `__NEXT_DATA__` JSON blob containing full track metadata without authentication.
-- For playlists >100 tracks, uses spclient API with anonymous tokens from embed pages.
-- `PlaylistClient` is a high-level wrapper providing simple methods for common operations.
-
-### Download Pipeline (Desktop App)
-
-For each track:
-
-1. Fetch metadata from Spotify embed page.
-2. Search YouTube: `ytsearch1:<title> <artists> audio`.
-3. Download and convert to MP3 (`yt-dlp` plus FFmpeg).
-4. Write ID3 tags (Mutagen) with title, artist, album, date.
-5. Embed cover art (from track or playlist metadata).
-
-### Web Backend (web-app/sunnify-backend/app.py)
-
-- `POST /api/scrape-playlist` can stream JSON events (SSE) while processing.
-- Completion event includes `playlistName` and `tracks` with download links.
-
-<hr/>
-
-## Diagnostics
-
-Validate Spotify embed API and `yt-dlp` from your network:
-
-```powershell
-python .\scripts\check_api_status.py
-```
-
-Example output shows embed API status, large playlist fallback, and YouTube search results. See [API_STATUS.md](API_STATUS.md) for details.
-
-<hr/>
-
-## Troubleshooting
-
-- **FFmpeg not found**: install FFmpeg and restart terminal so PATH updates.
-- **yt-dlp errors**: `pip install -U yt-dlp` and ensure YouTube is reachable.
-- **URL rejected**: format must be `https://open.spotify.com/playlist/<ID>` or `https://open.spotify.com/track/<ID>`.
-- **Embed API fails**: check if `open.spotify.com` is accessible from your network.
-- **Hosted backend cold starts**: free tiers can sleep; first call might take seconds.
-- **Permission errors**: choose a download path you have write access to.
-- **macOS "app is damaged" / "could not verify"**: run `xattr -r -d com.apple.quarantine /path/to/Sunnify.app`, or System Settings → Privacy & Security → "Open Anyway". Installing via the Homebrew tap avoids this entirely.
-
-<hr/>
-
-## Notes and Roadmap
-
-Important note (hosted backends): on free compute plans, the backend might sleep and take a moment to wake on the first request.
-
-Coming soon:
-
-- Apple Music and iTunes import
-- Android MTP copy support
-- Webclient SSE progress UI
-
-<hr/>
+---
 
 <a name="legal-disclaimer"></a>
-## ⚖️ Legal Disclaimer
+## Legal Disclaimer
 
-### ⚠️ THIS IS A STUDENT PORTFOLIO PROJECT - NOT A PIRACY TOOL
+### This is a student portfolio project, not a piracy tool
 
-> **IMPORTANT**: This software was developed solely as an educational demonstration of software engineering concepts. It exists to showcase technical skills for academic and portfolio purposes. **The developer does not condone, encourage, or support any form of copyright infringement or piracy.**
+> **Sunnify was built solely as an educational demonstration of software engineering.** It exists to showcase technical skills for academic and portfolio purposes. The developer does not condone, encourage, or support copyright infringement or piracy.
 
-### Educational Purpose Statement
+It demonstrates desktop application development with Python and PyQt5, public-API integration and reverse engineering, multi-threaded architecture, and a hardened CI/CD release pipeline. It is provided free of charge as an open-source educational resource, not for commercial use.
 
-**Sunnify was created as a student portfolio project** to demonstrate proficiency in:
-- Full-stack software development (Python, Flask, Next.js, PyQt5)
-- API design and reverse engineering
-- Multi-threaded application architecture
-- Cross-platform desktop application development
-- CI/CD pipelines and automated testing
+### Terms of use
 
-This project is provided **free of charge** as an open-source educational resource. It is not intended for commercial use or to facilitate copyright infringement.
+By downloading, installing, or using this software, you agree that:
 
-### Terms of Use
+1. **Personal use only.** Use it for content you own, have purchased, or have explicit permission to download. Downloading copyrighted material without authorization may violate the law where you live.
+2. **You are responsible for compliance** with the laws of your country, state, or region. Some jurisdictions permit personal/backup downloads; others do not.
+3. **No warranty.** The software is provided "as is," without warranty of any kind.
+4. **Limitation of liability.** The developer is not liable for any damages or legal consequences arising from use or misuse. You assume all risk.
+5. **No endorsement of piracy.** This is a technical demonstration and must be used responsibly and legally.
 
-By downloading, installing, or using this software, you agree to the following:
+### Acceptable vs. not
 
-1. **Personal Use Only**: This software is intended for downloading content you already own, have purchased, or have explicit permission to download. Downloading copyrighted material without authorization may violate laws in your jurisdiction.
+- ✅ Format-shifting music you have purchased elsewhere
+- ✅ Personal backups of content you own
+- ✅ Research into API design and audio processing, and learning software development
+- ❌ Distributing copyrighted content
+- ❌ Commercial use
+- ❌ Any use where such downloads are prohibited
 
-2. **Jurisdictional Compliance**: You are solely responsible for determining whether your use of this software complies with applicable laws in your country, state, or region. Some jurisdictions permit downloading copyrighted content for personal/backup purposes; others do not.
+### DMCA & takedown requests
 
-3. **No Warranty**: This software is provided "as is" without warranty of any kind, express or implied. The developer makes no guarantees regarding functionality, reliability, or fitness for any particular purpose.
+If you are a rights holder and believe this project infringes your intellectual property, email `sunnypatel124555@gmail.com` with details and I will respond promptly. This project complies with all valid takedown requests.
 
-4. **Limitation of Liability**: The developer shall not be held liable for any damages, legal consequences, or other liabilities arising from the use or misuse of this software. Users assume all risks associated with its use.
+> **If you are looking for a tool to pirate music, this is not it.** Please support artists by purchasing their music or using authorized streaming services. Use this software responsibly and legally, or do not use it at all.
 
-5. **No Endorsement of Piracy**: This project does not endorse, encourage, or facilitate piracy or copyright infringement. It is designed as a technical demonstration and should be used responsibly and legally.
+See [DISCLAIMER.md](DISCLAIMER.md) for the complete legal terms.
 
-### Fair Use & Research
+---
 
-This project may be used for:
-- ✅ Downloading music you have purchased elsewhere for format-shifting
-- ✅ Creating personal backups of content you own
-- ✅ Educational research into API design and audio processing
-- ✅ Learning software development techniques
-- ❌ **NOT** for distributing copyrighted content
-- ❌ **NOT** for commercial purposes
-- ❌ **NOT** in jurisdictions where such downloads are prohibited
-
-### Acknowledgment of Responsibility
-
-By downloading, installing, or using this software, you acknowledge that:
-
-1. **You alone are responsible** for how you use this software
-2. **You will comply** with all applicable laws in your jurisdiction
-3. **You understand** that unauthorized downloading of copyrighted content may be illegal
-4. **You accept** that the developer bears no responsibility for your actions
-5. **You have read** and agree to the full terms in [DISCLAIMER.md](DISCLAIMER.md)
-
-### DMCA & Takedown Requests
-
-If you are a rights holder and believe this project infringes on your intellectual property, please contact `sunnypatel124555@gmail.com` with details, and I will respond promptly. **This project will comply with all valid takedown requests.**
-
-### Security
-
-See [SECURITY.md](SECURITY.md) for reporting security vulnerabilities and [LICENSE](LICENSE) for license terms.
-
-### Final Note
-
-**If you are looking for a tool to pirate music, this is not it.** This project exists purely as a technical demonstration. The developer strongly encourages supporting artists by purchasing music through legitimate channels or using authorized streaming services. **Use this software responsibly and legally, or do not use it at all.**
-
-<hr/>
-
-## Contributing and Community
+## Contributing
 
 Contributions, ideas, and bug reports are welcome.
 
-- Read the [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md) and [CONTRIBUTING](CONTRIBUTING.md)
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md)
 - Open issues with clear repro steps and logs where possible
-- Prefer small, focused PRs
+- Keep PRs small and focused
+- Security reports: see [SECURITY.md](SECURITY.md)
 
-<hr/>
+---
 
 ## Author
 
-Created and maintained by Sunny Jayendra Patel. Reach me at `sunnypatel124555@gmail.com` or connect on LinkedIn.
+Created and maintained by **Sunny Jayendra Patel**. Questions or feedback: `sunnypatel124555@gmail.com`.
 
-</div>
+Licensed under a custom educational-use license. See [LICENSE](LICENSE).
