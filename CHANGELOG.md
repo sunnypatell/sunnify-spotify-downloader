@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **"Open logs folder" button** in Settings, and the bug-report template now asks for the log file with the per-os path, so a report carries the exact failure context.
 
 ### Changed
-- **youtube download now falls back across player clients** (refs #62). when the default client fails to produce audio, the download retries forcing the `android`/`ios`/`tv`/`web_safari` clients, which use different endpoints and often still serve audio when youtube bot-challenges the default web client per-ip (an increasingly common cause of "not found on YouTube" that is independent of the user's connection). the happy path is unchanged - the fallback only runs after the first attempt produces no file - and the real yt-dlp error is now logged instead of silently swallowed.
+- **youtube download now falls back across player clients** (refs #62). when the default client fails to produce audio, the download retries forcing the `android`/`ios`/`tv`/`web_safari` clients, which use different endpoints and often still serve audio when youtube bot-challenges the default client per-ip (an increasingly common cause of "not found on YouTube" that is independent of the user's connection). the happy path is unchanged - the fallback only runs after the first attempt produces no file - and the real yt-dlp error is now logged instead of silently swallowed.
 
 ### Notes
 - no changes to the spotify metadata path, audio formats, tags, or matching policy; this release is observability + youtube resilience only. binaries rebuilt with yt-dlp 2026.6.9 (the current latest).
