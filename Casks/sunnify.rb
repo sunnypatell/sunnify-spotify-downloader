@@ -4,8 +4,8 @@
 #   brew install --cask sunnify
 
 cask "sunnify" do
-  version "2.0.10"
-  sha256 "26f196997d74f39671a9a33eb883eef0059710e60fdb817d09cbf65b96dcebba"
+  version "2.0.11"
+  sha256 "5b179b202cb27fc4f54a218b00ec77d09429c1b82d035a7f0b7c79757d589925"
 
   url "https://github.com/sunnypatell/sunnify-spotify-downloader/releases/download/v#{version}/Sunnify-macOS.zip"
   name "Sunnify"
