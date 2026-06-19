@@ -1950,3 +1950,57 @@ class TestSettingsDialog:
         assert out["quality"] == "256"
         assert out["include_track_number"] is True
         assert out["download_path"] == "/tmp/sunnify-music"
+
+
+class TestLogging:
+    """Tests for the per-user logging setup."""
+
+    def test_log_dir_macos(self, tmp_path):
+        from Spotify_Downloader import _log_dir
+
+        with (
+            patch("sys.platform", "darwin"),
+            patch("os.path.expanduser", return_value=str(tmp_path)),
+        ):
+            assert _log_dir() == os.path.join(str(tmp_path), "Library", "Logs", "Sunnify")
+
+    def test_log_dir_windows(self, tmp_path):
+        from Spotify_Downloader import _log_dir
+
+        with (
+            patch("sys.platform", "win32"),
+            patch.dict(os.environ, {"LOCALAPPDATA": str(tmp_path)}),
+        ):
+            assert _log_dir() == os.path.join(str(tmp_path), "Sunnify", "logs")
+
+    def test_log_dir_linux_xdg(self, tmp_path):
+        from Spotify_Downloader import _log_dir
+
+        with (
+            patch("sys.platform", "linux"),
+            patch.dict(os.environ, {"XDG_STATE_HOME": str(tmp_path)}),
+        ):
+            assert _log_dir() == os.path.join(str(tmp_path), "sunnify", "logs")
+
+    def test_setup_logging_writes_session_header_and_is_idempotent(self, tmp_path):
+        import Spotify_Downloader as S
+
+        log_path = str(tmp_path / "sunnify.log")
+        with patch.object(S, "log_file_path", return_value=log_path):
+            try:
+                p1 = S.setup_logging()
+                p2 = S.setup_logging()  # second call must not double-attach
+                assert p1 == p2 == log_path
+                handlers = [h for h in S.log.handlers if getattr(h, "_sunnify", False)]
+                assert len(handlers) == 1
+                S.log.info("probe-line")
+                for h in handlers:
+                    h.flush()
+                content = (tmp_path / "sunnify.log").read_text(encoding="utf-8")
+                assert "sunnify session start" in content
+                assert "probe-line" in content
+            finally:
+                # don't leak the file handler into other tests
+                for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
+                    h.close()
+                    S.log.removeHandler(h)

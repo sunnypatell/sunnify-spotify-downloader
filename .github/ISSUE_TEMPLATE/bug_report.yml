@@ -89,8 +89,14 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Logs / console output
-      description: Paste relevant logs, traces, or screenshots
+      label: Sunnify log file
+      description: |
+        The single most useful thing for a fast fix. In the desktop app, open
+        Settings and click "Open logs folder", then attach `sunnify.log` (or
+        paste the lines around the failure). The folder is also at:
+        - Windows: `%LOCALAPPDATA%\Sunnify\logs`
+        - macOS: `~/Library/Logs/Sunnify`
+        - Linux: `~/.local/state/sunnify/logs`
       render: shell
 
   - type: checkboxes

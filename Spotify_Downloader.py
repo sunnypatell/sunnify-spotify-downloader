@@ -17,14 +17,18 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.0.10"
+__version__ = "2.0.11"
 
 import concurrent.futures
+import contextlib
+import logging
 import os
+import platform
 import re
 import sys
 import threading
 import webbrowser
+from logging.handlers import RotatingFileHandler
 
 import requests
 from mutagen.easyid3 import EasyID3
@@ -67,6 +71,10 @@ from spotifydown_api import (
     sanitize_filename,
 )
 from Template import Ui_MainWindow
+
+# Module logger. Stays a no-op (no handlers) until _setup_logging() runs at
+# startup, so importing this module in tests stays silent and writes nothing.
+log = logging.getLogger("sunnify")
 
 
 def get_ffmpeg_path():
@@ -135,6 +143,78 @@ def _config_dir() -> str:
         base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
     path = os.path.join(base, "Sunnify")
     os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _log_dir() -> str:
+    """Return the per-user log directory, creating it if needed.
+
+    Uses each platform's conventional spot for app logs (not config), so the
+    files are where a user (or a support request) would expect them:
+      windows -> %LOCALAPPDATA%\\Sunnify\\logs
+      macOS   -> ~/Library/Logs/Sunnify
+      linux   -> $XDG_STATE_HOME/sunnify/logs (defaults to ~/.local/state)
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA", os.path.expanduser("~"))
+        path = os.path.join(base, "Sunnify", "logs")
+    elif sys.platform == "darwin":
+        path = os.path.join(os.path.expanduser("~"), "Library", "Logs", "Sunnify")
+    else:
+        base = os.environ.get(
+            "XDG_STATE_HOME", os.path.join(os.path.expanduser("~"), ".local", "state")
+        )
+        path = os.path.join(base, "sunnify", "logs")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def log_file_path() -> str:
+    """Absolute path of the current log file (used by the 'open logs' action)."""
+    return os.path.join(_log_dir(), "sunnify.log")
+
+
+def setup_logging() -> str:
+    """Configure file logging once; return the log file path.
+
+    Rotating handler caps disk use at ~6MB total (1MB x 5 backups) so logs are
+    diagnostic, never bloat. Idempotent: safe to call more than once. The line
+    format is deliberately dense (timestamp, level, function:line) so a single
+    log pasted into an issue is enough to pinpoint where a download went wrong.
+    A session header records the environment every launch.
+    """
+    if any(getattr(h, "_sunnify", False) for h in log.handlers):
+        return log_file_path()
+
+    path = log_file_path()
+    handler = RotatingFileHandler(
+        path, maxBytes=1_000_000, backupCount=5, encoding="utf-8", delay=True
+    )
+    handler._sunnify = True  # tag so we don't double-attach on re-call
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)-7s [%(funcName)s:%(lineno)d] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    log.setLevel(logging.INFO)
+    log.addHandler(handler)
+    log.propagate = False
+
+    try:
+        ytdlp_ver = __import__("yt_dlp").version.__version__
+    except Exception:
+        ytdlp_ver = "?"
+    log.info("==== sunnify session start ====")
+    log.info(
+        "version=%s platform=%s python=%s yt-dlp=%s",
+        __version__,
+        f"{sys.platform}-{platform.machine()}",
+        platform.python_version(),
+        ytdlp_ver,
+    )
+    log.info("ffmpeg=%s", get_ffmpeg_path() or "(not found)")
+    log.info("logs=%s", path)
     return path
 
 
@@ -430,20 +510,43 @@ class MusicScraper(QThread):
             "socket_timeout": 15,
             "concurrent_fragment_downloads": 4,
         }
+        log.info(
+            "yt search: query=%r title=%r artists=%r dur=%ss",
+            search_query,
+            expected_title,
+            expected_artists,
+            expected_duration_s,
+        )
         try:
             with YoutubeDL(select_opts) as ydl:
                 info = ydl.extract_info(search_query, download=False)
-        except Exception:
+        except Exception as exc:
+            # The single most useful log line for triage: a real exception here
+            # (bot-challenge, SSL, network, region block) is otherwise invisible
+            # because the caller only ever sees "not found on YouTube".
+            log.warning("yt search raised %s: %s", type(exc).__name__, str(exc)[:300])
             return None
         entries = [e for e in (info or {}).get("entries", []) if e and e.get("id")]
         if not entries:
+            # Empty results with no exception is the classic bot-block / rate-limit
+            # / region signature. Distinct from "found results but filtered out".
+            log.warning(
+                "yt search returned 0 entries for %r (bot-block/network/region?)", search_query
+            )
             return None
+        log.info("yt search returned %d entries", len(entries))
 
         if expected_title:
             title_ok = [
                 e for e in entries if self._title_plausibly_matches(e.get("title"), expected_title)
             ]
             if not title_ok:
+                log.info(
+                    "title filter rejected all %d candidates for %r (e.g. %r)",
+                    len(entries),
+                    expected_title,
+                    (entries[0].get("title") if entries else None),
+                )
                 return None
 
             # When the artists are known, require at least one to appear in
@@ -478,6 +581,11 @@ class MusicScraper(QThread):
                         )
                     ]
                     if not pool:
+                        log.info(
+                            "artist filter rejected all %d title-matches (artists=%r)",
+                            len(title_ok),
+                            expected_artists,
+                        )
                         return None
 
             chosen = pool[0]
@@ -490,11 +598,15 @@ class MusicScraper(QThread):
                     # means it's a live cover / extended mix and shipping
                     # it under the original's metadata still corrupts the
                     # library.
-                    if (
-                        abs(chosen["duration"] - expected_duration_s)
-                        > self._DURATION_TOLERANCE_S_WIDE
-                    ):
+                    off = abs(chosen["duration"] - expected_duration_s)
+                    if off > self._DURATION_TOLERANCE_S_WIDE:
+                        log.info(
+                            "closest candidate duration off by %.0fs (>%ss), rejecting",
+                            off,
+                            self._DURATION_TOLERANCE_S_WIDE,
+                        )
                         return None
+            log.info("selected youtube video %s", chosen["id"])
             return f"https://www.youtube.com/watch?v={chosen['id']}"
 
         # Legacy path - kept for any caller that hasn't been updated yet.
@@ -565,6 +677,21 @@ class MusicScraper(QThread):
         if fallback not in queries:
             queries.append(fallback)
 
+        # Two download attempts per resolved video: the default (web) client
+        # first (unchanged happy path), then a fallback that forces the
+        # non-web player clients. YouTube increasingly bot-challenges the web
+        # client per-IP, and the alternate clients (android/ios/tv) use
+        # different endpoints that often still serve audio. The fallback only
+        # runs when the first attempt produced no file, so a working download
+        # is byte-for-byte the same as before.
+        fallback_opts = {
+            **ydl_opts,
+            "extractor_args": {
+                "youtube": {"player_client": ["android", "ios", "tv", "web_safari"]}
+            },
+        }
+        attempts = [("default", ydl_opts), ("fallback-clients", fallback_opts)]
+
         for query in queries:
             video_url = self._select_youtube_match(
                 query,
@@ -574,16 +701,26 @@ class MusicScraper(QThread):
             )
             if not video_url:
                 continue
-            try:
-                with YoutubeDL(ydl_opts) as ydl:
-                    ydl.extract_info(video_url, download=True)
-            except Exception:
-                # Availability/network errors are absorbed by ignoreerrors; the
-                # file-exists check below is the single source of truth.
-                pass
-            if os.path.exists(expected_path):
-                return expected_path
+            for label, opts in attempts:
+                try:
+                    with YoutubeDL(opts) as ydl:
+                        ydl.extract_info(video_url, download=True)
+                except Exception as exc:
+                    # Log the REAL error instead of swallowing it - this is the
+                    # line that tells us bot-challenge vs SSL vs network vs
+                    # format, which the user-facing "not found" never could.
+                    log.warning(
+                        "download attempt (%s) failed for %s: %s",
+                        label,
+                        video_url,
+                        str(exc)[:300],
+                    )
+                if os.path.exists(expected_path):
+                    if label != "default":
+                        log.info("recovered via %s player clients", label)
+                    return expected_path
 
+        log.warning("no playable audio landed for query set %r", queries)
         raise RuntimeError("no playable audio source found on YouTube for this track")
 
     def download_http_file(self, url, destination):
@@ -1377,6 +1514,11 @@ class SettingsDialog(QDialog):
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
+        # Gives users a one-click way to grab the log file to attach to a bug
+        # report, without hunting through ~/Library/Logs or %LOCALAPPDATA%.
+        open_logs = btns.addButton("Open logs folder", QDialogButtonBox.ActionRole)
+        open_logs.setToolTip(log_file_path())
+        open_logs.clicked.connect(self._open_logs)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(0)
@@ -1413,6 +1555,13 @@ class SettingsDialog(QDialog):
         )
         layout.addStretch(1)
         layout.addWidget(btns)
+
+    def _open_logs(self):
+        """Reveal the log folder in the OS file manager."""
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(_log_dir()))
 
     def _choose_folder(self):
         start = (
@@ -1772,6 +1921,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 # Main
 if __name__ == "__main__":
+    # Logging must never stop the app from launching (e.g. a locked-down or
+    # read-only log dir). Failure here just means no log file this session.
+    with contextlib.suppress(Exception):
+        setup_logging()
     app = QApplication(sys.argv)
     Screen = MainWindow()
     Screen.setFixedHeight(500)

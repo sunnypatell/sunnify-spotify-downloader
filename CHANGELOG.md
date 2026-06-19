@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-06-19
+
+### Added
+- **rigorous diagnostic logging** (refs #62). the app now writes a rotating log to the platform's conventional location (`%LOCALAPPDATA%\Sunnify\logs` on windows, `~/Library/Logs/Sunnify` on macOS, `~/.local/state/sunnify/logs` on linux), capped at ~6MB total (1MB x 5 backups) so it's diagnostic, never bloat. every launch records a session header (app version, os/arch, python, yt-dlp version, ffmpeg path), and the youtube path now logs the exact decision trail: the search query, how many results came back, and precisely why a track resolved or was rejected (no results vs title-filter vs artist-filter vs duration-off). a single pasted log now pinpoints where a download went wrong.
+- **"Open logs folder" button** in Settings, and the bug-report template now asks for the log file with the per-os path, so a report carries the exact failure context.
+
+### Changed
+- **youtube download now falls back across player clients** (refs #62). when the default client fails to produce audio, the download retries forcing the `android`/`ios`/`tv`/`web_safari` clients, which use different endpoints and often still serve audio when youtube bot-challenges the default web client per-ip (an increasingly common cause of "not found on YouTube" that is independent of the user's connection). the happy path is unchanged - the fallback only runs after the first attempt produces no file - and the real yt-dlp error is now logged instead of silently swallowed.
+
+### Notes
+- no changes to the spotify metadata path, audio formats, tags, or matching policy; this release is observability + youtube resilience only. binaries rebuilt with yt-dlp 2026.6.9 (the current latest).
+
 ## [2.0.10] - 2026-06-09
 
 ### Changed
@@ -215,7 +227,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.10...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.11...HEAD
+[2.0.11]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.10...v2.0.11
 [2.0.10]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.9...v2.0.10
 [2.0.9]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.7...v2.0.8
