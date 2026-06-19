@@ -690,7 +690,7 @@ class MusicScraper(QThread):
                 "youtube": {"player_client": ["android", "ios", "tv", "web_safari"]}
             },
         }
-        attempts = [("default", ydl_opts), ("fallback-clients", fallback_opts)]
+        attempts = [("default", ydl_opts), ("fallback", fallback_opts)]
 
         for query in queries:
             video_url = self._select_youtube_match(
