@@ -2004,3 +2004,85 @@ class TestLogging:
                 for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
                     h.close()
                     S.log.removeHandler(h)
+
+    @staticmethod
+    def _teardown_logging(S, prev_hook=None, prev_thook=None):
+        if prev_hook is not None:
+            sys.excepthook = prev_hook
+        if prev_thook is not None:
+            threading.excepthook = prev_thook
+        for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
+            h.close()
+            S.log.removeHandler(h)
+
+    def test_crash_handlers_are_installed(self, tmp_path):
+        import faulthandler
+
+        import Spotify_Downloader as S
+
+        prev_hook, prev_thook = sys.excepthook, threading.excepthook
+        with patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")):
+            try:
+                S.setup_logging()
+                assert sys.excepthook is S._log_excepthook
+                assert threading.excepthook is S._thread_excepthook
+                assert faulthandler.is_enabled()
+                assert (tmp_path / "crash.log").exists()  # sibling of sunnify.log
+            finally:
+                self._teardown_logging(S, prev_hook, prev_thook)
+
+    def test_uncaught_exception_is_logged(self, tmp_path):
+        import Spotify_Downloader as S
+
+        prev_hook, prev_thook = sys.excepthook, threading.excepthook
+        with patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")):
+            try:
+                S.setup_logging()
+                try:
+                    raise RuntimeError("kaboom-test")
+                except RuntimeError:
+                    with patch("sys.stderr", None):  # skip the noisy default hook
+                        sys.excepthook(*sys.exc_info())
+                for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
+                    h.flush()
+                content = (tmp_path / "sunnify.log").read_text(encoding="utf-8")
+                assert "CRITICAL" in content
+                assert "uncaught exception" in content
+                assert "kaboom-test" in content
+                assert "Traceback" in content
+            finally:
+                self._teardown_logging(S, prev_hook, prev_thook)
+
+    def test_track_download_failure_is_logged(self, tmp_path):
+        from types import SimpleNamespace
+
+        import Spotify_Downloader as S
+
+        with patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")):
+            try:
+                S.setup_logging()
+                scraper = S.MusicScraper()
+                track = SimpleNamespace(
+                    title="Some Song",
+                    artists="Some Artist",
+                    id="xyz",
+                    cover_url="",
+                    release_date="",
+                    duration_ms=200000,
+                    album="Alb",
+                )
+                with patch.object(
+                    scraper, "download_track_audio", side_effect=Exception("yt failed")
+                ):
+                    ret = scraper._download_one_track(
+                        track, str(tmp_path), "http://c", track_num=1
+                    )
+                assert ret == "Some Song"  # failed track surfaced to caller
+                for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
+                    h.flush()
+                content = (tmp_path / "sunnify.log").read_text(encoding="utf-8")
+                assert "ERROR" in content
+                assert "track download failed" in content
+                assert "Some Song" in content
+            finally:
+                self._teardown_logging(S)

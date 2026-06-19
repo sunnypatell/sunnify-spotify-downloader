@@ -10,14 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.11] - 2026-06-19
 
 ### Added
-- **rigorous diagnostic logging** (refs #62). the app now writes a rotating log to the platform's conventional location (`%LOCALAPPDATA%\Sunnify\logs` on windows, `~/Library/Logs/Sunnify` on macOS, `~/.local/state/sunnify/logs` on linux), capped at ~6MB total (1MB x 5 backups) so it's diagnostic, never bloat. every launch records a session header (app version, os/arch, python, yt-dlp version, ffmpeg path), and the youtube path now logs the exact decision trail: the search query, how many results came back, and precisely why a track resolved or was rejected (no results vs title-filter vs artist-filter vs duration-off). a single pasted log now pinpoints where a download went wrong.
-- **"Open logs folder" button** in Settings, and the bug-report template now asks for the log file with the per-os path, so a report carries the exact failure context.
+- **rigorous diagnostic logging** (refs #62, #63). the app writes a rotating log to the platform's conventional location (`%LOCALAPPDATA%\Sunnify\logs` on windows, `~/Library/Logs/Sunnify` on macOS, `~/.local/state/sunnify/logs` on linux), capped at ~6MB total (1MB x 5 backups) so it's diagnostic, never bloat. every launch records a session header (app version, os/arch, python, yt-dlp version, ffmpeg path).
+- **the log explains a whole session, not just the happy path.** the youtube path records its exact decision trail (search query, result count, and precisely why a track resolved or was rejected: no results vs title-filter vs artist-filter vs duration-off). each scrape logs a start line (type, name, id, track count, resume-skips, sequential/parallel + worker count, format/quality) and a completion summary (ok/failed counts plus the titles of any tracks that failed), so a single pasted log is enough to diagnose a run.
+- **crashes are never silent.** uncaught exceptions on the main thread and worker threads, plus native crashes in qt/ffmpeg (via faulthandler, written to a sibling `crash.log`), are captured before the app exits, with a clean session-end marker on normal close.
+- **every failure path is logged instead of swallowed**: per-track download errors (with traceback), tracks that produced no audio (no confident match or a youtube block), dead workers, failed scrapes, tag/cover-art write failures, and an unwritable download folder.
+- **"Open logs folder" button** in Settings, and the bug-report template asks for the log file (per-os path + native upload), so a report arrives with the exact failure context.
 
 ### Changed
-- **youtube download now falls back across player clients** (refs #62). when the default client fails to produce audio, the download retries forcing the `android`/`ios`/`tv`/`web_safari` clients, which use different endpoints and often still serve audio when youtube bot-challenges the default client per-ip (an increasingly common cause of "not found on YouTube" that is independent of the user's connection). the happy path is unchanged - the fallback only runs after the first attempt produces no file - and the real yt-dlp error is now logged instead of silently swallowed.
+- **youtube download now falls back across player clients** (refs #62). when the default client fails to produce audio, the download retries forcing the `android`/`ios`/`tv`/`web_safari` clients, which use different endpoints and often still serve audio when youtube bot-challenges the default client per-ip (an increasingly common cause of "not found on YouTube" that is independent of the user's connection). the happy path is unchanged - the fallback only runs after the first attempt produces no file.
+- **a terminal ctrl+c now exits cleanly** instead of surfacing a stray traceback.
 
 ### Notes
-- no changes to the spotify metadata path, audio formats, tags, or matching policy; this release is observability + youtube resilience only. binaries rebuilt with yt-dlp 2026.6.9 (the current latest).
+- no changes to the spotify metadata path, audio formats, tags, or matching policy; this release is observability + youtube resilience only. binaries built with yt-dlp 2026.6.9 (the current latest).
 
 ## [2.0.10] - 2026-06-09
 

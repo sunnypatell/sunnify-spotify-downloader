@@ -19,12 +19,15 @@ from __future__ import annotations
 
 __version__ = "2.0.11"
 
+import atexit
 import concurrent.futures
 import contextlib
+import faulthandler
 import logging
 import os
 import platform
 import re
+import signal
 import sys
 import threading
 import webbrowser
@@ -75,6 +78,40 @@ from Template import Ui_MainWindow
 # Module logger. Stays a no-op (no handlers) until _setup_logging() runs at
 # startup, so importing this module in tests stays silent and writes nothing.
 log = logging.getLogger("sunnify")
+
+
+def _log_excepthook(exc_type, exc, tb):
+    """Route uncaught main-thread exceptions to the log before the default handler."""
+    # a clean ctrl+c is not a crash worth a critical-level dump
+    if not issubclass(exc_type, KeyboardInterrupt):
+        with contextlib.suppress(Exception):
+            log.critical("uncaught exception", exc_info=(exc_type, exc, tb))
+    if sys.stderr is not None:  # windowed builds have no stderr to write to
+        sys.__excepthook__(exc_type, exc, tb)
+
+
+def _thread_excepthook(args):
+    """Same, for python threads; qt threads log inside their own run()."""
+    if issubclass(args.exc_type, SystemExit):
+        return
+    with contextlib.suppress(Exception):
+        log.critical(
+            "uncaught exception in thread %s",
+            args.thread.name if args.thread else "?",
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        )
+
+
+def _install_crash_handlers() -> None:
+    """Make every abnormal exit land in the log; logging is our only diagnostic."""
+    sys.excepthook = _log_excepthook
+    threading.excepthook = _thread_excepthook
+    # faulthandler catches native crashes (qt/ffmpeg segfaults) excepthook can't;
+    # crash.log sits next to sunnify.log and stays open for the process lifetime.
+    with contextlib.suppress(Exception):
+        crash_path = os.path.join(os.path.dirname(log_file_path()), "crash.log")
+        faulthandler.enable(open(crash_path, "a"))  # noqa: SIM115
+    atexit.register(lambda: log.info("==== sunnify session end ===="))
 
 
 def get_ffmpeg_path():
@@ -147,7 +184,11 @@ def _config_dir() -> str:
 
 
 def _log_dir() -> str:
-    """Return the per-user log directory, creating it if needed.
+    """Return the per-user log directory path (does not create it).
+
+    Pure path computation, no filesystem side effects, so callers that only
+    need the string (e.g. a settings tooltip) don't create stray folders;
+    setup_logging() and _open_logs() create the dir when they actually use it.
 
     Uses each platform's conventional spot for app logs (not config), so the
     files are where a user (or a support request) would expect them:
@@ -165,7 +206,6 @@ def _log_dir() -> str:
             "XDG_STATE_HOME", os.path.join(os.path.expanduser("~"), ".local", "state")
         )
         path = os.path.join(base, "sunnify", "logs")
-    os.makedirs(path, exist_ok=True)
     return path
 
 
@@ -187,6 +227,7 @@ def setup_logging() -> str:
         return log_file_path()
 
     path = log_file_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     handler = RotatingFileHandler(
         path, maxBytes=1_000_000, backupCount=5, encoding="utf-8", delay=True
     )
@@ -215,6 +256,7 @@ def setup_logging() -> str:
     )
     log.info("ffmpeg=%s", get_ffmpeg_path() or "(not found)")
     log.info("logs=%s", path)
+    _install_crash_handlers()
     return path
 
 
@@ -258,7 +300,7 @@ def save_config(config: dict) -> None:
         with open(_config_path(), "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
     except OSError as exc:
-        print(f"[*] Could not save config: {exc}")
+        log.warning("could not save config: %s", exc)
 
 
 class MusicScraper(QThread):
@@ -815,8 +857,8 @@ class MusicScraper(QThread):
                         cover_url = enriched.cover_url
                     if not release_date and enriched.release_date:
                         release_date = enriched.release_date
-            except SpotifyDownAPIError:
-                pass  # Fall through to default_cover_url
+            except SpotifyDownAPIError as exc:
+                log.debug("cover enrichment failed for '%s': %s", track_title, exc)
 
         cover_url = cover_url or default_cover_url
         album_name = track.album or ""
@@ -857,7 +899,7 @@ class MusicScraper(QThread):
             except Exception as error_status:
                 error_msg = self._get_user_friendly_error(error_status, track_title)
                 self.error_signal.emit(error_msg)
-                print(f"[*] Error downloading '{track_title}': {error_status}")
+                log.error("track download failed: '%s'", track_title, exc_info=True)
                 with self._failed_lock:
                     self._failed_tracks.append(track_title)
                 self._finish_track_ui(ok=False)
@@ -865,7 +907,10 @@ class MusicScraper(QThread):
 
             if not final_path or not os.path.exists(final_path):
                 self.error_signal.emit(f"'{track_title}' - download failed")
-                print(f"[*] Download did not produce an audio file for: {track_title}")
+                log.warning(
+                    "track produced no audio file (no confident match or blocked): '%s'",
+                    track_title,
+                )
                 with self._failed_lock:
                     self._failed_tracks.append(track_title)
                 self._finish_track_ui(ok=False)
@@ -1024,6 +1069,19 @@ class MusicScraper(QThread):
         worker_count = 1 if len(tracks) < 3 else min(self.MAX_WORKERS, len(tracks))
         self._parallel_mode = worker_count > 1
 
+        log.info(
+            "%s scrape: name=%r id=%s tracks=%d (resume-skipped %d) mode=%s workers=%d fmt=%s/%s",
+            content_type,
+            playlist_display_name,
+            playlist_id,
+            len(tracks),
+            len(already_done),
+            "parallel" if self._parallel_mode else "sequential",
+            worker_count,
+            self.audio_format,
+            self.audio_quality,
+        )
+
         # Prefer the canonical Spotify playlist position when the API gave
         # one (it does for any playlist whose tracks went through the
         # spclient fallback, which is the only place enumerate-of-yield-
@@ -1070,13 +1128,10 @@ class MusicScraper(QThread):
                         try:
                             future.result()
                         except Exception as exc:
-                            # _download_one_track handles errors internally;
-                            # this catches unexpected framework-level
-                            # exceptions only. Surface them to the UI instead
-                            # of silently logging.
-                            msg = f"Unexpected worker error: {exc}"
-                            print(f"[*] {msg}")
-                            self.error_signal.emit(msg)
+                            # _download_one_track handles its own errors; this is
+                            # only framework-level fallout (a worker crashed hard).
+                            log.error("unexpected worker error", exc_info=exc)
+                            self.error_signal.emit(f"Unexpected worker error: {exc}")
             finally:
                 # Reset parallel_mode only after the executor has fully shut
                 # down (context manager exit waits on in-flight workers). If
@@ -1086,13 +1141,18 @@ class MusicScraper(QThread):
                 self._parallel_mode = False
 
         if self.is_cancelled():
+            log.info("scrape cancelled by user (%d done before cancel)", self.counter)
             self.PlaylistCompleted.emit("Download cancelled")
             return
 
         # Report completion with failed track count
+        ok = max(self._total_tracks - len(self._failed_tracks), 0)
         if self._failed_tracks:
+            log.info("scrape done: %d ok, %d failed", ok, len(self._failed_tracks))
+            log.info("failed tracks: %s", " | ".join(self._failed_tracks))
             self.PlaylistCompleted.emit(f"Done! {len(self._failed_tracks)} track(s) failed")
         else:
+            log.info("scrape done: %d ok, 0 failed", self._total_tracks)
             self.PlaylistCompleted.emit("Download Complete!")
 
     def returnSPOT_ID(self, link):
@@ -1111,6 +1171,14 @@ class MusicScraper(QThread):
             raise RuntimeError(str(exc)) from exc
 
         track = spotify_api.get_track(track_id)
+        log.info(
+            "single-track scrape: %r by %r id=%s fmt=%s/%s",
+            track.title,
+            track.artists,
+            track_id,
+            self.audio_format,
+            self.audio_quality,
+        )
         self.song_Album.emit("Single Track Download")
 
         if not os.path.exists(music_folder):
@@ -1156,12 +1224,12 @@ class MusicScraper(QThread):
             )
         except Exception as error_status:
             error_msg = self._get_user_friendly_error(error_status, track_title)
-            print(f"[*] Error downloading '{track_title}': {error_status}")
+            log.error("single-track download failed: '%s'", track_title, exc_info=True)
             self.PlaylistCompleted.emit(error_msg)
             return
 
         if not final_path or not os.path.exists(final_path):
-            print(f"[*] Download did not produce an audio file for: {track_title}")
+            log.warning("single-track produced no audio file: '%s'", track_title)
             self.PlaylistCompleted.emit("Download failed - no audio file produced")
             return
 
@@ -1218,6 +1286,7 @@ class ScraperThread(QThread):
                 self.scraper.scrape_playlist(self.spotify_link, self.music_folder)
             self.progress_update.emit("Scraping completed.")
         except Exception as e:
+            log.exception("scrape failed for %s", self.spotify_link)
             self.progress_update.emit(f"{e}")
 
 
@@ -1230,7 +1299,7 @@ def _fetch_cover_bytes(url: str) -> bytes | None:
         if resp.status_code == 200 and resp.content:
             return resp.content
     except (requests.RequestException, OSError) as exc:
-        print(f"[*] Error fetching cover: {exc}")
+        log.debug("cover fetch failed: %s", exc)
     return None
 
 
@@ -1375,7 +1444,7 @@ class WritingMetaTagsThread(QThread):
         would repay the extra dependency surface for this project's scope.
         """
         try:
-            print("[*] FileName : ", self.filename)
+            log.info("writing tags: %s", self.filename)
             ext = os.path.splitext(self.filename)[1].lower()
             writer = _METADATA_WRITERS.get(ext)
             if writer is None:
@@ -1385,8 +1454,8 @@ class WritingMetaTagsThread(QThread):
             cover_bytes = _fetch_cover_bytes(self.tags.get("cover", ""))
             writer(self.filename, self.tags, cover_bytes)
             self.tags_success.emit("Tags added successfully")
-        except Exception as e:
-            print(f"[*] Error writing meta tags: {e}")
+        except Exception:
+            log.error("tag write failed: %s", self.filename, exc_info=True)
 
 
 class DownloadThumbnail(QThread):
@@ -1405,8 +1474,8 @@ class DownloadThumbnail(QThread):
             response = requests.get(self.url, stream=True, timeout=10)
             if response.status_code == 200:
                 self.thumbnail_ready.emit(response.content)
-        except Exception:
-            pass  # Silently fail for thumbnails
+        except Exception as exc:
+            log.debug("thumbnail fetch failed: %s", exc)
 
     def _update_ui(self, data):
         """Update UI from main thread via signal."""
@@ -1561,7 +1630,10 @@ class SettingsDialog(QDialog):
         from PyQt5.QtCore import QUrl
         from PyQt5.QtGui import QDesktopServices
 
-        QDesktopServices.openUrl(QUrl.fromLocalFile(_log_dir()))
+        log_dir = _log_dir()
+        with contextlib.suppress(OSError):
+            os.makedirs(log_dir, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(log_dir))
 
     def _choose_folder(self):
         start = (
@@ -1667,7 +1739,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 f.write("test")
             os.remove(test_file)
             return True
-        except OSError:
+        except OSError as exc:
+            log.error("download path not writable: %s (%s)", self.download_path, exc)
             return False
 
     def _prompt_download_location(self):
@@ -1925,6 +1998,10 @@ if __name__ == "__main__":
     # read-only log dir). Failure here just means no log file this session.
     with contextlib.suppress(Exception):
         setup_logging()
+    # let a terminal ctrl+c terminate cleanly instead of surfacing a traceback
+    # on the next qt slot (qt's c++ loop defers python's sigint until then)
+    with contextlib.suppress(Exception):
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
     Screen = MainWindow()
     Screen.setFixedHeight(500)
