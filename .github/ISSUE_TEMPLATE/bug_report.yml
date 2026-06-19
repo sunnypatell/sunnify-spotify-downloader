@@ -86,17 +86,26 @@ body:
     validations:
       required: true
 
-  - type: textarea
-    id: logs
+  - type: upload
+    id: log_file
     attributes:
       label: Sunnify log file
       description: |
         The single most useful thing for a fast fix. In the desktop app, open
-        Settings and click "Open logs folder", then attach `sunnify.log` (or
-        paste the lines around the failure). The folder is also at:
+        Settings and click "Open logs folder", then drag `sunnify.log` in here
+        (or a `.zip` of the folder). The folder is also at:
         - Windows: `%LOCALAPPDATA%\Sunnify\logs`
         - macOS: `~/Library/Logs/Sunnify`
         - Linux: `~/.local/state/sunnify/logs`
+    validations:
+      required: false
+      accept: ".log,.txt,.zip,.json"
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output / log snippet (optional)
+      description: If you can't attach the file, paste the lines around the failure here instead.
       render: shell
 
   - type: checkboxes
