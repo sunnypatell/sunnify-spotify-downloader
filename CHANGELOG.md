@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.12] - 2026-06-20
+
+### Added
+- **"use closest result if no match" (opt-in, off by default).** when sunnify can't confidently match a track, it can now fall back to the closest youtube result by length instead of skipping it. this recovers songs whose youtube title is in a different alphabet than spotify (greek, cyrillic, korean, etc.), which the ascii title match could never make. the strict wrong-audio safeguard stays the default; the settings note spells out the tradeoff. thanks to Kyriazis for the suggestion over email.
+- **`SUNNIFY_DEBUG` env toggle** for the full per-track + yt-dlp verbose trail on demand, while the default log stays lean.
+
+### Fixed
+- **youtube downloads that silently produced no file now log the real reason.** the actual yt-dlp error (bot-check, video unavailable, format, etc.) was being swallowed under `ignoreerrors`; it's now captured per attempt, so a single pasted log pinpoints the cause instead of a generic "not found".
+
+### Changed
+- **the log scales with failures, not playlist size.** per-track search/selection detail dropped to debug level, so a clean run stays quiet and only failures (with their reason) surface at the default level. spotify rate-limit (429) and retry backoff are now logged too (were previously silent).
+
+### Notes
+- observability + internationalization release; no changes to the spotify metadata path, audio formats, tags, or the default matching policy. binaries built with yt-dlp 2026.6.9 (current latest).
+
 ## [2.0.11] - 2026-06-19
 
 ### Added
@@ -231,7 +246,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.11...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.12...HEAD
+[2.0.12]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.11...v2.0.12
 [2.0.11]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.10...v2.0.11
 [2.0.10]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.9...v2.0.10
 [2.0.9]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.8...v2.0.9
