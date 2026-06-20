@@ -348,6 +348,46 @@ class TestYoutubeMatchSelection:
             ctx.stop()
         assert url == "https://www.youtube.com/watch?v=audio"
 
+    def test_loose_match_off_rejects_cross_script(self):
+        """Default (strict): a Latin Spotify title can't match a Greek-script
+        YouTube title, so it returns None - the #52 wrong-audio safeguard holds."""
+        entries = [
+            {"id": "greek", "duration": 200, "title": "Στους 31 Δρόμους"},
+            {"id": "other", "duration": 400, "title": "Κάτι Άλλο"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Stous 31 Dromous",
+                200,
+                expected_title="Stous 31 Dromous",
+                expected_artists="Some Artist",
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_loose_match_on_recovers_cross_script(self):
+        """Opt-in loose mode: recovers the duration-closest result when strict
+        title/artist matching finds nothing (the cross-script i18n case)."""
+        entries = [
+            {"id": "greek", "duration": 200, "title": "Στους 31 Δρόμους"},
+            {"id": "other", "duration": 400, "title": "Κάτι Άλλο"},
+        ]
+        scraper = self._scraper()
+        scraper.loose_match = True
+        ctx = self._patched(entries)
+        try:
+            url = scraper._select_youtube_match(
+                "ytsearch5:Stous 31 Dromous",
+                200,
+                expected_title="Stous 31 Dromous",
+                expected_artists="Some Artist",
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=greek"  # duration-closest match
+
     def test_keeps_top_hit_when_its_duration_is_already_close(self):
         """No regression: a top hit within tolerance is kept even if another
         candidate is a hair closer (avoids preferring a same-length wrong edit)."""
@@ -2074,9 +2114,7 @@ class TestLogging:
                 with patch.object(
                     scraper, "download_track_audio", side_effect=Exception("yt failed")
                 ):
-                    ret = scraper._download_one_track(
-                        track, str(tmp_path), "http://c", track_num=1
-                    )
+                    ret = scraper._download_one_track(track, str(tmp_path), "http://c", track_num=1)
                 assert ret == "Some Song"  # failed track surfaced to caller
                 for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
                     h.flush()

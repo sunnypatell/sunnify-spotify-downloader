@@ -302,6 +302,7 @@ def load_config() -> dict:
         "format": "mp3",
         "quality": "192",
         "include_track_number": False,
+        "loose_match": False,
     }
     try:
         with open(_config_path(), encoding="utf-8") as f:
@@ -315,6 +316,8 @@ def load_config() -> dict:
             defaults["quality"] = "192"
         if not isinstance(defaults["include_track_number"], bool):
             defaults["include_track_number"] = False
+        if not isinstance(defaults["loose_match"], bool):
+            defaults["loose_match"] = False
         return defaults
     except (OSError, json.JSONDecodeError):
         return defaults
@@ -353,6 +356,7 @@ class MusicScraper(QThread):
         audio_format: str = "mp3",
         audio_quality: str = "192",
         include_track_number: bool = False,
+        loose_match: bool = False,
     ):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
@@ -365,6 +369,10 @@ class MusicScraper(QThread):
         self.audio_format = audio_format if audio_format in SUPPORTED_FORMATS else "mp3"
         self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
         self.include_track_number = bool(include_track_number)
+        # opt-in: when strict title/artist matching fails, fall back to the
+        # duration-closest youtube result (recovers cross-script matches);
+        # off by default so the wrong-audio safeguard (#52) stays the default.
+        self.loose_match = bool(loose_match)
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
@@ -617,6 +625,8 @@ class MusicScraper(QThread):
                     expected_title,
                     (entries[0].get("title") if entries else None),
                 )
+                if self.loose_match:
+                    return self._loose_pick(entries, expected_duration_s)
                 return None
 
             # When the artists are known, require at least one to appear in
@@ -656,6 +666,8 @@ class MusicScraper(QThread):
                             len(title_ok),
                             expected_artists,
                         )
+                        if self.loose_match:
+                            return self._loose_pick(title_ok, expected_duration_s)
                         return None
 
             chosen = pool[0]
@@ -690,6 +702,27 @@ class MusicScraper(QThread):
                 timed = [e for e in entries if e.get("duration")]
                 if timed:
                     chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
+        return f"https://www.youtube.com/watch?v={chosen['id']}"
+
+    def _loose_pick(self, candidates, expected_duration_s):
+        """Opt-in fallback (Settings: "use closest result if no match").
+
+        When strict title/artist matching finds nothing, return the
+        duration-closest candidate (or the top result if durations are
+        missing). Recovers cross-script matches the ascii title filter can
+        never make - e.g. a Latin Spotify title vs a Greek/Cyrillic/CJK
+        youtube title. Trades the never-grab-the-wrong-audio guarantee for
+        coverage, which is why the caller only reaches here when loose_match
+        is on (off by default).
+        """
+        if not candidates:
+            return None
+        chosen = candidates[0]
+        if expected_duration_s:
+            timed = [e for e in candidates if e.get("duration")]
+            if timed:
+                chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
+        log.warning("loose match (no confident title/artist match): selected %s", chosen["id"])
         return f"https://www.youtube.com/watch?v={chosen['id']}"
 
     def download_track_audio(
@@ -1301,6 +1334,7 @@ class ScraperThread(QThread):
         audio_format: str = "mp3",
         audio_quality: str = "192",
         include_track_number: bool = False,
+        loose_match: bool = False,
     ):
         super().__init__()
         self.spotify_link = spotify_link
@@ -1311,6 +1345,7 @@ class ScraperThread(QThread):
             audio_format=audio_format,
             audio_quality=audio_quality,
             include_track_number=include_track_number,
+            loose_match=loose_match,
         )
 
     def request_cancel(self):
@@ -1575,6 +1610,9 @@ class SettingsDialog(QDialog):
         self._include_track_number_cb = QCheckBox()
         self._include_track_number_cb.setChecked(self._config.get("include_track_number", False))
 
+        self._loose_match_cb = QCheckBox()
+        self._loose_match_cb.setChecked(self._config.get("loose_match", False))
+
         # Per-setting QVBoxLayout block: each setting is a self-contained
         # vertical mini-layout owning its own height. QFormLayout was tried
         # earlier and wrapping hint labels got clipped because the row height
@@ -1664,6 +1702,18 @@ class SettingsDialog(QDialog):
                 "Files sort in playlist order in your file manager.",
             )
         )
+        layout.addWidget(
+            _setting_block(
+                "Use closest result if no match:",
+                self._loose_match_cb,
+                "Off (default): if Sunnify can't confidently match a track it skips "
+                "it rather than risk grabbing the wrong audio. On: it falls back to "
+                "the closest YouTube result by length. This recovers songs whose "
+                "YouTube title is in a different script than Spotify (Greek, Cyrillic, "
+                "Korean, etc.), but it gives up the wrong-audio safeguard, so an "
+                "occasional cover or remix may slip through.",
+            )
+        )
         layout.addStretch(1)
         layout.addWidget(btns)
 
@@ -1712,6 +1762,7 @@ class SettingsDialog(QDialog):
         self._config["format"] = self._format_cb.currentText()
         self._config["quality"] = self._quality_cb.currentText().split()[0]
         self._config["include_track_number"] = self._include_track_number_cb.isChecked()
+        self._config["loose_match"] = self._loose_match_cb.isChecked()
         return self._config
 
 
@@ -1823,6 +1874,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     "format": new.get("format", "mp3"),
                     "quality": new.get("quality", "192"),
                     "include_track_number": new.get("include_track_number", False),
+                    "loose_match": new.get("loose_match", False),
                 }
             )
             save_config(self._config)
@@ -1875,6 +1927,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 audio_format=self._config.get("format", "mp3"),
                 audio_quality=self._config.get("quality", "192"),
                 include_track_number=self._config.get("include_track_number", False),
+                loose_match=self._config.get("loose_match", False),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
