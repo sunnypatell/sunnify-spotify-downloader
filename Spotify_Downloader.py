@@ -114,6 +114,31 @@ def _install_crash_handlers() -> None:
     atexit.register(lambda: log.info("==== sunnify session end ===="))
 
 
+class _YtdlpLog:
+    """Bridge yt-dlp's own output into our log and remember the last error.
+
+    With ignoreerrors=True a failed download won't raise, so capturing error()
+    here is the only way to record *why* no audio file landed (bot-block vs
+    unavailable vs format vs nsig). Routine yt-dlp chatter goes to our DEBUG so
+    the default INFO log stays lean.
+    """
+
+    def __init__(self):
+        self.last_error = None
+
+    def debug(self, msg):
+        log.debug("yt-dlp: %s", msg)
+
+    info = debug
+
+    def warning(self, msg):
+        log.debug("yt-dlp warning: %s", msg)
+
+    def error(self, msg):
+        self.last_error = msg
+        log.debug("yt-dlp error: %s", msg)
+
+
 def get_ffmpeg_path():
     """Get path to FFmpeg - checks bundled first, then system paths."""
     # Check bundled FFmpeg first (for PyInstaller builds)
@@ -238,7 +263,10 @@ def setup_logging() -> str:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
     )
-    log.setLevel(logging.INFO)
+    # default INFO stays lean (scales with failures, not track count); set
+    # SUNNIFY_DEBUG=1 to get the full per-track + yt-dlp trail for hard cases.
+    level = logging.DEBUG if os.environ.get("SUNNIFY_DEBUG") else logging.INFO
+    log.setLevel(level)
     log.addHandler(handler)
     log.propagate = False
 
@@ -255,7 +283,7 @@ def setup_logging() -> str:
         ytdlp_ver,
     )
     log.info("ffmpeg=%s", get_ffmpeg_path() or "(not found)")
-    log.info("logs=%s", path)
+    log.info("logs=%s level=%s", path, logging.getLevelName(level))
     _install_crash_handlers()
     return path
 
@@ -552,7 +580,7 @@ class MusicScraper(QThread):
             "socket_timeout": 15,
             "concurrent_fragment_downloads": 4,
         }
-        log.info(
+        log.debug(
             "yt search: query=%r title=%r artists=%r dur=%ss",
             search_query,
             expected_title,
@@ -576,7 +604,7 @@ class MusicScraper(QThread):
                 "yt search returned 0 entries for %r (bot-block/network/region?)", search_query
             )
             return None
-        log.info("yt search returned %d entries", len(entries))
+        log.debug("yt search returned %d entries", len(entries))
 
         if expected_title:
             title_ok = [
@@ -648,7 +676,7 @@ class MusicScraper(QThread):
                             self._DURATION_TOLERANCE_S_WIDE,
                         )
                         return None
-            log.info("selected youtube video %s", chosen["id"])
+            log.debug("selected youtube video %s", chosen["id"])
             return f"https://www.youtube.com/watch?v={chosen['id']}"
 
         # Legacy path - kept for any caller that hasn't been updated yet.
@@ -744,25 +772,36 @@ class MusicScraper(QThread):
             if not video_url:
                 continue
             for label, opts in attempts:
+                # per-attempt bridge captures yt-dlp's own error even when
+                # ignoreerrors swallows it (no exception, no file)
+                ytlog = _YtdlpLog()
                 try:
-                    with YoutubeDL(opts) as ydl:
+                    with YoutubeDL({**opts, "logger": ytlog}) as ydl:
                         ydl.extract_info(video_url, download=True)
                 except Exception as exc:
-                    # Log the REAL error instead of swallowing it - this is the
-                    # line that tells us bot-challenge vs SSL vs network vs
-                    # format, which the user-facing "not found" never could.
                     log.warning(
                         "download attempt (%s) failed for %s: %s",
                         label,
                         video_url,
                         str(exc)[:300],
                     )
+                else:
+                    if not os.path.exists(expected_path):
+                        # the silent case: yt-dlp produced no file without
+                        # raising; the bridge holds the real reason
+                        reason = (ytlog.last_error or "no error reported by yt-dlp").strip()
+                        log.warning(
+                            "download attempt (%s) produced no file for %s: %s",
+                            label,
+                            video_url,
+                            reason[:300],
+                        )
                 if os.path.exists(expected_path):
                     if label != "default":
                         log.info("recovered via %s player clients", label)
                     return expected_path
 
-        log.warning("no playable audio landed for query set %r", queries)
+        log.debug("no playable audio landed for query set %r", queries)
         raise RuntimeError("no playable audio source found on YouTube for this track")
 
     def download_http_file(self, url, destination):
@@ -899,7 +938,10 @@ class MusicScraper(QThread):
             except Exception as error_status:
                 error_msg = self._get_user_friendly_error(error_status, track_title)
                 self.error_signal.emit(error_msg)
-                log.error("track download failed: '%s'", track_title, exc_info=True)
+                # concise reason at WARNING (the per-attempt yt-dlp reason is
+                # already logged above); full traceback only when verbose
+                log.warning("track failed: '%s': %s", track_title, str(error_status)[:200])
+                log.debug("track failure traceback for '%s'", track_title, exc_info=True)
                 with self._failed_lock:
                     self._failed_tracks.append(track_title)
                 self._finish_track_ui(ok=False)

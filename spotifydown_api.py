@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import re
 import time
 import unicodedata
@@ -22,6 +23,10 @@ from typing import Any, Callable, TypeVar
 import requests
 
 T = TypeVar("T")
+
+# child of the desktop app's "sunnify" logger, so spotify-side retries/429s land
+# in the same log file; in the web backend (no handler attached) it's a no-op.
+log = logging.getLogger("sunnify.api")
 
 _DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -70,6 +75,14 @@ def retry_on_network_error(
                     last_exception = e
                     if attempt < max_attempts - 1:
                         wait_time = backoff_factor * (2**attempt)
+                        log.warning(
+                            "%s: %s (attempt %d/%d), backing off %.1fs",
+                            func.__name__,
+                            type(e).__name__,
+                            attempt + 1,
+                            max_attempts,
+                            wait_time,
+                        )
                         time.sleep(wait_time)
             raise last_exception  # type: ignore
 
@@ -197,12 +210,14 @@ class SpotifyEmbedAPI:
             raise SpotifyDownAPIError(f"Failed to fetch embed page: {exc}") from exc
 
         if response.status_code == 429:
+            log.warning("spotify rate-limited (429): %s", url)
             raise RateLimitError("Rate limited by Spotify - please wait before retrying")
         if response.status_code in (401, 403):
             raise ExtractionError(
                 f"Access denied (HTTP {response.status_code}) - playlist may be private"
             )
         if response.status_code != 200:
+            log.warning("spotify embed HTTP %d: %s", response.status_code, url)
             raise NetworkError(f"Embed page returned HTTP {response.status_code}")
 
         match = self._NEXT_DATA_PATTERN.search(response.text)

@@ -2081,8 +2081,57 @@ class TestLogging:
                 for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
                     h.flush()
                 content = (tmp_path / "sunnify.log").read_text(encoding="utf-8")
-                assert "ERROR" in content
-                assert "track download failed" in content
+                assert "WARNING" in content
+                assert "track failed" in content
                 assert "Some Song" in content
+                assert "yt failed" in content  # the real underlying error, surfaced
+            finally:
+                self._teardown_logging(S)
+
+    def test_silent_download_failure_logs_real_reason(self, tmp_path):
+        """The ignoreerrors blind spot: a download that produces no file WITHOUT
+        raising must still record yt-dlp's real reason, not a generic message."""
+        import Spotify_Downloader as S
+
+        class FakeYDL:
+            def __init__(self, opts):
+                self.opts = opts
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def extract_info(self, url, download=False):
+                if not download:  # the search
+                    return {"entries": [{"id": "v1", "title": "Song X Artist Y", "duration": 100}]}
+                # the download: report to yt-dlp's logger, produce no file, don't raise
+                lg = self.opts.get("logger")
+                if lg:
+                    lg.error("ERROR: [youtube] v1: Sign in to confirm you're not a bot")
+                return None
+
+        scraper = S.MusicScraper()
+        with (
+            patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")),
+            patch.object(S, "get_ffmpeg_path", return_value=str(tmp_path)),
+        ):
+            try:
+                S.setup_logging()
+                with patch.object(S, "YoutubeDL", FakeYDL), pytest.raises(RuntimeError):
+                    scraper.download_track_audio(
+                        "Song X Artist Y",
+                        str(tmp_path / "out.mp3"),
+                        expected_duration_s=100,
+                        expected_title="Song X",
+                        expected_artists="Artist Y",
+                    )
+                for h in [h for h in S.log.handlers if getattr(h, "_sunnify", False)]:
+                    h.flush()
+                content = (tmp_path / "sunnify.log").read_text(encoding="utf-8")
+                assert "produced no file" in content
+                # the REAL cause is captured, not hidden by ignoreerrors
+                assert "Sign in to confirm you're not a bot" in content
             finally:
                 self._teardown_logging(S)
