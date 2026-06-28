@@ -768,6 +768,93 @@ class TestMp3MetadataIsV23:
         assert apic.mime == "image/png"
 
 
+class TestFlacMetadata:
+    """FLAC cover embedding, with a focus on idempotency.
+
+    mutagen's add_picture() appends, so re-tagging a FLAC that already has a
+    cover would stack duplicate Picture blocks. The writer calls
+    clear_pictures() first; these tests lock that in (mp3/m4a replace covers
+    in place via frame HashKey / atom assignment, so only flac needed it).
+    """
+
+    @staticmethod
+    def _minimal_flac(path):
+        # 'fLaC' + a single STREAMINFO block (type 0, last-block flag set).
+        # No audio frames; mutagen parses it for tag-write purposes. Built by
+        # hand so the test has no ffmpeg dependency in CI.
+        import struct
+
+        si = bytearray(34)
+        si[0:2] = struct.pack(">H", 4096)  # min blocksize
+        si[2:4] = struct.pack(">H", 4096)  # max blocksize
+        # sample_rate(20b)=44100 | channels-1(3b)=1 | bps-1(5b)=15 | total_samples(36b)=0
+        si[10:18] = struct.pack(">Q", (44100 << 44) | (1 << 41) | (15 << 36) | 0)
+        header = bytes([0x80]) + struct.pack(">I", 34)[1:]  # last-block, type 0, 24-bit len
+        with open(path, "wb") as f:
+            f.write(b"fLaC" + header + bytes(si))
+
+    def test_single_write_embeds_one_cover_and_tags(self, tmp_path):
+        from mutagen.flac import FLAC
+
+        from Spotify_Downloader import _write_metadata_flac
+
+        path = str(tmp_path / "one.flac")
+        self._minimal_flac(path)
+        cover = b"\xff\xd8\xff\xe0" + b"\x00" * 200
+        _write_metadata_flac(
+            path,
+            {
+                "title": "Sæson",
+                "artists": "Sigur Rós",
+                "album": "( )",
+                "releaseDate": "2002",
+                "trackNumber": 4,
+            },
+            cover,
+        )
+
+        audio = FLAC(path)
+        assert audio["title"][0] == "Sæson"
+        assert audio["artist"][0] == "Sigur Rós"
+        assert audio["tracknumber"][0] == "4"
+        assert len(audio.pictures) == 1
+        assert audio.pictures[0].type == 3  # front cover
+        assert audio.pictures[0].mime == "image/jpeg"
+
+    def test_retag_stays_at_one_cover(self, tmp_path):
+        from mutagen.flac import FLAC
+
+        from Spotify_Downloader import _write_metadata_flac
+
+        path = str(tmp_path / "twice.flac")
+        self._minimal_flac(path)
+        cover = b"\xff\xd8\xff\xe0" + b"\x00" * 200
+        tags = {
+            "title": "T",
+            "artists": "A",
+            "album": "Al",
+            "releaseDate": "2025",
+            "trackNumber": 1,
+        }
+        _write_metadata_flac(path, tags, cover)
+        _write_metadata_flac(path, tags, cover)
+
+        assert len(FLAC(path).pictures) == 1, "re-tag must not stack duplicate covers"
+
+    def test_no_cover_writes_tags_without_picture(self, tmp_path):
+        from mutagen.flac import FLAC
+
+        from Spotify_Downloader import _write_metadata_flac
+
+        path = str(tmp_path / "nocover.flac")
+        self._minimal_flac(path)
+        _write_metadata_flac(path, {"title": "T", "artists": "A"}, None)
+
+        audio = FLAC(path)
+        assert audio["title"][0] == "T"
+        assert len(audio.pictures) == 0
+
+
 class TestWritingMetaTagsThread:
     """Tests for WritingMetaTagsThread synchronous cover fetch."""
 
@@ -2215,3 +2302,135 @@ class TestLogging:
                 assert "Sign in to confirm you're not a bot" in content
             finally:
                 self._teardown_logging(S)
+
+
+class TestUpdateCheck:
+    """Version comparison + the GitHub release check that drives the update toast."""
+
+    def test_parse_version_variants(self):
+        from Spotify_Downloader import _parse_version
+
+        assert _parse_version("2.0.13") == (2, 0, 13)
+        assert _parse_version("v2.0.13") == (2, 0, 13)
+        assert _parse_version("2.0.13-beta") == (2, 0, 13)
+        assert _parse_version("garbage") == ()
+        assert _parse_version("") == ()
+
+    @pytest.mark.parametrize(
+        "latest,current,expected",
+        [
+            ("2.0.13", "2.0.12", True),  # normal upgrade
+            ("v2.0.13", "2.0.12", True),  # v-prefixed tag
+            ("2.0.12", "2.0.12", False),  # same -> no toast
+            ("2.0.12", "2.0.13", False),  # dev ahead of release
+            ("2.1.0", "2.0.99", True),  # minor bump
+            ("2.0.2", "2.0.10", False),  # numeric, not lexical (2 < 10)
+            ("2.0.10", "2.0.2", True),
+            ("garbage", "2.0.12", False),  # malformed tag -> no crash, no toast
+            ("", "2.0.12", False),
+        ],
+    )
+    def test_is_newer_version(self, latest, current, expected):
+        from Spotify_Downloader import _is_newer_version
+
+        assert _is_newer_version(latest, current) is expected
+
+    def test_check_for_update_returns_tuple_when_newer(self):
+        from Spotify_Downloader import _check_for_update
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {
+            "tag_name": "v2.0.13",
+            "html_url": "https://github.com/x/releases/tag/v2.0.13",
+        }
+        with patch("Spotify_Downloader.requests.get", return_value=resp):
+            assert _check_for_update("2.0.12") == (
+                "2.0.13",
+                "https://github.com/x/releases/tag/v2.0.13",
+            )
+
+    def test_check_for_update_none_when_same(self):
+        from Spotify_Downloader import _check_for_update
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"tag_name": "v2.0.12", "html_url": "u"}
+        with patch("Spotify_Downloader.requests.get", return_value=resp):
+            assert _check_for_update("2.0.12") is None
+
+    def test_check_for_update_none_on_non_200(self):
+        from Spotify_Downloader import _check_for_update
+
+        resp = MagicMock(status_code=403)
+        with patch("Spotify_Downloader.requests.get", return_value=resp):
+            assert _check_for_update("2.0.12") is None
+
+    def test_check_for_update_fail_silent_on_exception(self):
+        from Spotify_Downloader import _check_for_update
+
+        with patch(
+            "Spotify_Downloader.requests.get", side_effect=requests.ConnectionError("offline")
+        ):
+            assert _check_for_update("2.0.12") is None  # no raise
+
+    def test_check_for_update_falls_back_to_releases_page_url(self):
+        from Spotify_Downloader import _RELEASES_PAGE, _check_for_update
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"tag_name": "v9.9.9"}  # no html_url
+        with patch("Spotify_Downloader.requests.get", return_value=resp):
+            result = _check_for_update("2.0.12")
+        assert result == ("9.9.9", _RELEASES_PAGE)
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _capture_sunnify_logs():
+        """Capture the 'sunnify' logger directly (it sets propagate=False after
+        setup_logging, so pytest's root-attached caplog can't see it)."""
+        import io
+        import logging
+
+        buf = io.StringIO()
+        handler = logging.StreamHandler(buf)
+        handler.setLevel(logging.DEBUG)
+        logger = logging.getLogger("sunnify")
+        prev_level = logger.level
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+        try:
+            yield buf
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(prev_level)
+
+    def test_logs_when_on_latest(self):
+        from Spotify_Downloader import _check_for_update
+
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"tag_name": "v2.0.12", "html_url": "u"}
+        with (
+            self._capture_sunnify_logs() as buf,
+            patch("Spotify_Downloader.requests.get", return_value=resp),
+        ):
+            _check_for_update("2.0.12")
+        assert "on latest" in buf.getvalue()
+
+    def test_logs_github_non_200(self):
+        from Spotify_Downloader import _check_for_update
+
+        resp = MagicMock(status_code=403)
+        with (
+            self._capture_sunnify_logs() as buf,
+            patch("Spotify_Downloader.requests.get", return_value=resp),
+        ):
+            _check_for_update("2.0.12")
+        assert "403" in buf.getvalue()
+
+    def test_logs_skipped_on_network_error(self):
+        from Spotify_Downloader import _check_for_update
+
+        with (
+            self._capture_sunnify_logs() as buf,
+            patch("Spotify_Downloader.requests.get", side_effect=requests.ConnectionError("x")),
+        ):
+            _check_for_update("2.0.12")
+        assert "update check skipped" in buf.getvalue()

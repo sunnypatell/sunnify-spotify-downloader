@@ -7,9 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-06-28
+
+### Added
+- **in-app update notifier.** on launch sunnify checks the GitHub releases API in the background and, if a newer version exists, shows a small toast (current → new version) linking to the releases page. it's fail-silent offline, sends no telemetry, and has zero per-release maintenance (no hand-edited "what's new" copy to keep in sync).
+
 ### Fixed
+- **settings descriptions were invisible on the Windows/Linux light theme.** the hint text under each setting was hardcoded white, so on a light-background dialog it disappeared entirely; it now derives from the palette and stays legible on both light and dark. only the gray descriptions were affected (the setting labels were always visible).
+- **the window overflowed its own widgets on high-DPI / fractional scaling (closes #64).** the fixed-pixel UI now enables Qt high-DPI scaling with `PassThrough` rounding, so 125%/150% displays and Remote Desktop sessions scale the whole window together instead of spilling text out of its boxes (the reported "Download" → "ownloa", clipped byline, etc.). (ref: [Qt High DPI](https://doc.qt.io/qt-5/highdpi.html))
+- **long settings labels and the "Add Meta Tags" option no longer clip.** the settings label column is measured from the longest label instead of a fixed width, the dialog sizes to its word-wrapped hints after they exist, and the options row sizes to its content.
+- **flac cover embedding is now idempotent.** mutagen's `add_picture()` appends, so re-tagging a flac that already had a cover would stack duplicate Picture blocks; the writer now calls `clear_pictures()` first. mp3 (APIC frame replaced by HashKey) and m4a (`covr` atom assignment) already replaced in place, so only flac was affected. (ref: [mutagen FLAC API](https://mutagen.readthedocs.io/en/latest/api/flac.html))
 - **filenames are capped to the cross-platform 255-byte component limit.** an extremely long song/artist title (or a troll-length one) used to fail to write with ENAMETOOLONG and silently drop the track; the name is now truncated on a codepoint boundary with the extension preserved. real-length titles are unaffected.
-- **playlist folder names now use the same cross-platform sanitizer as track files.** the folder path previously used an ascii-only allowlist that could produce an uncreatable folder on windows when a playlist was named like a reserved device name (CON, NUL, COM1, including the superscript COM/LPT variants per the 2024 MS docs) and silently dropped punctuation; it now goes through `sanitize_filename` (the documented Windows/macOS/Linux rules) and reuses any existing older-named folder so a re-run's resume manifest isn't orphaned.
+- **playlist folder names now use the same cross-platform sanitizer as track files.** the folder path previously used an ascii-only allowlist that could produce an uncreatable folder on windows when a playlist was named like a reserved device name (CON, NUL, COM1, including the superscript COM/LPT variants per the [2024 MS naming rules](https://learn.microsoft.com/windows/win32/fileio/naming-a-file)) and silently dropped punctuation; it now goes through `sanitize_filename` and reuses any existing older-named folder so a re-run's resume manifest isn't orphaned.
+- **(web) the backend no longer leaks exception detail to clients.** scrape errors are logged server-side and return a generic message; an invalid or unsupported Spotify URL now returns 400 (client error) instead of 500.
+- **(web) the webclient validates the Spotify URL by hostname** instead of a substring match, so `evil.com/open.spotify.com` no longer passes the check.
+
+### Changed
+- **the release-build workflow declares least-privilege token permissions** (top-level `contents: read`, widened only where the build genuinely needs `id-token`/`attestations`).
+
+### Notes
+- UI-robustness + observability release; no changes to the Spotify metadata path, audio formats, tags, or the default matching policy. the high-DPI fix is verified by simulation on macOS at 1x/1.5x and ships pending confirmation on the original reporter's Windows RDP session. metadata work this cycle was checked against [ID3v2.3](https://id3.org/id3v2.3.0) / [ID3v2.4](https://id3.org/id3v2.4.0-frames), [mutagen ID3](https://mutagen.readthedocs.io/en/latest/api/id3.html) / [MP4](https://mutagen.readthedocs.io/en/latest/api/mp4.html) / [FLAC](https://mutagen.readthedocs.io/en/latest/api/flac.html), and [Xiph FLAC](https://xiph.org/flac/format.html).
 
 ## [2.0.12] - 2026-06-20
 
@@ -250,7 +267,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.12...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.13...HEAD
+[2.0.13]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.12...v2.0.13
 [2.0.12]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.11...v2.0.12
 [2.0.11]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.10...v2.0.11
 [2.0.10]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.9...v2.0.10

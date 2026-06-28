@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.0.12"
+__version__ = "2.0.13"
 
 import atexit
 import concurrent.futures
@@ -333,6 +333,75 @@ def save_config(config: dict) -> None:
             json.dump(config, f, indent=2)
     except OSError as exc:
         log.warning("could not save config: %s", exc)
+
+
+GITHUB_REPO = "sunnypatell/sunnify-spotify-downloader"
+_LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+_RELEASES_PAGE = f"https://github.com/{GITHUB_REPO}/releases/latest"
+
+
+def _parse_version(s: str) -> tuple:
+    """'v2.0.13' / '2.0.13' / '2.0.13-beta' -> (2, 0, 13). Stops at the first non-int part."""
+    parts = []
+    for chunk in (s or "").strip().lstrip("vV").split("."):
+        num = ""
+        for ch in chunk:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        if not num:
+            break
+        parts.append(int(num))
+    return tuple(parts)
+
+
+def _is_newer_version(latest: str, current: str) -> bool:
+    """True if latest is a strictly newer release than current (numeric, not lexical)."""
+    lv, cv = _parse_version(latest), _parse_version(current)
+    return bool(lv) and lv > cv
+
+
+def _check_for_update(current: str, timeout: int = 5):
+    """Return (latest_version, release_url) if a newer release exists, else None.
+
+    Fail-silent (returns None) on any network/parse error so launch is never
+    blocked or crashed by the check.
+    """
+    try:
+        r = requests.get(
+            _LATEST_RELEASE_API,
+            timeout=timeout,
+            headers={"Accept": "application/vnd.github+json"},
+        )
+        if r.status_code != 200:
+            log.debug("update check: github api returned %s", r.status_code)
+            return None
+        data = r.json()
+        tag = data.get("tag_name") or ""
+        url = data.get("html_url") or _RELEASES_PAGE
+        if _is_newer_version(tag, current):
+            return (tag.lstrip("vV"), url)
+        log.debug("update check: on latest (%s, newest %s)", current, tag or "?")
+        return None
+    except Exception as exc:  # network/parse must never disrupt launch
+        log.debug("update check skipped: %s", exc)
+        return None
+
+
+class UpdateCheckThread(QThread):
+    """Runs _check_for_update off the UI thread and signals if a release is newer."""
+
+    update_available = pyqtSignal(str, str)  # (latest_version, release_url)
+
+    def __init__(self, current_version: str):
+        super().__init__()
+        self._current = current_version
+
+    def run(self):
+        result = _check_for_update(self._current)
+        if result:
+            self.update_available.emit(result[0], result[1])
 
 
 class MusicScraper(QThread):
@@ -1460,8 +1529,9 @@ def _write_metadata_m4a(filename: str, tags: dict, cover_bytes: bytes | None) ->
     the cover-art image format, which we sniff so a future PNG cover from
     Spotify doesn't get mis-tagged as JPEG.
 
-    ref: Apple Quicktime container atom list (iTunes metadata `covr`/`\xa9nam`)
-         https://mp4ra.org/registered-types/atoms
+    ref: mutagen MP4Tags atom keys (`\xa9nam`/`\xa9ART`/`\xa9alb`/`\xa9day`/
+         `trkn`/`covr`) and MP4Cover.FORMAT_JPEG/PNG, which is the spec we
+         write against https://mutagen.readthedocs.io/en/latest/api/mp4.html
     """
     from mutagen.mp4 import MP4, MP4Cover
 
@@ -1505,6 +1575,8 @@ def _write_metadata_flac(filename: str, tags: dict, cover_bytes: bytes | None) -
     if track_num:
         audio["tracknumber"] = str(track_num)
     if cover_bytes:
+        # add_picture() appends; clear first so a re-tag doesn't stack duplicate covers
+        audio.clear_pictures()
         pic = Picture()
         pic.type = 3  # Front cover
         pic.mime = _detect_image_mime(cover_bytes)
@@ -1586,10 +1658,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Sunnify Settings")
         self.setModal(True)
-        # Min width + resizable so the full path fits on any screen; wider
-        # default because macOS path strings are long (`/Users/.../Music/...`).
+        # min width so long macOS paths fit; height is sized at the end once hints exist
         self.setMinimumWidth(560)
-        self.resize(620, self.sizeHint().height())
         self._config = dict(config)
 
         from PyQt5.QtWidgets import QLabel, QLineEdit
@@ -1637,9 +1707,49 @@ class SettingsDialog(QDialog):
         # word-wrapped value column. Owning the height per-block via QFrame
         # + QVBoxLayout + Preferred size policy lets each hint expand to
         # however many lines its text needs at the dialog's current width.
+        from PyQt5.QtGui import QFontMetrics, QPalette
         from PyQt5.QtWidgets import QFrame, QSizePolicy
 
-        LABEL_W = 200  # right-aligned setting names sit in this column width
+        # one list so the label column is measured from the longest label, not a magic width
+        _settings = [
+            (
+                "Download folder:",
+                folder_row,
+                "Each playlist or album becomes its own folder inside this directory.",
+            ),
+            (
+                "Audio format:",
+                self._format_cb,
+                "mp3 plays everywhere. m4a is smaller at the same quality. "
+                "flac and wav are lossless (much larger files).",
+            ),
+            (
+                "Audio quality:",
+                self._quality_cb,
+                "Applies to lossy formats only (mp3, m4a, opus). "
+                "320 kbps is the highest quality these formats support.",
+            ),
+            (
+                "Track number in filename:",
+                self._include_track_number_cb,
+                'Off → "Song - Artist.mp3".   On → "01. Song - Artist.mp3".   '
+                "Files sort in playlist order in your file manager.",
+            ),
+            (
+                "Use closest result if no match:",
+                self._loose_match_cb,
+                "Off (default): skips a track rather than risk the wrong audio. "
+                "On: falls back to the closest result by length, which recovers "
+                "songs whose YouTube title is in another script (Greek, Cyrillic, "
+                "Korean) but may let an occasional cover or remix slip through.",
+            ),
+        ]
+        _fm = QFontMetrics(self.font())
+        LABEL_W = max(_fm.horizontalAdvance(lbl) for lbl, _, _ in _settings) + 8
+
+        # muted palette text so hints stay readable on light (win/linux) and dark (mac) themes
+        _fg = self.palette().color(QPalette.WindowText)
+        _hint_color = f"rgba({_fg.red()}, {_fg.green()}, {_fg.blue()}, 175)"
 
         def _setting_block(label_text: str, control, hint_text: str) -> QFrame:
             container = QFrame()
@@ -1668,10 +1778,7 @@ class SettingsDialog(QDialog):
             if hint_text:
                 hint = QLabel(hint_text)
                 hint.setWordWrap(True)
-                # rgba white works on both the dark gradient the app ships
-                # with and any future light theme, without hardcoding a
-                # gray that disappears on either.
-                hint.setStyleSheet("color: rgba(255, 255, 255, 0.65); font-size: 11px;")
+                hint.setStyleSheet(f"color: {_hint_color}; font-size: 11px;")
                 hint.setContentsMargins(LABEL_W + 12, 2, 4, 0)
                 hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 box.addWidget(hint)
@@ -1688,51 +1795,14 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(0)
-        layout.addWidget(
-            _setting_block(
-                "Download folder:",
-                folder_row,
-                "Each playlist or album becomes its own folder inside this directory.",
-            )
-        )
-        layout.addWidget(
-            _setting_block(
-                "Audio format:",
-                self._format_cb,
-                "mp3 plays everywhere. m4a is smaller at the same quality. "
-                "flac and wav are lossless (much larger files).",
-            )
-        )
-        layout.addWidget(
-            _setting_block(
-                "Audio quality:",
-                self._quality_cb,
-                "Applies to lossy formats only (mp3, m4a, opus). "
-                "320 kbps is the highest quality these formats support.",
-            )
-        )
-        layout.addWidget(
-            _setting_block(
-                "Track number in filename:",
-                self._include_track_number_cb,
-                'Off → "Song - Artist.mp3".   On → "01. Song - Artist.mp3".   '
-                "Files sort in playlist order in your file manager.",
-            )
-        )
-        layout.addWidget(
-            _setting_block(
-                "Use closest result if no match:",
-                self._loose_match_cb,
-                "Off (default): if Sunnify can't confidently match a track it skips "
-                "it rather than risk grabbing the wrong audio. On: it falls back to "
-                "the closest YouTube result by length. This recovers songs whose "
-                "YouTube title is in a different script than Spotify (Greek, Cyrillic, "
-                "Korean, etc.), but it gives up the wrong-audio safeguard, so an "
-                "occasional cover or remix may slip through.",
-            )
-        )
+        for _label, _control, _hint in _settings:
+            layout.addWidget(_setting_block(_label, _control, _hint))
         layout.addStretch(1)
         layout.addWidget(btns)
+
+        # activate() resolves wrap heights before sizing so the tallest hint isn't clipped
+        layout.activate()
+        self.resize(620, self.sizeHint().height())
 
     def _open_logs(self):
         """Reveal the log folder in the OS file manager."""
@@ -1783,12 +1853,143 @@ class SettingsDialog(QDialog):
         return self._config
 
 
+class UpdateNotifier(QDialog):
+    """Toast-style 'new version available' card. Static copy, dynamic versions,
+    so there's no per-release content to maintain. Download opens the releases
+    page (where the auto-generated changelog already lives)."""
+
+    def __init__(self, parent, current: str, latest: str, url: str):
+        super().__init__(parent)
+        from PyQt5.QtGui import QColor, QFont, QFontMetrics
+        from PyQt5.QtWidgets import QFrame, QLabel, QWidget
+
+        self._url = url
+        self.setWindowTitle("Update available")
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setModal(True)
+        self.setFont(QFont("Arial", 10))
+
+        green, green_hover = "#1ED760", "#1FE968"
+        cyan, purple = "rgba(80, 214, 255, 255)", "rgba(112, 32, 213, 255)"
+        ink, mute = "#15151F", "#7A7A8C"
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(28, 26, 28, 30)  # room for the drop shadow
+
+        card = QFrame()
+        card.setObjectName("card")
+        card.setFixedWidth(430)
+        card.setStyleSheet("QFrame#card{background:#FFFFFF;border-radius:18px;}")
+        shadow = QGraphicsDropShadowEffect(blurRadius=48, xOffset=0, yOffset=16)
+        shadow.setColor(QColor(20, 10, 40, 110))
+        card.setGraphicsEffect(shadow)
+        outer.addWidget(card)
+
+        v = QVBoxLayout(card)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+
+        header = QFrame()
+        header.setObjectName("hdr")
+        header.setStyleSheet(
+            "QFrame#hdr{border-top-left-radius:18px;border-top-right-radius:18px;"
+            f"background:qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,"
+            f"stop:0.23 {cyan}, stop:0.81 {purple});}}"
+        )
+        hv = QVBoxLayout(header)
+        hv.setContentsMargins(26, 20, 26, 22)
+        hv.setSpacing(0)  # gaps are set explicitly between rows below
+
+        eyebrow = QLabel("UPDATE AVAILABLE")
+        ef = QFont("Arial", 9, QFont.Bold)
+        ef.setLetterSpacing(QFont.AbsoluteSpacing, 1.5)
+        eyebrow.setFont(ef)
+        eyebrow.setStyleSheet("color: rgba(255,255,255,0.85);")
+        hv.addWidget(eyebrow)
+        hv.addSpacing(8)
+
+        name = QLabel("Sunnify")
+        nfont = QFont("Arial", 22, QFont.Bold)
+        name.setFont(nfont)
+        name.setStyleSheet("color: #FFFFFF;")
+        # large bold glyphs exceed QLabel's tight default box; reserve full height
+        name.setMinimumHeight(QFontMetrics(nfont).height() + 10)
+        hv.addWidget(name)
+        hv.addSpacing(10)  # clear gap so the 'y' descender never crowds the version line
+
+        # current -> new, read left to right; new version brighter/bold to draw the eye
+        prog = QLabel(
+            f'<span style="color:rgba(255,255,255,0.8)">{current}</span>'
+            "&nbsp;&nbsp;&#8594;&nbsp;&nbsp;"
+            f'<span style="color:#FFFFFF;font-weight:bold">{latest}</span>'
+        )
+        pfont = QFont("Arial", 13)
+        prog.setFont(pfont)
+        prog.setMinimumHeight(QFontMetrics(pfont).height() + 6)
+        hv.addWidget(prog)
+        v.addWidget(header)
+
+        body = QWidget()
+        bv = QVBoxLayout(body)
+        bv.setContentsMargins(26, 22, 26, 6)
+        msg = QLabel(
+            "A newer version of Sunnify is available. Download it from the "
+            "releases page to get the latest fixes and improvements."
+        )
+        msg.setWordWrap(True)
+        msg.setFont(QFont("Arial", 10))
+        msg.setStyleSheet(f"color: {mute};")
+        bv.addWidget(msg)
+        v.addWidget(body)
+
+        footer = QWidget()
+        fv = QHBoxLayout(footer)
+        fv.setContentsMargins(26, 8, 26, 22)
+        fv.setSpacing(10)
+
+        later = QPushButton("Remind me later")
+        later.setCursor(QCursor(Qt.PointingHandCursor))
+        later.setFont(QFont("Arial", 10, QFont.Bold))
+        later.setFixedHeight(40)
+        later.setStyleSheet(
+            f"QPushButton{{background:transparent;color:{mute};border:none;}}"
+            f"QPushButton:hover{{color:{ink};}}"
+        )
+        later.clicked.connect(self.reject)
+        fv.addWidget(later)
+        fv.addStretch(1)
+
+        download = QPushButton("Download")
+        download.setCursor(QCursor(Qt.PointingHandCursor))
+        download.setFont(QFont("Arial", 10, QFont.Bold))
+        download.setFixedSize(132, 40)
+        download.setStyleSheet(
+            f"QPushButton{{background:{green};color:white;border-radius:10px;}}"
+            f"QPushButton:hover{{background:{green_hover};}}"
+        )
+        download.clicked.connect(self._open_releases)
+        fv.addWidget(download)
+        v.addWidget(footer)
+
+    def _open_releases(self):
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+
+        if not QDesktopServices.openUrl(QUrl(self._url)):
+            log.warning("could not open releases page in browser: %s", self._url)
+        self.accept()
+
+
 # Main Window
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         """MainWindow constructor"""
         super().__init__()
         self.setupUi(self)
+        # let the options row size to its content so "Add Meta Tags" isn't clipped
+        # by the .ui's fixed-width container (varies with font/locale/dpi)
+        self.horizontalLayoutWidget_5.adjustSize()
 
         # Load persisted user config so format/quality/folder survive restarts
         self._config = load_config()
@@ -1816,6 +2017,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # a permanently empty label.
         self.label_8.hide()
         self.AlbumText.hide()
+
+        # check for a newer release in the background; fail-silent, shows a toast only if found
+        self._update_thread = UpdateCheckThread(__version__)
+        self._update_thread.update_available.connect(self._show_update_notifier)
+        self._active_threads.append(self._update_thread)
+        self._update_thread.start()
+
+    @pyqtSlot(str, str)
+    def _show_update_notifier(self, latest: str, url: str):
+        log.info("update available: %s -> %s; showing notifier", __version__, latest)
+        UpdateNotifier(self, __version__, latest, url).exec_()
 
     def _get_default_download_path(self):
         """Get a sensible default download path that's writable."""
@@ -2114,6 +2326,16 @@ if __name__ == "__main__":
     # on the next qt slot (qt's c++ loop defers python's sigint until then)
     with contextlib.suppress(Exception):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
+    # fixed-pixel ui overflows on fractional dpi without this (#64); PassThrough avoids
+    # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-5/highdpi.html
+    try:
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    except Exception as exc:  # log so a scaling failure (rendering bugs) is diagnosable
+        log.debug("high-dpi setup skipped: %s", exc)
     app = QApplication(sys.argv)
     Screen = MainWindow()
     Screen.setFixedHeight(500)
