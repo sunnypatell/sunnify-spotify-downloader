@@ -422,17 +422,33 @@ class MusicScraper(QThread):
         return f"{metadata.name} - {owner}".strip(" -")
 
     def prepare_playlist_folder(self, base_folder, playlist_name):
-        if not os.path.exists(base_folder):
-            os.makedirs(base_folder)
-        safe_name = "".join(
-            character
-            for character in playlist_name
-            if character.isalnum() or character in [" ", "_"]
-        ).strip()
-        if not safe_name:
+        os.makedirs(base_folder, exist_ok=True)
+        # Folder names go through the same documented cross-platform sanitizer as
+        # track files (sanitize_filename): drops only the Windows-reserved
+        # punctuation + control chars, trims trailing dots/spaces, escapes
+        # reserved device names (CON, NUL, ...) and NFC-normalizes, per the
+        # Microsoft + POSIX filename rules. The old ascii-only allowlist missed
+        # the reserved-device-name case (a playlist named "CON" produced an
+        # uncreatable folder on Windows) and silently dropped punctuation.
+        safe_name = sanitize_filename(playlist_name)
+        if not safe_name or safe_name == "Unknown":
             safe_name = "Sunnify Playlist"
         playlist_folder = os.path.join(base_folder, safe_name)
-        os.makedirs(playlist_folder, exist_ok=True)
+        # Backward-compat: older builds dropped punctuation via an ascii-only
+        # allowlist (e.g. "Name - Owner" -> "Name  Owner"). If that older folder
+        # already exists, keep using it so a re-run resumes into the same folder
+        # instead of orphaning the previous download + its manifest (#40).
+        legacy_name = "".join(
+            ch for ch in playlist_name if ch.isalnum() or ch in (" ", "_")
+        ).strip()
+        legacy_folder = os.path.join(base_folder, legacy_name)
+        if legacy_name and legacy_name != safe_name and os.path.isdir(legacy_folder):
+            playlist_folder = legacy_folder
+        try:
+            os.makedirs(playlist_folder, exist_ok=True)
+        except OSError:
+            log.error("could not create playlist folder %r", playlist_folder, exc_info=True)
+            raise
         return playlist_folder
 
     @staticmethod

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **playlist folder names now use the same cross-platform sanitizer as track files.** the folder path previously used an ascii-only allowlist that could produce an uncreatable folder on windows when a playlist was named like a reserved device name (CON, NUL, COM1, ...) and silently dropped punctuation; it now goes through `sanitize_filename` (the documented Windows/macOS/Linux rules) and reuses any existing older-named folder so a re-run's resume manifest isn't orphaned.
+
 ## [2.0.12] - 2026-06-20
 
 ### Added

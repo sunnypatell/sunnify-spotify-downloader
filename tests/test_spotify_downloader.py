@@ -187,6 +187,38 @@ class TestMusicScraper:
 
         result = scraper.prepare_playlist_folder(base, "Test/Playlist:Name")
         assert os.path.exists(result)
+
+    def test_prepare_playlist_folder_escapes_reserved_device_name(self, tmp_path):
+        """A playlist named like a Windows reserved device name must not produce
+        an uncreatable folder on Windows (CON -> _CON)."""
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import _RESERVED_DEVICE_NAMES
+
+        result = MusicScraper().prepare_playlist_folder(str(tmp_path), "CON")
+        assert os.path.basename(result).split(".")[0].upper() not in _RESERVED_DEVICE_NAMES
+        assert os.path.isdir(result)
+
+    def test_prepare_playlist_folder_keeps_unicode_and_punctuation(self, tmp_path):
+        """Accented/non-Latin letters survive and punctuation is preserved now
+        that folders use sanitize_filename (matches the track-file behavior)."""
+        from Spotify_Downloader import MusicScraper
+
+        result = MusicScraper().prepare_playlist_folder(str(tmp_path), "Café Mix - RØRY")
+        assert os.path.basename(result) == "Café Mix - RØRY"
+        assert os.path.isdir(result)
+
+    def test_prepare_playlist_folder_reuses_legacy_folder(self, tmp_path):
+        """Backward-compat: reuse a folder from the older ascii-only naming so
+        the per-folder resume manifest isn't orphaned by the sanitizer switch."""
+        from Spotify_Downloader import MusicScraper
+
+        base = str(tmp_path)
+        legacy = os.path.join(base, "My Mix  Owner")  # old build dropped the hyphen
+        os.makedirs(legacy)
+        open(os.path.join(legacy, ".sunnify-manifest.jsonl"), "w").close()
+
+        result = MusicScraper().prepare_playlist_folder(base, "My Mix - Owner")
+        assert result == legacy  # reused, didn't orphan the previous download
         # Special chars should be removed
         assert "/" not in os.path.basename(result)
         assert ":" not in os.path.basename(result)
