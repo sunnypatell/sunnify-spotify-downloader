@@ -197,3 +197,11 @@ Contributions, ideas, and bug reports are welcome.
 Created and maintained by **Sunny Jayendra Patel**. Questions or feedback: `sunnypatel124555@gmail.com`.
 
 Licensed under a custom educational-use license. See [LICENSE](LICENSE).
+
+---
+
+## Star History
+
+<a href="https://www.star-history.com/#sunnypatell/sunnify-spotify-downloader&Date">
+  <img src="https://api.star-history.com/svg?repos=sunnypatell/sunnify-spotify-downloader&type=Date&legend=top-left" alt="Star History Chart" width="600">
+</a>
