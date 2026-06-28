@@ -953,6 +953,13 @@ def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
       spaces; a leading dot would hide the file on Unix)
     - escape the Windows reserved DOS device names (CON, NUL, COM1, ...)
 
+    refs:
+    - Windows reserved chars/device names:
+      https://learn.microsoft.com/windows/win32/fileio/naming-a-file
+    - POSIX pathname rules (only "/" and NUL are forbidden on macOS/Linux):
+      https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html
+    - Unicode NFC normalization (UAX #15): https://unicode.org/reports/tr15/
+
     Args:
         name: The string to sanitize
         allow_spaces: Whether to allow spaces in the result
@@ -991,6 +998,9 @@ def cap_filename(name: str, max_bytes: int = 250) -> str:
     to write with ENAMETOOLONG and silently drop the track. Truncates on a
     codepoint boundary, preserves the extension, and re-trims trailing space/dot
     so the cut can't reintroduce a Windows-invalid trailing character.
+
+    refs: POSIX NAME_MAX https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/limits.h.html
+    ; Linux per-fs filename limit https://man7.org/linux/man-pages/man7/inode.7.html
     """
     if len(name.encode("utf-8")) <= max_bytes:
         return name
