@@ -928,6 +928,11 @@ _RESERVED_DEVICE_NAMES = frozenset(
     {"CON", "PRN", "AUX", "NUL"}
     | {f"COM{i}" for i in range(1, 10)}
     | {f"LPT{i}" for i in range(1, 10)}
+    # Windows also recognizes the ISO-8859-1 superscript digits as COM#/LPT#
+    # digits, so COM(1-3)/LPT(1-3) are reserved too (added to the MS naming
+    # docs 2024-08-28): learn.microsoft.com/windows/win32/fileio/naming-a-file
+    | {f"COM{s}" for s in ("¹", "²", "³")}
+    | {f"LPT{s}" for s in ("¹", "²", "³")}
 )
 
 

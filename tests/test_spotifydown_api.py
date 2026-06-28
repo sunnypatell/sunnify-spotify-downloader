@@ -191,6 +191,11 @@ class TestSanitizeFilename:
         assert sanitize_filename("con.mp3") == "_con.mp3"
         assert sanitize_filename("COM1") == "_COM1"
         assert sanitize_filename("LPT9.flac") == "_LPT9.flac"
+        # superscript COM/LPT variants are reserved too (per the 2024 MS docs)
+        assert sanitize_filename("COM¹") == "_COM¹"
+        assert sanitize_filename("LPT³") == "_LPT³"
+        # COM0/LPT0 are NOT reserved (docs list COM1-9 / LPT1-9 only)
+        assert sanitize_filename("COM0") == "COM0"
         # a normal title that merely contains a reserved word is untouched
         assert sanitize_filename("CONcrete") == "CONcrete"
 

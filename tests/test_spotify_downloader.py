@@ -219,6 +219,16 @@ class TestMusicScraper:
 
         result = MusicScraper().prepare_playlist_folder(base, "My Mix - Owner")
         assert result == legacy  # reused, didn't orphan the previous download
+
+    def test_prepare_playlist_folder_escapes_superscript_device_name(self, tmp_path):
+        """Windows reserves the superscript COM/LPT variants too (COM(1-3));
+        a playlist named that must not produce an uncreatable folder."""
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import _RESERVED_DEVICE_NAMES
+
+        result = MusicScraper().prepare_playlist_folder(str(tmp_path), "COM¹")
+        assert os.path.basename(result).split(".")[0].upper() not in _RESERVED_DEVICE_NAMES
+        assert os.path.isdir(result)
         # Special chars should be removed
         assert "/" not in os.path.basename(result)
         assert ":" not in os.path.basename(result)
