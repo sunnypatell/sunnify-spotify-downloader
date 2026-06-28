@@ -202,6 +202,10 @@ Licensed under a custom educational-use license. See [LICENSE](LICENSE).
 
 ## Star History
 
+<div align="center">
+
 <a href="https://www.star-history.com/#sunnypatell/sunnify-spotify-downloader&Date">
-  <img src="https://api.star-history.com/svg?repos=sunnypatell/sunnify-spotify-downloader&type=Date&legend=top-left" alt="Star History Chart" width="600">
+  <img src="https://api.star-history.com/svg?repos=sunnypatell/sunnify-spotify-downloader&type=Date&legend=top-left" alt="Star History Chart" width="860">
 </a>
+
+</div>
