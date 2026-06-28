@@ -54,7 +54,14 @@ export default function SunnifyApp() {
       return
     }
 
-    if (!playlistLink.includes("open.spotify.com")) {
+    // validate by hostname, not substring: "evil.com/open.spotify.com" must not pass
+    let host = ""
+    try {
+      host = new URL(playlistLink).hostname
+    } catch {
+      host = ""
+    }
+    if (host !== "open.spotify.com") {
       toast.error("Invalid URL - must be from open.spotify.com")
       return
     }

@@ -133,10 +133,16 @@ def scrape_playlist():
             }
         )
 
-    except SpotifyDownAPIError as e:
-        return jsonify({"event": "error", "data": {"message": f"Spotify API error: {e}"}}), 500
-    except Exception as e:
-        return jsonify({"event": "error", "data": {"message": f"Error: {e}"}}), 500
+    except ValueError:
+        # bad/unsupported spotify url is client input error, not a server fault
+        return jsonify({"event": "error", "data": {"message": "Invalid Spotify URL"}}), 400
+    except SpotifyDownAPIError:
+        # log the detail server-side; don't leak exception internals to the client
+        app.logger.exception("spotify api error during scrape")
+        return jsonify({"event": "error", "data": {"message": "Spotify API error"}}), 500
+    except Exception:
+        app.logger.exception("unexpected error during scrape")
+        return jsonify({"event": "error", "data": {"message": "Internal server error"}}), 500
 
 
 @app.route("/api/health")
@@ -151,7 +157,7 @@ def index():
     return jsonify(
         {
             "name": "Sunnify API",
-            "version": "2.0.12",
+            "version": "2.0.13",
             "mode": "metadata-only",
             "description": "Fetches Spotify metadata. For MP3 downloads, use the desktop app.",
             "endpoints": {
