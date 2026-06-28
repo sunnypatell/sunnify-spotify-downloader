@@ -69,6 +69,10 @@ env:
   FFMPEG_MAC_FFMPEG_SHA256: "4610988e2f54c243c50da73a09e4e2c36d9bb77546f9aa6c84cb328dcb1a98c1"
   FFMPEG_MAC_FFPROBE_SHA256: "aeade29dee3c3844e9bcc974f4ae4b29cc4f87994177d77003a8589fa531009e"
 
+# least-privilege default; the build job widens to id-token/attestations as needed
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build ${{ inputs.platform }}
