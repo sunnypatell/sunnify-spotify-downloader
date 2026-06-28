@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **playlist folder names now use the same cross-platform sanitizer as track files.** the folder path previously used an ascii-only allowlist that could produce an uncreatable folder on windows when a playlist was named like a reserved device name (CON, NUL, COM1, ...) and silently dropped punctuation; it now goes through `sanitize_filename` (the documented Windows/macOS/Linux rules) and reuses any existing older-named folder so a re-run's resume manifest isn't orphaned.
+- **filenames are capped to the cross-platform 255-byte component limit.** an extremely long song/artist title (or a troll-length one) used to fail to write with ENAMETOOLONG and silently drop the track; the name is now truncated on a codepoint boundary with the extension preserved. real-length titles are unaffected.
+- **playlist folder names now use the same cross-platform sanitizer as track files.** the folder path previously used an ascii-only allowlist that could produce an uncreatable folder on windows when a playlist was named like a reserved device name (CON, NUL, COM1, including the superscript COM/LPT variants per the 2024 MS docs) and silently dropped punctuation; it now goes through `sanitize_filename` (the documented Windows/macOS/Linux rules) and reuses any existing older-named folder so a re-run's resume manifest isn't orphaned.
 
 ## [2.0.12] - 2026-06-20
 

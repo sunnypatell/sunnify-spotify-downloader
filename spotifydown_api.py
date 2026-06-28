@@ -981,6 +981,29 @@ def sanitize_filename(name: str, allow_spaces: bool = True) -> str:
     return sanitized
 
 
+def cap_filename(name: str, max_bytes: int = 250) -> str:
+    """Cap a complete filename (incl. extension) to a length valid everywhere.
+
+    The per-component limit is 255 bytes on ext4 (the strictest in bytes), 255
+    UTF-8 bytes on APFS, and 255 UTF-16 units on NTFS/HFS+; capping at 250 UTF-8
+    bytes satisfies all three with margin. Real song/artist titles never reach
+    this - only pathological or troll-length titles, which would otherwise fail
+    to write with ENAMETOOLONG and silently drop the track. Truncates on a
+    codepoint boundary, preserves the extension, and re-trims trailing space/dot
+    so the cut can't reintroduce a Windows-invalid trailing character.
+    """
+    if len(name.encode("utf-8")) <= max_bytes:
+        return name
+    stem, dot, ext = name.rpartition(".")
+    # only treat a short, space-free trailing token as a real extension
+    if not dot or not ext or len(ext) > 10 or " " in ext:
+        stem, ext = name, ""
+    suffix = f".{ext}" if ext else ""
+    budget = max(1, max_bytes - len(suffix.encode("utf-8")))
+    stem = stem.encode("utf-8")[:budget].decode("utf-8", "ignore").rstrip(" .")
+    return f"{stem}{suffix}" if stem else f"file{suffix}"
+
+
 __all__ = [
     "ExtractionError",
     "NetworkError",
@@ -992,6 +1015,7 @@ __all__ = [
     "SpotifyEmbedAPI",
     "SpotifyPublicAPI",
     "TrackInfo",
+    "cap_filename",
     "detect_spotify_url_type",
     "extract_album_id",
     "extract_playlist_id",

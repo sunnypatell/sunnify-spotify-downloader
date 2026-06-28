@@ -69,6 +69,7 @@ from spotifydown_api import (
     PlaylistInfo,
     RateLimitError,
     SpotifyDownAPIError,
+    cap_filename,
     detect_spotify_url_type,
     extract_playlist_id,
     sanitize_filename,
@@ -898,7 +899,7 @@ class MusicScraper(QThread):
         else:
             filename = f"{sanitized_title} - {sanitized_artists}.mp3"
 
-        filepath = os.path.join(playlist_folder_path, filename)
+        filepath = os.path.join(playlist_folder_path, cap_filename(filename))
 
         # Filename collision guard: two different tracks can sanitize to the
         # same filename (e.g. "Café" vs "Cafe"). Under parallel downloads the
@@ -916,7 +917,7 @@ class MusicScraper(QThread):
 
                 filepath = os.path.join(
                     playlist_folder_path,
-                    filename,
+                    cap_filename(filename),
                 )
             self._in_flight_files.add(filepath)
 
@@ -1282,7 +1283,7 @@ class MusicScraper(QThread):
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
         filename = f"{sanitized_title} - {sanitized_artists}.mp3"
-        filepath = os.path.join(music_folder, filename)
+        filepath = os.path.join(music_folder, cap_filename(filename))
 
         album_name = track.album or ""
         release_date = track.release_date or ""

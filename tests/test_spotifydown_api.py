@@ -200,6 +200,44 @@ class TestSanitizeFilename:
         assert sanitize_filename("CONcrete") == "CONcrete"
 
 
+class TestCapFilename:
+    """Tests for cap_filename (length capping to the cross-platform limit)."""
+
+    def test_short_names_unchanged(self):
+        from spotifydown_api import cap_filename
+
+        assert cap_filename("Song Title - Artist.mp3") == "Song Title - Artist.mp3"
+
+    def test_overlong_truncated_preserving_extension(self):
+        from spotifydown_api import cap_filename
+
+        out = cap_filename(("x" * 400) + ".mp3")
+        assert len(out.encode("utf-8")) <= 250
+        assert out.endswith(".mp3")
+
+    def test_truncates_on_codepoint_boundary(self):
+        from spotifydown_api import cap_filename
+
+        # multibyte CJK must be cut on a char boundary (valid utf-8, no mojibake)
+        out = cap_filename(("夜" * 300) + ".mp3")
+        assert len(out.encode("utf-8")) <= 250
+        out.encode("utf-8")  # raises if invalid/partial
+        assert out.endswith(".mp3")
+
+    def test_no_trailing_space_or_dot_after_cut(self):
+        from spotifydown_api import cap_filename
+
+        out = cap_filename(("ab " * 200) + ".mp3")  # the cut may land on a space
+        stem = out[: -len(".mp3")]
+        assert stem == stem.rstrip(" .")
+
+    def test_no_real_extension_caps_whole_name(self):
+        from spotifydown_api import cap_filename
+
+        out = cap_filename("y" * 400)  # no extension
+        assert len(out.encode("utf-8")) <= 250
+
+
 class TestSpotifyEmbedAPI:
     """Tests for SpotifyEmbedAPI class."""
 
