@@ -2,5 +2,7 @@
   "claudeCode.allowDangerouslySkipPermissions": true,
   "claudeCode.initialPermissionMode": "bypassPermissions",
   "claudeCode.autoApproveEdits": true,
-  "claudeCode.autoApproveBash": true
+  "claudeCode.autoApproveBash": true,
+  "python-envs.defaultEnvManager": "ms-python.python:venv",
+  "python.analysis.autoImportCompletions": true
 }

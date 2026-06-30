@@ -1,0 +1,7 @@
+from core.classes.notifications.websocket_event_emitter import WebSocketEventEmitter
+from core.singleton.websocket_active_connections import webSocketActiveConnections
+
+# init singleton
+webSocketEventEmitter = WebSocketEventEmitter(
+  webSocketActiveConnections=webSocketActiveConnections
+)

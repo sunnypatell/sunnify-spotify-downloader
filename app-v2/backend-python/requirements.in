@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+spotipy
+yt-dlp
+mutagen
+requests
+aiofiles
+python-multipart
