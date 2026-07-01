@@ -1,0 +1,47 @@
+appId: com.sunnify.app # Identificatore unico dell'app
+productName: SpotiDisk # Nome mostrato all'utente
+asar: false
+directories:
+  buildResources: assets # Cartella per icone, screenshot
+  output: dist # Dove mettere gli installer
+files: # ← CRITICO: cosa includere nel bundle
+  # copy electron files
+  - "node_modules/**" # node dep (production only deps - no devDependencies)
+  - "dist-electron-main/**" # compiled electron main files
+  - "package.json" # Metadati app
+  - "config.json" # Metadati app
+  - from: ../app-v2/frontend-react/dist
+    to: dist-frontend
+    filter: "**/*"
+  - from: ../app-v2/backend-python
+    to: dist-backend
+    filter: "**/*"
+extraResources:
+  - from: "node_modules/.bin/serve"
+    to: "app/node_modules/.bin/serve"
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.productivity
+# dmg:
+#   contents:
+#     - x: 130
+#       y: 220
+#       type: file
+#       path: Sunnify.app
+#     - x: 410
+#       y: 220
+#       type: link
+#       path: /Applications
+# win:
+#   target:
+#     - nsis
+#     - portable
+# nsis:
+#   oneClick: false
+#   allowToChangeInstallationDirectory: true
+# linux:
+#   target:
+#     - AppImage
+#     - deb

@@ -1,0 +1,25 @@
+{
+  "backend": {
+    "base": {},
+    "dev": {
+      "port": 8000
+    },
+    "prod": {
+      "port": 8000
+    }
+  },
+  "frontend": {
+    "base": {
+      "window": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    "dev": {
+      "port": 3000
+    },
+    "prod": {
+      "port": 3123
+    }
+  }
+}

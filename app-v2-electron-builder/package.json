@@ -1,0 +1,30 @@
+{
+  "name": "app-v2-electron-builder",
+  "version": "0.0.0",
+  "description": "",
+  "main": "dist-electron-main/main.js",
+  "scripts": {
+    "build": "npm run electron-main:build && npm run frontend:build",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "electron-main:dev": "electron .",
+    "electron-main:build": "tsc",
+    "electron-main:start": "npm run electron-main:build && npm run electron-main:dev",
+    "frontend:build": "cd ../app-v2/frontend-react && pnpm run build"
+  },
+  "keywords": [],
+  "author": "Jacopo Marrone <@tresorama> (https://github.com/tresorama)",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "electron": "^37.0.0",
+    "electron-builder": "^26.15.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "cross-env": "^10.1.0",
+    "serve": "^14.2.6"
+  }
+}
