@@ -99,13 +99,13 @@ jobs:
             *) echo "Unknown platform: $PLATFORM"; exit 1 ;;
           esac
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.tag }}
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
           cache: "pip"
@@ -113,7 +113,7 @@ jobs:
 
       - name: Cache FFmpeg archive
         # Poisoning-safe: every restore is SHA256-verified below before use.
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5 # zizmor: ignore[cache-poisoning]
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5.0.5 # zizmor: ignore[cache-poisoning]
         with:
           path: ffmpeg-cache
           # Cache is invalidated automatically the moment any env var
@@ -298,7 +298,7 @@ jobs:
       - name: Attest build provenance (SLSA Build L3)
         id: attest
         # Must run inside this reusable workflow - that placement is the L3.
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: out/${{ inputs.asset }}
 

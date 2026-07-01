@@ -118,7 +118,7 @@ jobs:
         # Needed both for syft (req.txt + source tree) and for the source
         # tarball we attest below. Pinning to the tag is what makes the
         # source tarball deterministic per release.
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.inputs.tag }}
           persist-credentials: false
@@ -210,7 +210,7 @@ jobs:
         # come from?".
         # Using actions/attest directly with a CycloneDX predicate-type
         # because actions/attest-sbom is now a deprecated wrapper.
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: |
             ./artifacts/windows-build/Sunnify-Windows.exe
@@ -236,7 +236,7 @@ jobs:
 
       - name: Attest source tarball
         id: attest-source
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ./sunnify-${{ github.event.inputs.tag }}-source.tar.gz
 
@@ -292,7 +292,7 @@ jobs:
           done
 
       - name: Upload assets to release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ github.event.inputs.tag }}
           # If dry_run, keep the release as a draft so it isn't user-visible.
@@ -424,7 +424,7 @@ jobs:
       - name: Checkout repository
         # persist-credentials stays ON for this checkout only: the final step
         # pushes the cask bump to main with the workflow token.
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3 # zizmor: ignore[artipacked]
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6.0.3 # zizmor: ignore[artipacked]
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
