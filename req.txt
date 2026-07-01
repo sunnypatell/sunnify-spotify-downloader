@@ -1,11 +1,11 @@
 # core dependencies
-mutagen>=1.46.0
+mutagen>=1.48.0
 PyQt5>=5.15.9
 requests>=2.32.2
 yt-dlp>=2024.8.6
 
 # transitive (auto-installed but listed for reference)
-certifi>=2023.7.22
+certifi>=2026.6.17
 charset-normalizer>=3.2.0
 idna>=3.4
 urllib3>=2.0.4
