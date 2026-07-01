@@ -2,10 +2,13 @@
 # grouped (one PR per ecosystem), monthly, 7-day cooldown so a compromised
 # release (tj-actions pattern) gets caught upstream before a bump lands here.
 #
-# Two guardrails learned the hard way (see PRs #56/#57):
+# Three guardrails learned the hard way (see PRs #56/#57/#68):
 # - pyqt5-qt5 is hand-pinned per-platform in requirements-build.in (no win32
 #   wheels past 5.15.2); dependabot bumping it breaks the Windows build, so
 #   it's ignored here.
+# - mutagen >=1.48 requires python >=3.10; we still support 3.9 (requires-python
+#   in pyproject.toml, tested in CI). the bump fails the 3.9 install and takes
+#   the whole grouped PR red, so it's pinned to 1.47.x until we drop 3.9.
 # - webclient framework majors (next/react/tailwind/eslint/ts) are hands-on
 #   migrations, not bumps; grouped, they produce an unmergeable PR. Majors are
 #   ignored; minor+patch still flow.
@@ -38,6 +41,8 @@ updates:
       default-days: 7
     ignore:
       - dependency-name: "pyqt5-qt5"
+      - dependency-name: "mutagen"
+        versions: [">=1.48.0"] # drops python 3.9; revisit when we raise requires-python
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 2
