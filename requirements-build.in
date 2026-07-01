@@ -2,7 +2,7 @@
 # manifest for the test matrix). Regenerate after editing this or req.txt:
 #   uv pip compile requirements-build.in --universal --generate-hashes -o requirements-build.txt
 -r req.txt
-pyinstaller>=6.20.0
+pyinstaller>=6.21.0
 
 # pyqt5-qt5 published no Windows wheels after 5.15.2; an unconstrained
 # universal resolve breaks the Windows build.
