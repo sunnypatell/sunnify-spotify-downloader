@@ -2437,18 +2437,18 @@ class TestUpdateCheck:
 
 
 class TestStarPrompt:
-    """One-time 'star the repo' ask after the first successful download.
+    """One-time 'star the repo' ask, fired by count_updated the moment the
+    first song of the user's first run lands on disk.
 
-    Contract: fires at most once per install, only when the finished run
-    actually landed >=1 track, never after a cancelled run, and the config
-    flag persists BEFORE the dialog opens so a crash mid-dialog can never
-    re-prompt."""
+    Contract: at most once per install, never after the user pressed Stop,
+    never stacked on another modal (defers and retries on the next landed
+    song without burning the one shot), and the config flag persists BEFORE
+    the dialog opens so a crash mid-dialog can never re-prompt."""
 
-    def _window(self, *, shown=False, counter=1, cancelled=False):
+    def _window(self, *, shown=False, cancelled=False):
         """Bare MainWindow (no Qt UI construction) with just the state the
         gating slot reads - same bare-instance trick check_api_status.py uses."""
         import threading
-        from types import SimpleNamespace
 
         from Spotify_Downloader import MainWindow
 
@@ -2457,10 +2457,9 @@ class TestStarPrompt:
         win._cancel_event = threading.Event()
         if cancelled:
             win._cancel_event.set()
-        win.scraper_thread = SimpleNamespace(scraper=SimpleNamespace(counter=counter))
         return win
 
-    def _run_slot(self, win, calls):
+    def _run_slot(self, win, calls, count=1):
         import Spotify_Downloader as sd
 
         class _Recorder:
@@ -2474,34 +2473,35 @@ class TestStarPrompt:
             patch.object(sd, "StarPromptNotifier", _Recorder),
             patch.object(sd, "save_config", lambda _cfg: calls.append("saved")),
         ):
-            sd.MainWindow._maybe_show_star_prompt(win, "Download Complete!")
+            sd.MainWindow._maybe_show_star_prompt(win, count)
 
-    def test_shows_once_then_never_again(self):
-        """First successful run prompts; the persisted flag silences every
-        run after it."""
+    def test_shows_on_first_landed_song_then_never_again(self):
+        """The first count_updated(1) prompts; the persisted flag silences
+        every later song and every later run."""
         calls = []
         win = self._window()
-        self._run_slot(win, calls)
+        self._run_slot(win, calls, count=1)
         assert "shown" in calls
         assert win._config["star_prompt_shown"] is True
-        self._run_slot(win, calls)
+        self._run_slot(win, calls, count=2)
         assert calls.count("shown") == 1
 
-    def test_skipped_when_nothing_downloaded(self):
-        """A run that landed zero tracks (all failed / not found) must not
-        beg for a star - the user got nothing."""
+    def test_zero_count_never_prompts(self):
+        """Defensive: a spurious count_updated(0) must not beg - nothing has
+        landed."""
         calls = []
-        win = self._window(counter=0)
-        self._run_slot(win, calls)
+        win = self._window()
+        self._run_slot(win, calls, count=0)
         assert calls == []
         assert win._config["star_prompt_shown"] is False
 
-    def test_skipped_on_cancelled_run(self):
-        """Prompting right after the user hit Stop reads as nagging, even if
-        some tracks landed first; the next successful run asks instead."""
+    def test_skipped_after_stop_pressed(self):
+        """A song that lands during Stop wind-down must not beg - a prompt
+        right after the user cancelled reads as nagging; the next run's
+        first song asks instead."""
         calls = []
-        win = self._window(counter=5, cancelled=True)
-        self._run_slot(win, calls)
+        win = self._window(cancelled=True)
+        self._run_slot(win, calls, count=1)
         assert calls == []
         assert win._config["star_prompt_shown"] is False
 
@@ -2510,6 +2510,21 @@ class TestStarPrompt:
         force-quit mid-dialog can never make it prompt twice."""
         calls = []
         self._run_slot(self._window(), calls)
+        assert calls == ["saved", "shown"]
+
+    def test_deferral_retries_on_next_landed_song(self):
+        """While the update notifier is up, the prompt defers WITHOUT burning
+        its one shot - and the very next landed song shows it."""
+        import Spotify_Downloader as sd
+
+        calls = []
+        win = self._window()
+        with patch.object(sd.QApplication, "activeModalWidget", staticmethod(lambda: object())):
+            self._run_slot(win, calls, count=1)
+        assert calls == []
+        assert win._config["star_prompt_shown"] is False
+        # modal gone; song #2 lands and the ask happens
+        self._run_slot(win, calls, count=2)
         assert calls == ["saved", "shown"]
 
     def test_config_defaults_and_non_bool_coercion(self, tmp_path):
@@ -2537,3 +2552,65 @@ class TestStarPrompt:
         dlg = StarPromptNotifier(None)
         assert dlg.sizeHint().width() > 0
         assert dlg._url == f"https://github.com/{GITHUB_REPO}"
+
+    def test_maybe_later_click_dismisses(self, qapp):
+        """A real dispatched mouse click on the ghost button must reject and
+        close the dialog - the transparent/borderless styling must not eat
+        the hit."""
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        from PyQt5.QtWidgets import QDialog, QPushButton
+
+        from Spotify_Downloader import StarPromptNotifier
+
+        dlg = StarPromptNotifier(None)
+        dlg.show()
+        later = next(b for b in dlg.findChildren(QPushButton) if b.text() == "Maybe later")
+        QTest.mouseClick(later, Qt.LeftButton)
+        assert dlg.result() == QDialog.Rejected
+        assert not dlg.isVisible()
+
+    def test_star_click_opens_repo_url_and_accepts(self, qapp, monkeypatch):
+        """Clicking the CTA must hand the repo URL to the OS browser opener
+        and accept-close; the browser itself is faked out."""
+        import PyQt5.QtGui as qtgui
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        from PyQt5.QtWidgets import QDialog, QPushButton
+
+        from Spotify_Downloader import GITHUB_REPO, StarPromptNotifier
+
+        opened = []
+
+        class _FakeDesktopServices:
+            @staticmethod
+            def openUrl(url):
+                opened.append(url.toString())
+                return True
+
+        # _open_repo does `from PyQt5.QtGui import QDesktopServices` at call
+        # time, so swapping the module attribute intercepts it cleanly
+        monkeypatch.setattr(qtgui, "QDesktopServices", _FakeDesktopServices)
+
+        dlg = StarPromptNotifier(None)
+        dlg.show()
+        star = next(b for b in dlg.findChildren(QPushButton) if b.text() == "Star on GitHub")
+        QTest.mouseClick(star, Qt.LeftButton)
+        assert opened == [f"https://github.com/{GITHUB_REPO}"]
+        assert dlg.result() == QDialog.Accepted
+        assert not dlg.isVisible()
+
+    def test_escape_key_dismisses(self, qapp):
+        """Esc is the reflex dismiss on a modal; QDialog's default reject
+        path must stay intact despite the frameless window flags."""
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        from PyQt5.QtWidgets import QDialog
+
+        from Spotify_Downloader import StarPromptNotifier
+
+        dlg = StarPromptNotifier(None)
+        dlg.show()
+        QTest.keyClick(dlg, Qt.Key_Escape)
+        assert dlg.result() == QDialog.Rejected
+        assert not dlg.isVisible()

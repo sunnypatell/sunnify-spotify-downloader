@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.0.13"
+__version__ = "2.0.14"
 
 import atexit
 import concurrent.futures
@@ -1988,12 +1988,14 @@ class UpdateNotifier(QDialog):
 
 
 class StarPromptNotifier(QDialog):
-    """One-time 'star the repo' toast, shown after the first successful download.
-    Same card pattern as UpdateNotifier so it inherits the high-dpi behaviour
-    verified for 2.0.13 (Qt scaling handles logical px; static copy word-wraps
-    inside the fixed-width card). Shown exactly once per install: the config
-    flag is persisted before the dialog opens, so even a crash mid-dialog can
-    never make it nag twice."""
+    """One-time 'star the repo' card, shown the moment the first song of the
+    user's first download lands on disk (owner call: value is proven by a
+    real file and the user is mid-wait; huge playlists never reach
+    'complete' in one sitting, so completion was the wrong hook). Same card
+    pattern as UpdateNotifier so it inherits the high-dpi behaviour verified
+    for 2.0.13. Shown exactly once per install: the config flag is persisted
+    before the dialog opens, so even a crash mid-dialog can never make it
+    nag twice."""
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -2042,7 +2044,7 @@ class StarPromptNotifier(QDialog):
         hv.setContentsMargins(26, 20, 26, 22)
         hv.setSpacing(0)  # gaps are set explicitly between rows below
 
-        eyebrow = QLabel("FIRST DOWNLOAD COMPLETE")
+        eyebrow = QLabel("FIRST SONG DOWNLOADED")
         ef = QFont("Arial", 9, QFont.Bold)
         ef.setLetterSpacing(QFont.AbsoluteSpacing, 1.5)
         eyebrow.setFont(ef)
@@ -2085,8 +2087,12 @@ class StarPromptNotifier(QDialog):
         later.setCursor(QCursor(Qt.PointingHandCursor))
         later.setFont(QFont("Arial", 10, QFont.Bold))
         later.setFixedHeight(40)
+        # short label = small text-driven hit box (78px vs the update
+        # notifier's 109px); left-align and pad right so the invisible
+        # clickable area grows without moving a visible pixel
         later.setStyleSheet(
-            f"QPushButton{{background:transparent;color:{mute};border:none;}}"
+            f"QPushButton{{background:transparent;color:{mute};border:none;"
+            "text-align:left;padding-right:32px;}"
             f"QPushButton:hover{{color:{ink};}}"
         )
         later.clicked.connect(self.reject)
@@ -2164,23 +2170,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @pyqtSlot(str, str)
     def _show_update_notifier(self, latest: str, url: str):
+        if QApplication.activeModalWidget() is not None:
+            # never stack on another toast; the check simply runs again next launch
+            log.info("update notifier skipped: another modal dialog is active")
+            return
         log.info("update available: %s -> %s; showing notifier", __version__, latest)
         UpdateNotifier(self, __version__, latest, url).exec_()
 
-    @pyqtSlot(str)
-    def _maybe_show_star_prompt(self, _msg: str):
-        """One-time star ask after the first successful run (>=1 track landed).
-        Skipped on cancelled runs - a prompt right after the user hit Stop
-        would read as nagging; the next successful run asks instead."""
-        if self._config.get("star_prompt_shown"):
+    @pyqtSlot(int)
+    def _maybe_show_star_prompt(self, count: int):
+        """One-time star ask the moment the first song of the user's first
+        run lands on disk. Skipped after a Stop (a beg right then reads as
+        nagging). Deferred cases (update toast on screen) retry naturally
+        when the next song lands - the flag only persists once the dialog
+        actually shows, so the one shot is never burned silently."""
+        if count < 1 or self._config.get("star_prompt_shown"):
             return
-        scraper = getattr(getattr(self, "scraper_thread", None), "scraper", None)
-        if scraper is None or scraper.counter < 1 or self._cancel_event.is_set():
+        if self._cancel_event.is_set():
+            return
+        if QApplication.activeModalWidget() is not None:
+            # another toast (e.g. the update notifier) is up; don't stack
+            # modals - the next landed song retries
+            log.info("star prompt deferred: another modal dialog is active")
             return
         # persist before showing so a crash mid-dialog can never re-prompt
         self._config["star_prompt_shown"] = True
         save_config(self._config)
-        log.info("first successful download - showing one-time star prompt")
+        log.info("first song landed - showing one-time star prompt")
         StarPromptNotifier(self).exec_()
 
     def _get_default_download_path(self):
@@ -2322,11 +2338,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.scraper_thread.scraper.PlaylistCompleted.connect(
                 lambda x: self.statusMsg.setText(x)
             )
-            self.scraper_thread.scraper.PlaylistCompleted.connect(self._maybe_show_star_prompt)
             self.scraper_thread.scraper.error_signal.connect(lambda x: self.statusMsg.setText(x))
 
             # Connect the count_updated signal to the update_counter slot
             self.scraper_thread.scraper.count_updated.connect(self.update_counter)
+            # after update_counter so the label already reads "1" when the
+            # one-time star prompt opens on the first landed song
+            self.scraper_thread.scraper.count_updated.connect(self._maybe_show_star_prompt)
 
             self.scraper_thread.start()
 

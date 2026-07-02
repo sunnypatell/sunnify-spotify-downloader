@@ -7,11 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.14] - 2026-07-02
+
 ### Added
-- **one-time "star the repo" ask after the first successful download.** a small toast (same card pattern as the update notifier) appears exactly once per install, only after a run that actually landed at least one track. the shown-flag persists before the dialog opens so a crash can never re-prompt, cancelled runs never prompt, and both buttons dismiss it forever. no telemetry, no recurring nag.
+- **one-time "star the repo" ask when the first song lands.** a small card (same pattern as the update notifier) appears exactly once per install, the moment the first song of the user's first run finishes writing to disk - so value is proven by a real file and huge playlists don't have to reach "complete" for it to ever show. the shown-flag persists before the dialog opens so a crash can never re-prompt, a run the user stopped never prompts, it never stacks on the update notifier (defers and retries on the next landed song), and both buttons dismiss it forever. no telemetry, no recurring nag.
 
 ### Fixed
-- **the toast cards can no longer be quietly compressed on fractional display scaling.** at 125%/150% the wrapped body text under-measured and squeezed the card, clipping the headline's descenders (same bug class as #64); the update and star toasts now always size exactly to their content, verified by rendering at 1x/1.5x/2x on light and dark backdrops.
+- **the toast cards can no longer be quietly compressed on fractional display scaling.** at 125%/150% the wrapped body text under-measured and squeezed the card, clipping the headline's descenders (same bug class as #64); the update and star toasts now always size exactly to their content, verified by rendering at 1x/1.5x/2x on light and dark backdrops. the ghost dismiss button's click area was also widened to match the update notifier's (110x40) without moving a visible pixel.
+
+### Notes
+- growth + ui-polish release; no changes to the spotify metadata path, audio formats, tags, or the default matching policy. binaries built with yt-dlp 2026.6.9.
 
 ## [2.0.13] - 2026-06-28
 
@@ -273,7 +278,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.13...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.14...HEAD
+[2.0.14]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.13...v2.0.14
 [2.0.13]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.12...v2.0.13
 [2.0.12]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.11...v2.0.12
 [2.0.11]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.10...v2.0.11
