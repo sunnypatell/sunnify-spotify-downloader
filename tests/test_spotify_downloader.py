@@ -1557,6 +1557,117 @@ class TestMainWindow:
         assert home in expected_contains
 
 
+class TestMainWindowInteractions:
+    """Exercises the enum-heavy interaction surfaces that plain construction
+    tests miss. A pyqt5->pyqt6 port turns every un-scoped enum into a runtime
+    AttributeError, and these paths (the preview animation's QEasingCurve, the
+    frameless-drag handlers' mouse-button/globalPosition enums) only fire on
+    real interaction - so a green suite that never drives them would have shipped
+    the QEasingCurve.InOutQuad -> QEasingCurve.Type.InOutQuad crash straight to
+    users on the first 'Show Preview' click."""
+
+    @pytest.fixture(autouse=True)
+    def _no_update_thread(self, monkeypatch):
+        """MainWindow() starts a real UpdateCheckThread that hits the network;
+        left running, the QThread is destroyed with the test-local window and
+        aborts the interpreter ('QThread: Destroyed while thread is still
+        running'). Neutralise it - these tests exercise UI paths, not the
+        update check (which has its own TestUpdateCheck coverage)."""
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
+
+    def test_preview_open_close_animation(self, qapp):
+        """OpenSongInformation drives a QPropertyAnimation with an easing curve;
+        this is the exact path the qt6 QEasingCurve enum-scoping bug crashed on."""
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        win.OpenSongInformation()
+        assert win.SONGINFORMATION is not None
+        win.CloseSongInformation()
+
+    def test_show_preview_slot_both_states(self, qapp):
+        """The 'Show Preview' checkbox slot compares the emitted state to 2;
+        pyqt6 still emits a plain int here, but drive both branches to be sure."""
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        win.showPreviewCheck.setChecked(True)
+        win.showPreviewCheck.setChecked(False)
+
+    def test_frameless_drag_handlers(self, qapp):
+        """The custom window drag uses Qt.MouseButton enums and
+        globalPosition().toPoint() (renamed from globalPos() in qt6). A synthetic
+        press/move/release must not raise."""
+        from PyQt6.QtCore import QEvent, QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent
+
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        no_mod = Qt.KeyboardModifier.NoModifier
+        press = QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            QPointF(10, 10),
+            QPointF(110, 110),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            no_mod,
+        )
+        win.mousePressEvent(press)
+        assert hasattr(win, "m_DragPosition")
+        move = QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(20, 20),
+            QPointF(130, 130),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            no_mod,
+        )
+        win.m_drag = True
+        win.mouseMoveEvent(move)
+        release = QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            QPointF(20, 20),
+            QPointF(130, 130),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            no_mod,
+        )
+        win.mouseReleaseEvent(release)
+
+    def test_exit_uses_app_quit_not_sys_exit(self, qapp, monkeypatch):
+        """exitprogram must quit the event loop cleanly, never raise SystemExit
+        into qt's excepthook (which logged a false 'uncaught exception' crash on
+        every close). Assert it calls QApplication.quit and does not raise."""
+        import Spotify_Downloader as sd
+
+        called = []
+        monkeypatch.setattr(sd.QApplication, "quit", lambda *_: called.append(True))
+        win = sd.MainWindow()
+        win.exitprogram()  # must not raise SystemExit
+        assert called == [True]
+
+    def test_systemexit_is_not_logged_as_crash(self):
+        """The main-thread excepthook must treat SystemExit as a clean exit, not
+        a crash - mirrors the thread excepthook and prevents the false-crash log."""
+        import io
+        import logging
+
+        import Spotify_Downloader as sd
+
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setLevel(logging.CRITICAL)
+        sd.log.addHandler(h)
+        try:
+            sd._log_excepthook(SystemExit, SystemExit(0), None)
+        finally:
+            sd.log.removeHandler(h)
+        assert "uncaught exception" not in buf.getvalue()
+
+
 class TestCoverEnrichment:
     """Tests for per-track cover art enrichment (fixes #31).
 

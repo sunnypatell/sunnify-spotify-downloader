@@ -42,7 +42,6 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     QThread,
-    QTimer,
     pyqtSignal,
     pyqtSlot,
 )
@@ -2459,14 +2458,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(250)
         self.animation.setEndValue(QSize(0, 440))
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self.animation.start()
 
     def OpenSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(1000)
         self.animation.setEndValue(QSize(350, 440))
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self.animation.start()
 
     def show_preview(self, state):
@@ -2491,6 +2490,12 @@ if __name__ == "__main__":
     # read-only log dir). Failure here just means no log file this session.
     with contextlib.suppress(Exception):
         setup_logging()
+    # a terminal ctrl+c terminates immediately instead of surfacing a stray
+    # traceback on the next qt slot (qt's c++ loop defers python's sigint).
+    # SIG_DFL over a clean-quit handler on purpose: quit() is a no-op before
+    # exec() starts, so a ctrl+c during the ~200ms startup window would hang.
+    with contextlib.suppress(Exception):
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
     # fixed-pixel ui overflows on fractional dpi without this (#64); PassThrough avoids
     # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-6/highdpi.html
     try:
@@ -2500,15 +2505,6 @@ if __name__ == "__main__":
     except Exception as exc:  # log so a scaling failure (rendering bugs) is diagnosable
         log.debug("high-dpi setup skipped: %s", exc)
     app = QApplication(sys.argv)
-    # terminal ctrl+c: quit the event loop cleanly (session-end logged) instead
-    # of SIG_DFL's instant, log-less kill. the timer hands control back to
-    # python every 200ms so a pending sigint's handler actually runs - qt's c++
-    # loop otherwise blocks in select() and defers python signals indefinitely.
-    with contextlib.suppress(Exception):
-        signal.signal(signal.SIGINT, lambda *_: app.quit())
-        _sigint_timer = QTimer()
-        _sigint_timer.start(200)
-        _sigint_timer.timeout.connect(lambda: None)
     Screen = MainWindow()
     Screen.setFixedHeight(500)
     Screen.setFixedWidth(750)
