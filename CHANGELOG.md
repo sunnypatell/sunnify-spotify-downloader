@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-02
+
+### Changed
+- **the ui framework moved from qt 5 to qt 6 (PyQt6 6.11).** qt 5 has been end-of-life for open-source users, so the app now runs on a maintained framework with current security fixes. the port follows [riverbank's documented pyqt5→pyqt6 differences](https://www.riverbankcomputing.com/static/Docs/PyQt6/pyqt5_differences.html) (scoped enums, `exec()`, `globalPosition()`) and [qt's own porting guidance](https://doc.qt.io/qt-6/portingguide.html); qt 6's always-on [high-dpi scaling](https://doc.qt.io/qt-6/highdpi.html) replaces the manual attributes while the `PassThrough` rounding policy from the #64 fix stays explicit. no visual or behavioral changes intended - the ui is the same gradient card, verified pixel-by-pixel (see notes).
+- **the pyqt5-qt5 windows wheel pin is gone for good.** pyqt5-qt5 published no windows wheels after 5.15.2, which forced a hand-maintained per-platform pin and a dependabot ignore (and caused real breakage in #70); pyqt6-qt6 ships current wheels on all three platforms, so the pin, the ignore, and the guardrail note are all deleted.
+- `Template.py` was ported by hand (imports, scoped enums, and integer font weights to [qt 6's opentype weight scale](https://doc.qt.io/qt-6/qfont.html#Weight-enum)); it is deliberately not regenerated from the stale `Template.ui`.
+
+### Notes
+- verified before shipping: 208 tests green under pyqt6, every dialog and the main window rendered at 1x/1.5x/2x on macos, windows, and linux and compared against the pyqt5 baselines (identity preserved, including the linux font-substitution case), the first-song prompt pipeline re-verified end to end, and a full release-pipeline dry-run built and attested all three platforms before this release was cut. binaries built with yt-dlp 2026.6.9 on python 3.13.
+
 ## [2.0.15] - 2026-07-02
 
 ### Changed
@@ -290,7 +300,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.15...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.15...v2.1.0
 [2.0.15]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.14...v2.0.15
 [2.0.14]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.13...v2.0.14
 [2.0.13]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.12...v2.0.13

@@ -242,7 +242,7 @@ jobs:
           mkdir -p out
           mv dist/Sunnify.exe "out/${ASSET}"
           size=$(stat -c %s "out/${ASSET}" 2>/dev/null || stat -f %z "out/${ASSET}")
-          # A real PyInstaller build with FFmpeg + PyQt5 is >100MB; anything
+          # A real PyInstaller build with FFmpeg + PyQt6 is >100MB; anything
           # under 50MB is a corrupt build that would just generate user reports.
           if [ "$size" -lt 52428800 ]; then
             echo "${ASSET} is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2

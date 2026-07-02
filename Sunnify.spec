@@ -30,8 +30,8 @@ if is_windows:
     )
     win_version_info = VSVersionInfo(
         ffi=FixedFileInfo(
-            filevers=(2, 0, 15, 0),
-            prodvers=(2, 0, 15, 0),
+            filevers=(2, 1, 0, 0),
+            prodvers=(2, 1, 0, 0),
             mask=0x3F,
             flags=0x0,
             OS=0x40004,       # VOS_NT_WINDOWS32
@@ -43,12 +43,12 @@ if is_windows:
                 StringTable('040904B0', [
                     StringStruct('CompanyName', 'Sunny Jayendra Patel'),
                     StringStruct('FileDescription', 'Sunnify - Spotify Playlist Downloader'),
-                    StringStruct('FileVersion', '2.0.15.0'),
+                    StringStruct('FileVersion', '2.1.0.0'),
                     StringStruct('InternalName', 'Sunnify'),
                     StringStruct('LegalCopyright', 'Copyright (C) 2026 Sunny Jayendra Patel'),
                     StringStruct('OriginalFilename', 'Sunnify.exe'),
                     StringStruct('ProductName', 'Sunnify'),
-                    StringStruct('ProductVersion', '2.0.15.0'),
+                    StringStruct('ProductVersion', '2.1.0.0'),
                 ]),
             ]),
             VarFileInfo([VarStruct('Translation', [0x0409, 0x04B0])]),
@@ -140,8 +140,8 @@ if is_mac:
             'CFBundleDisplayName': 'Sunnify',
             'CFBundleGetInfoString': 'Spotify Playlist Downloader',
             'CFBundleIdentifier': 'com.sunnypatel.sunnify',
-            'CFBundleVersion': '2.0.15',
-            'CFBundleShortVersionString': '2.0.15',
+            'CFBundleVersion': '2.1.0',
+            'CFBundleShortVersionString': '2.1.0',
             'NSHumanReadableCopyright': '© 2026 Sunny Jayendra Patel',
             'NSHighResolutionCapable': True,
         },
