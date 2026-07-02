@@ -45,6 +45,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
+          # windows offscreen ships an empty font database; point it at the
+          # system fonts so text renders instead of tofu boxes
+          if [ "$RUNNER_OS" = "Windows" ]; then export QT_QPA_FONTDIR="C:/Windows/Fonts"; fi
           mkdir -p renders
           cat > _render.py <<'EOF'
           import os, sys
@@ -54,8 +57,12 @@ jobs:
           app = QApplication(sys.argv)
           import Spotify_Downloader as sd
 
-          def shot(widget, name):
-              widget.show(); app.processEvents(); widget.adjustSize(); app.processEvents()
+          def shot(widget, name, fixed=None):
+              widget.show(); app.processEvents()
+              # fixed-geometry surfaces (the 750x500 main window) must not be
+              # adjustSize'd - absolute positioning gives a garbage sizeHint
+              widget.resize(*fixed) if fixed else widget.adjustSize()
+              app.processEvents()
               pm = widget.grab()
               img = QImage(pm.size(), QImage.Format.Format_ARGB32)
               img.fill(QColor("#ECECEC"))
@@ -63,7 +70,7 @@ jobs:
               out = f"renders/{name}-{scale}x-{sys.platform}.png"
               img.save(out); print("saved", out, widget.width(), widget.height())
 
-          win = sd.MainWindow(); shot(win, "main-window")
+          win = sd.MainWindow(); shot(win, "main-window", fixed=(750, 500))
           shot(sd.StarPromptNotifier(win), "star-toast")
           shot(sd.UpdateNotifier(None, "2.0.15", "2.1.0", "u"), "update-notifier")
           app.quit()
