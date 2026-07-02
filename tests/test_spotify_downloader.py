@@ -2434,3 +2434,106 @@ class TestUpdateCheck:
         ):
             _check_for_update("2.0.12")
         assert "update check skipped" in buf.getvalue()
+
+
+class TestStarPrompt:
+    """One-time 'star the repo' ask after the first successful download.
+
+    Contract: fires at most once per install, only when the finished run
+    actually landed >=1 track, never after a cancelled run, and the config
+    flag persists BEFORE the dialog opens so a crash mid-dialog can never
+    re-prompt."""
+
+    def _window(self, *, shown=False, counter=1, cancelled=False):
+        """Bare MainWindow (no Qt UI construction) with just the state the
+        gating slot reads - same bare-instance trick check_api_status.py uses."""
+        import threading
+        from types import SimpleNamespace
+
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow.__new__(MainWindow)
+        win._config = {"star_prompt_shown": shown}
+        win._cancel_event = threading.Event()
+        if cancelled:
+            win._cancel_event.set()
+        win.scraper_thread = SimpleNamespace(scraper=SimpleNamespace(counter=counter))
+        return win
+
+    def _run_slot(self, win, calls):
+        import Spotify_Downloader as sd
+
+        class _Recorder:
+            def __init__(self, parent):
+                calls.append("shown")
+
+            def exec_(self):
+                return 0
+
+        with (
+            patch.object(sd, "StarPromptNotifier", _Recorder),
+            patch.object(sd, "save_config", lambda _cfg: calls.append("saved")),
+        ):
+            sd.MainWindow._maybe_show_star_prompt(win, "Download Complete!")
+
+    def test_shows_once_then_never_again(self):
+        """First successful run prompts; the persisted flag silences every
+        run after it."""
+        calls = []
+        win = self._window()
+        self._run_slot(win, calls)
+        assert "shown" in calls
+        assert win._config["star_prompt_shown"] is True
+        self._run_slot(win, calls)
+        assert calls.count("shown") == 1
+
+    def test_skipped_when_nothing_downloaded(self):
+        """A run that landed zero tracks (all failed / not found) must not
+        beg for a star - the user got nothing."""
+        calls = []
+        win = self._window(counter=0)
+        self._run_slot(win, calls)
+        assert calls == []
+        assert win._config["star_prompt_shown"] is False
+
+    def test_skipped_on_cancelled_run(self):
+        """Prompting right after the user hit Stop reads as nagging, even if
+        some tracks landed first; the next successful run asks instead."""
+        calls = []
+        win = self._window(counter=5, cancelled=True)
+        self._run_slot(win, calls)
+        assert calls == []
+        assert win._config["star_prompt_shown"] is False
+
+    def test_flag_persists_before_dialog_opens(self):
+        """save_config must run before the dialog constructs, so a crash or
+        force-quit mid-dialog can never make it prompt twice."""
+        calls = []
+        self._run_slot(self._window(), calls)
+        assert calls == ["saved", "shown"]
+
+    def test_config_defaults_and_non_bool_coercion(self, tmp_path):
+        """Missing file defaults star_prompt_shown to False; a corrupted
+        non-bool value coerces back to False instead of crashing or
+        permanently silencing the prompt."""
+        import json
+
+        from Spotify_Downloader import load_config
+
+        cfg_file = tmp_path / "config.json"
+        with patch("Spotify_Downloader._config_path", return_value=str(cfg_file)):
+            assert load_config()["star_prompt_shown"] is False
+            cfg_file.write_text(json.dumps({"star_prompt_shown": "yes"}))
+            assert load_config()["star_prompt_shown"] is False
+            cfg_file.write_text(json.dumps({"star_prompt_shown": True}))
+            assert load_config()["star_prompt_shown"] is True
+
+    def test_notifier_constructs_and_targets_repo(self, qapp):
+        """Headless construction is enough to catch layout assembly crashes
+        (same rationale as TestSettingsDialog); the CTA must point at the
+        repo page, not the releases page."""
+        from Spotify_Downloader import GITHUB_REPO, StarPromptNotifier
+
+        dlg = StarPromptNotifier(None)
+        assert dlg.sizeHint().width() > 0
+        assert dlg._url == f"https://github.com/{GITHUB_REPO}"

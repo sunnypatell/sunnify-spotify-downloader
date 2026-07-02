@@ -304,6 +304,7 @@ def load_config() -> dict:
         "quality": "192",
         "include_track_number": False,
         "loose_match": False,
+        "star_prompt_shown": False,
     }
     try:
         with open(_config_path(), encoding="utf-8") as f:
@@ -319,6 +320,8 @@ def load_config() -> dict:
             defaults["include_track_number"] = False
         if not isinstance(defaults["loose_match"], bool):
             defaults["loose_match"] = False
+        if not isinstance(defaults["star_prompt_shown"], bool):
+            defaults["star_prompt_shown"] = False
         return defaults
     except (OSError, json.JSONDecodeError):
         return defaults
@@ -1876,6 +1879,9 @@ class UpdateNotifier(QDialog):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 26, 28, 30)  # room for the drop shadow
+        # always exactly content-sized: fractional dpi under-measures the
+        # wrapped body label and quietly compresses the card (see #64)
+        outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
 
         card = QFrame()
         card.setObjectName("card")
@@ -1981,6 +1987,138 @@ class UpdateNotifier(QDialog):
         self.accept()
 
 
+class StarPromptNotifier(QDialog):
+    """One-time 'star the repo' toast, shown after the first successful download.
+    Same card pattern as UpdateNotifier so it inherits the high-dpi behaviour
+    verified for 2.0.13 (Qt scaling handles logical px; static copy word-wraps
+    inside the fixed-width card). Shown exactly once per install: the config
+    flag is persisted before the dialog opens, so even a crash mid-dialog can
+    never make it nag twice."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        from PyQt5.QtGui import QColor, QFont, QFontMetrics
+        from PyQt5.QtWidgets import QFrame, QLabel, QWidget
+
+        self._url = f"https://github.com/{GITHUB_REPO}"
+        self.setWindowTitle("Enjoying Sunnify?")
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setModal(True)
+        self.setFont(QFont("Arial", 10))
+
+        green, green_hover = "#1ED760", "#1FE968"
+        cyan, purple = "rgba(80, 214, 255, 255)", "rgba(112, 32, 213, 255)"
+        ink, mute = "#15151F", "#7A7A8C"
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(28, 26, 28, 30)  # room for the drop shadow
+        # dialog is always exactly its content size: fractional-dpi rounding
+        # under-measured the wrapped body label and squeezed the header,
+        # clipping the headline's descenders (same bug class as #64)
+        outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
+
+        card = QFrame()
+        card.setObjectName("card")
+        card.setFixedWidth(430)
+        card.setStyleSheet("QFrame#card{background:#FFFFFF;border-radius:18px;}")
+        shadow = QGraphicsDropShadowEffect(blurRadius=48, xOffset=0, yOffset=16)
+        shadow.setColor(QColor(20, 10, 40, 110))
+        card.setGraphicsEffect(shadow)
+        outer.addWidget(card)
+
+        v = QVBoxLayout(card)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+
+        header = QFrame()
+        header.setObjectName("hdr")
+        header.setStyleSheet(
+            "QFrame#hdr{border-top-left-radius:18px;border-top-right-radius:18px;"
+            f"background:qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1,"
+            f"stop:0.23 {cyan}, stop:0.81 {purple});}}"
+        )
+        hv = QVBoxLayout(header)
+        hv.setContentsMargins(26, 20, 26, 22)
+        hv.setSpacing(0)  # gaps are set explicitly between rows below
+
+        eyebrow = QLabel("FIRST DOWNLOAD COMPLETE")
+        ef = QFont("Arial", 9, QFont.Bold)
+        ef.setLetterSpacing(QFont.AbsoluteSpacing, 1.5)
+        eyebrow.setFont(ef)
+        eyebrow.setStyleSheet("color: rgba(255,255,255,0.85);")
+        hv.addWidget(eyebrow)
+        hv.addSpacing(8)
+
+        name = QLabel("Enjoying Sunnify?")
+        nfont = QFont("Arial", 22, QFont.Bold)
+        name.setFont(nfont)
+        name.setStyleSheet("color: #FFFFFF;")
+        # large bold glyphs exceed QLabel's tight default box; reserve full
+        # height plus explicit descender room below (the 'j'/'y'/'g' tails
+        # clipped at 1.5x/2x scale without it)
+        name.setMinimumHeight(QFontMetrics(nfont).height() + 10)
+        hv.addWidget(name)
+        hv.addSpacing(6)
+        v.addWidget(header)
+
+        body = QWidget()
+        bv = QVBoxLayout(body)
+        bv.setContentsMargins(26, 22, 26, 6)
+        msg = QLabel(
+            "A star on GitHub keeps this project alive - it's how new people "
+            "find Sunnify, and it takes five seconds. This asks once and never "
+            "again."
+        )
+        msg.setWordWrap(True)
+        msg.setFont(QFont("Arial", 10))
+        msg.setStyleSheet(f"color: {mute};")
+        bv.addWidget(msg)
+        v.addWidget(body)
+
+        footer = QWidget()
+        fv = QHBoxLayout(footer)
+        fv.setContentsMargins(26, 8, 26, 22)
+        fv.setSpacing(10)
+
+        later = QPushButton("Maybe later")
+        later.setCursor(QCursor(Qt.PointingHandCursor))
+        later.setFont(QFont("Arial", 10, QFont.Bold))
+        later.setFixedHeight(40)
+        later.setStyleSheet(
+            f"QPushButton{{background:transparent;color:{mute};border:none;}}"
+            f"QPushButton:hover{{color:{ink};}}"
+        )
+        later.clicked.connect(self.reject)
+        fv.addWidget(later)
+        fv.addStretch(1)
+
+        star = QPushButton("Star on GitHub")
+        star.setCursor(QCursor(Qt.PointingHandCursor))
+        sfont = QFont("Arial", 10, QFont.Bold)
+        star.setFont(sfont)
+        star.setFixedHeight(40)
+        # width from font metrics, not a fixed box: Arial substitutes on linux
+        # (Liberation Sans) and a hardcoded width can clip the longer label
+        star.setMinimumWidth(QFontMetrics(sfont).horizontalAdvance("Star on GitHub") + 44)
+        star.setStyleSheet(
+            f"QPushButton{{background:{green};color:white;border-radius:10px;"
+            "padding-left:18px;padding-right:18px;}"
+            f"QPushButton:hover{{background:{green_hover};}}"
+        )
+        star.clicked.connect(self._open_repo)
+        fv.addWidget(star)
+        v.addWidget(footer)
+
+    def _open_repo(self):
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+
+        if not QDesktopServices.openUrl(QUrl(self._url)):
+            log.warning("could not open repo page in browser: %s", self._url)
+        self.accept()
+
+
 # Main Window
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -2028,6 +2166,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _show_update_notifier(self, latest: str, url: str):
         log.info("update available: %s -> %s; showing notifier", __version__, latest)
         UpdateNotifier(self, __version__, latest, url).exec_()
+
+    @pyqtSlot(str)
+    def _maybe_show_star_prompt(self, _msg: str):
+        """One-time star ask after the first successful run (>=1 track landed).
+        Skipped on cancelled runs - a prompt right after the user hit Stop
+        would read as nagging; the next successful run asks instead."""
+        if self._config.get("star_prompt_shown"):
+            return
+        scraper = getattr(getattr(self, "scraper_thread", None), "scraper", None)
+        if scraper is None or scraper.counter < 1 or self._cancel_event.is_set():
+            return
+        # persist before showing so a crash mid-dialog can never re-prompt
+        self._config["star_prompt_shown"] = True
+        save_config(self._config)
+        log.info("first successful download - showing one-time star prompt")
+        StarPromptNotifier(self).exec_()
 
     def _get_default_download_path(self):
         """Get a sensible default download path that's writable."""
@@ -2168,6 +2322,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.scraper_thread.scraper.PlaylistCompleted.connect(
                 lambda x: self.statusMsg.setText(x)
             )
+            self.scraper_thread.scraper.PlaylistCompleted.connect(self._maybe_show_star_prompt)
             self.scraper_thread.scraper.error_signal.connect(lambda x: self.statusMsg.setText(x))
 
             # Connect the count_updated signal to the update_counter slot
