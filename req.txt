@@ -1,6 +1,6 @@
 # core dependencies
 mutagen>=1.46.0
-PyQt5>=5.15.9
+PyQt6>=6.11
 requests>=2.32.2
 yt-dlp>=2024.8.6
 

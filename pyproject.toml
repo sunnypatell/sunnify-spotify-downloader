@@ -1,12 +1,12 @@
 [project]
 name = "sunnify-spotify-downloader"
 version = "2.0.15"
-description = "Spotify playlist downloader with PyQt5 GUI, Flask backend, and Next.js web client"
+description = "Spotify playlist downloader with PyQt6 GUI, Flask backend, and Next.js web client"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Custom - Educational Use Only" }
 authors = [{ name = "Sunny Jayendra Patel", email = "sunnypatel124555@gmail.com" }]
-keywords = ["spotify", "downloader", "playlist", "music", "pyqt5"]
+keywords = ["spotify", "downloader", "playlist", "music", "pyqt6"]
 
 [project.urls]
 homepage = "https://github.com/sunnypatell/sunnify-spotify-downloader"
@@ -19,7 +19,7 @@ target-version = "py310"
 line-length = 100
 indent-width = 4
 exclude = [
-    "Template.py",  # auto-generated from Template.ui via pyuic5
+    "Template.py",  # generated-then-hand-edited qt ui module; never regenerate
     ".venv",
     "venv",
     "__pycache__",

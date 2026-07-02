@@ -29,7 +29,7 @@ Free, open source, cross-platform desktop app. No account, no subscription, no c
 
 **Sunnify is a free, open-source Spotify playlist downloader for macOS, Windows, and Linux.** Paste any Spotify playlist, album, or track link and Sunnify saves it as local audio files (MP3, M4A, FLAC, Opus, or WAV) with the cover art, title, artist, album, year, and track number written straight into the file's tags. No Spotify account, no API keys, no command line, no separate FFmpeg install.
 
-It is a desktop GUI built with Python and PyQt5. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine.
+It is a desktop GUI built with Python and PyQt6. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine.
 
 <div align="center">
 <img src="./readmeAssets/demonstration%201.jpg" alt="Sunnify desktop app downloading a Spotify playlist to local MP3s" width="760" />
@@ -139,7 +139,7 @@ Full details and the threat model are in [SECURITY.md](SECURITY.md#release-integ
 
 ## How it works
 
-Sunnify reads track metadata from Spotify's public embed pages (no authentication), finds the matching audio via a YouTube search through [yt-dlp](https://github.com/yt-dlp/yt-dlp), transcodes it to your chosen format with the bundled FFmpeg, and writes the tags and cover art with [Mutagen](https://mutagen.readthedocs.io/). It is a pure-Python core wrapped in a PyQt5 interface, packaged per-platform with PyInstaller.
+Sunnify reads track metadata from Spotify's public embed pages (no authentication), finds the matching audio via a YouTube search through [yt-dlp](https://github.com/yt-dlp/yt-dlp), transcodes it to your chosen format with the bundled FFmpeg, and writes the tags and cover art with [Mutagen](https://mutagen.readthedocs.io/). It is a pure-Python core wrapped in a PyQt6 interface, packaged per-platform with PyInstaller.
 
 ---
 
@@ -150,7 +150,7 @@ Sunnify reads track metadata from Spotify's public embed pages (no authenticatio
 
 > **Sunnify was built solely as an educational demonstration of software engineering.** It exists to showcase technical skills for academic and portfolio purposes. The developer does not condone, encourage, or support copyright infringement or piracy.
 
-It demonstrates desktop application development with Python and PyQt5, public-API integration and reverse engineering, multi-threaded architecture, and a hardened CI/CD release pipeline. It is provided free of charge as an open-source educational resource, not for commercial use.
+It demonstrates desktop application development with Python and PyQt6, public-API integration and reverse engineering, multi-threaded architecture, and a hardened CI/CD release pipeline. It is provided free of charge as an open-source educational resource, not for commercial use.
 
 ### Terms of use
 
