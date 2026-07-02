@@ -42,6 +42,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
+      - name: Install qt6 runtime libs (Linux)
+        # qt6 hard-requires libEGL at import time (qt5 didn't); mirrors the
+        # release-build.yml list
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libegl1 libgl1 libxcb-cursor0 libxkbcommon-x11-0
+
       - name: Install dependencies
         run: pip install -r req.txt -r requirements-dev.txt
 
