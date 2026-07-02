@@ -51,8 +51,10 @@ the asset list permanently - a published-empty release cannot be fixed.
 Release-notes house style: `## what's changed`, lowercase `### added/fixed`
 sections, bold lead phrase per bullet with `(closes #NN)`, `---`, the
 standing "verifying this release" + "install via homebrew (macos)" footers,
-`**full changelog**:` compare link. Write with `--notes-file`, never inline
-heredoc (shell-escaped backticks leak).
+`**full changelog**:` compare link, then the standing star-ask line:
+`⭐ if sunnify saved you time, [star the repo](https://github.com/sunnypatell/sunnify-spotify-downloader) - stars are how people find it.`
+Write with `--notes-file`, never inline heredoc (shell-escaped backticks
+leak).
 
 ## 4. Build + publish
 

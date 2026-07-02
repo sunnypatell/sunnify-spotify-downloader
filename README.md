@@ -18,6 +18,10 @@ Free, open source, cross-platform desktop app. No account, no subscription, no c
 
 <strong><a href="#download">Download</a> &nbsp;&middot;&nbsp; <a href="#features">Features</a> &nbsp;&middot;&nbsp; <a href="#how-to-use">How to use</a> &nbsp;&middot;&nbsp; <a href="#build-from-source">Build from source</a> &nbsp;&middot;&nbsp; <a href="#legal-disclaimer">Disclaimer</a></strong>
 
+<br/><br/>
+
+<sub>⭐ If Sunnify saves you time, <a href="https://github.com/sunnypatell/sunnify-spotify-downloader">star the repo</a> - stars are how people find this project.</sub>
+
 </div>
 
 > [!CAUTION]
