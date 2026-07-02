@@ -7,7 +7,9 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     envVars:
+      # 3.11.0 exact was an unpatched 2022 interpreter; render keeps the last
+      # good deploy live if a build ever fails, so bumps here are downtime-safe
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.13.14
     healthCheckPath: /api/health
     autoDeploy: true
