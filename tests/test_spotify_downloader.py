@@ -2466,7 +2466,7 @@ class TestStarPrompt:
             def __init__(self, parent):
                 calls.append("shown")
 
-            def exec_(self):
+            def exec(self):
                 return 0
 
         with (
@@ -2557,26 +2557,26 @@ class TestStarPrompt:
         """A real dispatched mouse click on the ghost button must reject and
         close the dialog - the transparent/borderless styling must not eat
         the hit."""
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtTest import QTest
-        from PyQt5.QtWidgets import QDialog, QPushButton
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QDialog, QPushButton
 
         from Spotify_Downloader import StarPromptNotifier
 
         dlg = StarPromptNotifier(None)
         dlg.show()
         later = next(b for b in dlg.findChildren(QPushButton) if b.text() == "Maybe later")
-        QTest.mouseClick(later, Qt.LeftButton)
-        assert dlg.result() == QDialog.Rejected
+        QTest.mouseClick(later, Qt.MouseButton.LeftButton)
+        assert dlg.result() == QDialog.DialogCode.Rejected
         assert not dlg.isVisible()
 
     def test_star_click_opens_repo_url_and_accepts(self, qapp, monkeypatch):
         """Clicking the CTA must hand the repo URL to the OS browser opener
         and accept-close; the browser itself is faked out."""
-        import PyQt5.QtGui as qtgui
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtTest import QTest
-        from PyQt5.QtWidgets import QDialog, QPushButton
+        import PyQt6.QtGui as qtgui
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QDialog, QPushButton
 
         from Spotify_Downloader import GITHUB_REPO, StarPromptNotifier
 
@@ -2588,29 +2588,29 @@ class TestStarPrompt:
                 opened.append(url.toString())
                 return True
 
-        # _open_repo does `from PyQt5.QtGui import QDesktopServices` at call
+        # _open_repo does `from PyQt6.QtGui import QDesktopServices` at call
         # time, so swapping the module attribute intercepts it cleanly
         monkeypatch.setattr(qtgui, "QDesktopServices", _FakeDesktopServices)
 
         dlg = StarPromptNotifier(None)
         dlg.show()
         star = next(b for b in dlg.findChildren(QPushButton) if b.text() == "Star on GitHub")
-        QTest.mouseClick(star, Qt.LeftButton)
+        QTest.mouseClick(star, Qt.MouseButton.LeftButton)
         assert opened == [f"https://github.com/{GITHUB_REPO}"]
-        assert dlg.result() == QDialog.Accepted
+        assert dlg.result() == QDialog.DialogCode.Accepted
         assert not dlg.isVisible()
 
     def test_escape_key_dismisses(self, qapp):
         """Esc is the reflex dismiss on a modal; QDialog's default reject
         path must stay intact despite the frameless window flags."""
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtTest import QTest
-        from PyQt5.QtWidgets import QDialog
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QDialog
 
         from Spotify_Downloader import StarPromptNotifier
 
         dlg = StarPromptNotifier(None)
         dlg.show()
-        QTest.keyClick(dlg, Qt.Key_Escape)
-        assert dlg.result() == QDialog.Rejected
+        QTest.keyClick(dlg, Qt.Key.Key_Escape)
+        assert dlg.result() == QDialog.DialogCode.Rejected
         assert not dlg.isVisible()
