@@ -59,7 +59,8 @@ jobs:
           python-version: "3.11"
 
       - name: Resolve the hash lock without installing
+        # runner pip already supports --dry-run (needs >=22.2) and
+        # release-build.yml doesn't self-upgrade pip either - staying on the
+        # runner's pip mirrors the release environment exactly
         shell: bash
-        run: |
-          python -m pip install --upgrade pip
-          pip install --require-hashes --dry-run -r requirements-build.txt
+        run: pip install --require-hashes --dry-run -r requirements-build.txt
