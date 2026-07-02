@@ -111,8 +111,10 @@ pattern the attestation work exists to kill.
 - **FFmpeg pins**: every few months, bump procedure documented at the top of
   `.github/workflows/release-build.yml`
 - **Dependency pins**: Dependabot opens one grouped PR per ecosystem per
-  month (action SHAs, python, npm); merging it is the whole job. The
-  `requirements-build.txt` hash lock regenerates with:
+  month (action SHAs, python, npm); merging it is the whole job - the
+  `lock-check.yml` gate proves the hash lock still resolves on all three
+  platforms before it can merge. The `requirements-build.txt` hash lock
+  regenerates with:
   `uv pip compile requirements-build.in --universal --generate-hashes -o requirements-build.txt`
 - Everything else (CodeQL, Scorecard, zizmor/actionlint, stale-bot) is
   scheduled and input-free

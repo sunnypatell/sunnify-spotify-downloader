@@ -1,0 +1,65 @@
+# =============================================================================
+# Release Lock Check
+# =============================================================================
+# Proves requirements-build.txt (the hash-locked release-build manifest) still
+# resolves under `pip install --require-hashes` on all three release
+# platforms, whenever the lock or its inputs change.
+#
+# Exists because of a real incident: dependabot's grouped lock regen in #70
+# silently dropped pyinstaller's platform-marker-only transitives (macholib on
+# darwin, pefile/pywin32-ctypes on win32) AND the pyqt5-qt5==5.15.2 win32 pin,
+# and the breakage only surfaced when the v2.0.14 release build failed on
+# macOS + Windows (linux has no such deps, so nothing else went red).
+# Dependabot edits the lock without a universal resolve; this gate makes that
+# class of edit fail at PR time instead of at release time.
+#
+# --dry-run resolves and hash-verifies without installing; the
+# unpinned-transitive error fires during resolution, so the failure is fast.
+# Python and the pip flags mirror release-build.yml exactly.
+# =============================================================================
+
+name: Lock Check
+
+on:
+  pull_request:
+    paths:
+      - "requirements-build.txt"
+      - "requirements-build.in"
+      - "req.txt"
+      - ".github/workflows/lock-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "requirements-build.txt"
+      - "requirements-build.in"
+      - "req.txt"
+      - ".github/workflows/lock-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lock-check:
+    name: Lock resolves (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python (same version as release builds)
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Resolve the hash lock without installing
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install --require-hashes --dry-run -r requirements-build.txt
