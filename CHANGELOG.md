@@ -14,8 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **the pyqt5-qt5 windows wheel pin is gone for good.** pyqt5-qt5 published no windows wheels after 5.15.2, which forced a hand-maintained per-platform pin and a dependabot ignore (and caused real breakage in #70); pyqt6-qt6 ships current wheels on all three platforms, so the pin, the ignore, and the guardrail note are all deleted.
 - `Template.py` was ported by hand (imports, scoped enums, and integer font weights to [qt 6's opentype weight scale](https://doc.qt.io/qt-6/qfont.html#Weight-enum)); it is deliberately not regenerated from the stale `Template.ui`.
 
+### Fixed
+- **closing the app no longer records itself as a crash.** the window's close button called `sys.exit()` inside a qt slot, which raised `SystemExit` into qt's exception hook and wrote a `CRITICAL uncaught exception` to the log on every normal close, with no clean session-end - so the logs read as if the app kept crashing. it now leaves the event loop the [documented way](https://doc.qt.io/qt-6/qcoreapplication.html#quit) (`QApplication.quit()`), and an intentional `SystemExit` is treated as a clean exit, not a crash.
+- **the "Show Preview" panel no longer crashes on qt 6.** its slide animation referenced `QEasingCurve.InOutQuad`, which is `QEasingCurve.Type.InOutQuad` under qt 6's scoped enums - it would have aborted on the first click. new interaction tests now drive the animation, the frameless-window drag, and the close path so this class of enum regression can't hide behind a green suite again.
+
 ### Notes
-- verified before shipping: 208 tests green under pyqt6, every dialog and the main window rendered at 1x/1.5x/2x on macos, windows, and linux and compared against the pyqt5 baselines (identity preserved, including the linux font-substitution case), the first-song prompt pipeline re-verified end to end, and a full release-pipeline dry-run built and attested all three platforms before this release was cut. binaries built with yt-dlp 2026.6.9 on python 3.13.
+- verified before shipping: 213 tests green under pyqt6 across python 3.10-3.13 on all three OSes; every dialog and the main window rendered at 1x/1.5x/2x on macos, windows, and linux and compared against the pyqt5 baselines (identity preserved, including the linux font-substitution case); every button, dialog, animation, and the drag handlers exercised headless with zero enum failures; close and ctrl+c both verified to exit cleanly with a proper session-end log; and a full release-pipeline dry-run built and attested all three platforms before this release was cut. binaries built with yt-dlp 2026.6.9 on python 3.13.
 
 ## [2.0.15] - 2026-07-02
 
