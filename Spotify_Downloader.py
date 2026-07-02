@@ -42,6 +42,7 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     QThread,
+    QTimer,
     pyqtSignal,
     pyqtSlot,
 )
@@ -83,8 +84,8 @@ log = logging.getLogger("sunnify")
 
 def _log_excepthook(exc_type, exc, tb):
     """Route uncaught main-thread exceptions to the log before the default handler."""
-    # a clean ctrl+c is not a crash worth a critical-level dump
-    if not issubclass(exc_type, KeyboardInterrupt):
+    # ctrl+c and an intentional sys.exit() are clean exits, not crashes
+    if not issubclass(exc_type, (KeyboardInterrupt, SystemExit)):
         with contextlib.suppress(Exception):
             log.critical("uncaught exception", exc_info=(exc_type, exc, tb))
     if sys.stderr is not None:  # windowed builds have no stderr to write to
@@ -2475,7 +2476,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.CloseSongInformation()
 
     def exitprogram(self):
-        sys.exit()
+        # QApplication.quit() unwinds the event loop cleanly so app.exec()
+        # returns and the atexit session-end runs; sys.exit() inside a slot
+        # raised SystemExit into qt's excepthook and logged a false crash
+        QApplication.quit()
 
     def Linkedin(self):
         webbrowser.open("https://www.linkedin.com/in/sunny-patel-30b460204/")
@@ -2487,12 +2491,8 @@ if __name__ == "__main__":
     # read-only log dir). Failure here just means no log file this session.
     with contextlib.suppress(Exception):
         setup_logging()
-    # let a terminal ctrl+c terminate cleanly instead of surfacing a traceback
-    # on the next qt slot (qt's c++ loop defers python's sigint until then)
-    with contextlib.suppress(Exception):
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
     # fixed-pixel ui overflows on fractional dpi without this (#64); PassThrough avoids
-    # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-5/highdpi.html
+    # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-6/highdpi.html
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -2500,6 +2500,15 @@ if __name__ == "__main__":
     except Exception as exc:  # log so a scaling failure (rendering bugs) is diagnosable
         log.debug("high-dpi setup skipped: %s", exc)
     app = QApplication(sys.argv)
+    # terminal ctrl+c: quit the event loop cleanly (session-end logged) instead
+    # of SIG_DFL's instant, log-less kill. the timer hands control back to
+    # python every 200ms so a pending sigint's handler actually runs - qt's c++
+    # loop otherwise blocks in select() and defers python signals indefinitely.
+    with contextlib.suppress(Exception):
+        signal.signal(signal.SIGINT, lambda *_: app.quit())
+        _sigint_timer = QTimer()
+        _sigint_timer.start(200)
+        _sigint_timer.timeout.connect(lambda: None)
     Screen = MainWindow()
     Screen.setFixedHeight(500)
     Screen.setFixedWidth(750)
