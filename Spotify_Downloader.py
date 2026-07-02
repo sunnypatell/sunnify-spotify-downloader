@@ -42,6 +42,7 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     QThread,
+    QTimer,
     pyqtSignal,
     pyqtSlot,
 )
@@ -2490,12 +2491,23 @@ if __name__ == "__main__":
     # read-only log dir). Failure here just means no log file this session.
     with contextlib.suppress(Exception):
         setup_logging()
-    # a terminal ctrl+c terminates immediately instead of surfacing a stray
-    # traceback on the next qt slot (qt's c++ loop defers python's sigint).
-    # SIG_DFL over a clean-quit handler on purpose: quit() is a no-op before
-    # exec() starts, so a ctrl+c during the ~200ms startup window would hang.
+
+    # sigint/sigterm: log WHICH signal killed us, then die with default
+    # semantics (re-raise under SIG_DFL). historical "app died right after
+    # launch, no session-end, no crash log" reports were untraceable because
+    # a default-action signal skips atexit and every hook; this keeps the
+    # instant-kill behaviour (no dependence on the event loop, so no hang
+    # window) but leaves one forensic line behind.
+    def _fatal_signal(sig, _frame):
+        with contextlib.suppress(Exception):
+            log.info("terminated by signal %s (ctrl+c or external)", signal.Signals(sig).name)
+            logging.shutdown()
+        signal.signal(sig, signal.SIG_DFL)
+        os.kill(os.getpid(), sig)
+
     with contextlib.suppress(Exception):
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGINT, _fatal_signal)
+        signal.signal(signal.SIGTERM, _fatal_signal)
     # fixed-pixel ui overflows on fractional dpi without this (#64); PassThrough avoids
     # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-6/highdpi.html
     try:
@@ -2505,6 +2517,11 @@ if __name__ == "__main__":
     except Exception as exc:  # log so a scaling failure (rendering bugs) is diagnosable
         log.debug("high-dpi setup skipped: %s", exc)
     app = QApplication(sys.argv)
+    # wake python every 200ms during exec() so a pending signal's handler runs
+    # promptly (qt's c++ loop otherwise defers python signals until a qt slot)
+    _signal_waker = QTimer()
+    _signal_waker.start(200)
+    _signal_waker.timeout.connect(lambda: None)
     Screen = MainWindow()
     Screen.setFixedHeight(500)
     Screen.setFixedWidth(750)

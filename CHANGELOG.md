@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **a signal death now leaves a forensic line in the log.** historical "the app died right after launch, no session-end, nothing in the log" reports were untraceable: a default-action SIGINT/SIGTERM skips atexit and every hook. the app now logs `terminated by signal <NAME>`, flushes, and re-raises under `SIG_DFL` - identical instant-kill behavior (verified: no hang at any timing from 0.15s to 2.5s after launch), but the next mystery kill names its killer.
+
 ## [2.1.0] - 2026-07-02
 
 ### Changed
