@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.15] - 2026-07-02
+
+### Changed
+- **python floor raised to 3.10; binaries now bundle python 3.13.** 3.9 hit end-of-life in october 2025 and only ever applied to source installs - every shipped binary has always bundled its own interpreter, so binary users are unaffected. 3.10 keeps ubuntu 22.04 LTS source installs working. release, lint, and lock-check CI moved from 3.11 to 3.13; the test matrix is now 3.10-3.13 across all three OSes.
+- **mutagen 1.47 -> 1.48.1 in shipped binaries** (the eol-3.9 back-pin retired). tag writing verified unchanged: the byte-level id3v2.3 suite passes against 1.48.1.
+- **pytest 8 -> 9 in ci** (same retired pin); clears the last python-side security advisory (GHSA-6w46-j5rx-g56g).
+- **(web) backend runtime bumped from an unpatched python 3.11.0 (oct 2022) to 3.13.14** on render.
+- **(web) dead `framer-motion` dependency removed** (declared, never imported); node engines raised to 22 (20 hit eol april 2026); the webclient readme's stale "next.js 14 / node 18" claims corrected.
+
+### Notes
+- currency release; no changes to the spotify metadata path, audio formats, tags, or the default matching policy. verified end-to-end: 208 tests green on pytest 9.1.1 + mutagen 1.48.1, live upstream contract check green (spotify embed + anonymous token + youtube search + the real match selector via `scripts/check_api_status.py`), webclient typecheck/lint/build green. binaries built with yt-dlp 2026.6.9.
+
 ## [2.0.14] - 2026-07-02
 
 ### Added
@@ -278,7 +290,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.14...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.15...HEAD
+[2.0.15]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.14...v2.0.15
 [2.0.14]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.13...v2.0.14
 [2.0.13]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.12...v2.0.13
 [2.0.12]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.11...v2.0.12
