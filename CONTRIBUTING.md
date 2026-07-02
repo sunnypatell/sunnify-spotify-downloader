@@ -101,7 +101,7 @@ type(scope): description
 - `chore` - maintenance tasks
 
 ### Scopes
-- `desktop` - PyQt5 GUI
+- `desktop` - PyQt6 GUI
 - `backend` - Flask API
 - `webclient` - Next.js frontend
 - `providers` - spotifydown_api.py

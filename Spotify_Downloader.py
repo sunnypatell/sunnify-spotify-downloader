@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.0.15"
+__version__ = "2.1.0"
 
 import atexit
 import concurrent.futures
@@ -36,7 +36,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import APIC, ID3
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     QEasingCurve,
     QPropertyAnimation,
     QSize,
@@ -45,8 +45,8 @@ from PyQt5.QtCore import (
     pyqtSignal,
     pyqtSlot,
 )
-from PyQt5.QtGui import QCursor, QImage, QPixmap
-from PyQt5.QtWidgets import (
+from PyQt6.QtGui import QCursor, QImage, QPixmap
+from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
@@ -83,8 +83,8 @@ log = logging.getLogger("sunnify")
 
 def _log_excepthook(exc_type, exc, tb):
     """Route uncaught main-thread exceptions to the log before the default handler."""
-    # a clean ctrl+c is not a crash worth a critical-level dump
-    if not issubclass(exc_type, KeyboardInterrupt):
+    # ctrl+c and an intentional sys.exit() are clean exits, not crashes
+    if not issubclass(exc_type, (KeyboardInterrupt, SystemExit)):
         with contextlib.suppress(Exception):
             log.critical("uncaught exception", exc_info=(exc_type, exc, tb))
     if sys.stderr is not None:  # windowed builds have no stderr to write to
@@ -1665,7 +1665,7 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(560)
         self._config = dict(config)
 
-        from PyQt5.QtWidgets import QLabel, QLineEdit
+        from PyQt6.QtWidgets import QLabel, QLineEdit
 
         # QLineEdit (read-only) handles arbitrarily long paths cleanly: it
         # elides mid-path with horizontal scroll on focus, rather than
@@ -1710,8 +1710,8 @@ class SettingsDialog(QDialog):
         # word-wrapped value column. Owning the height per-block via QFrame
         # + QVBoxLayout + Preferred size policy lets each hint expand to
         # however many lines its text needs at the dialog's current width.
-        from PyQt5.QtGui import QFontMetrics, QPalette
-        from PyQt5.QtWidgets import QFrame, QSizePolicy
+        from PyQt6.QtGui import QFontMetrics, QPalette
+        from PyQt6.QtWidgets import QFrame, QSizePolicy
 
         # one list so the label column is measured from the longest label, not a magic width
         _settings = [
@@ -1751,7 +1751,7 @@ class SettingsDialog(QDialog):
         LABEL_W = max(_fm.horizontalAdvance(lbl) for lbl, _, _ in _settings) + 8
 
         # muted palette text so hints stay readable on light (win/linux) and dark (mac) themes
-        _fg = self.palette().color(QPalette.WindowText)
+        _fg = self.palette().color(QPalette.ColorRole.WindowText)
         _hint_color = f"rgba({_fg.red()}, {_fg.green()}, {_fg.blue()}, 175)"
 
         def _setting_block(label_text: str, control, hint_text: str) -> QFrame:
@@ -1768,7 +1768,7 @@ class SettingsDialog(QDialog):
             name = QLabel(label_text)
             name.setMinimumWidth(LABEL_W)
             name.setMaximumWidth(LABEL_W)
-            name.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            name.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             row.addWidget(name)
             if isinstance(control, QHBoxLayout):
                 row.addLayout(control, 1)
@@ -1783,16 +1783,18 @@ class SettingsDialog(QDialog):
                 hint.setWordWrap(True)
                 hint.setStyleSheet(f"color: {_hint_color}; font-size: 11px;")
                 hint.setContentsMargins(LABEL_W + 12, 2, 4, 0)
-                hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                hint.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
                 box.addWidget(hint)
             return container
 
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         # Gives users a one-click way to grab the log file to attach to a bug
         # report, without hunting through ~/Library/Logs or %LOCALAPPDATA%.
-        open_logs = btns.addButton("Open logs folder", QDialogButtonBox.ActionRole)
+        open_logs = btns.addButton("Open logs folder", QDialogButtonBox.ButtonRole.ActionRole)
         open_logs.setToolTip(log_file_path())
         open_logs.clicked.connect(self._open_logs)
 
@@ -1809,8 +1811,8 @@ class SettingsDialog(QDialog):
 
     def _open_logs(self):
         """Reveal the log folder in the OS file manager."""
-        from PyQt5.QtCore import QUrl
-        from PyQt5.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
 
         log_dir = _log_dir()
         with contextlib.suppress(OSError):
@@ -1827,7 +1829,7 @@ class SettingsDialog(QDialog):
             self,
             "Select Download Folder",
             start,
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks,
         )
         if folder:
             # Only append "Sunnify" when the user picked a non-Sunnify folder,
@@ -1863,13 +1865,13 @@ class UpdateNotifier(QDialog):
 
     def __init__(self, parent, current: str, latest: str, url: str):
         super().__init__(parent)
-        from PyQt5.QtGui import QColor, QFont, QFontMetrics
-        from PyQt5.QtWidgets import QFrame, QLabel, QWidget
+        from PyQt6.QtGui import QColor, QFont, QFontMetrics
+        from PyQt6.QtWidgets import QFrame, QLabel, QWidget
 
         self._url = url
         self.setWindowTitle("Update available")
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setModal(True)
         self.setFont(QFont("Arial", 10))
 
@@ -1880,7 +1882,7 @@ class UpdateNotifier(QDialog):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 26, 28, 30)  # room for the drop shadow
         # fractional dpi under-measures the wrapped body and squeezes the card (#64)
-        outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
+        outer.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
 
         card = QFrame()
         card.setObjectName("card")
@@ -1907,15 +1909,15 @@ class UpdateNotifier(QDialog):
         hv.setSpacing(0)  # gaps are set explicitly between rows below
 
         eyebrow = QLabel("UPDATE AVAILABLE")
-        ef = QFont("Arial", 9, QFont.Bold)
-        ef.setLetterSpacing(QFont.AbsoluteSpacing, 1.5)
+        ef = QFont("Arial", 9, QFont.Weight.Bold)
+        ef.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
         eyebrow.setFont(ef)
         eyebrow.setStyleSheet("color: rgba(255,255,255,0.85);")
         hv.addWidget(eyebrow)
         hv.addSpacing(8)
 
         name = QLabel("Sunnify")
-        nfont = QFont("Arial", 22, QFont.Bold)
+        nfont = QFont("Arial", 22, QFont.Weight.Bold)
         name.setFont(nfont)
         name.setStyleSheet("color: #FFFFFF;")
         # large bold glyphs exceed QLabel's tight default box; reserve full height
@@ -1954,8 +1956,8 @@ class UpdateNotifier(QDialog):
         fv.setSpacing(10)
 
         later = QPushButton("Remind me later")
-        later.setCursor(QCursor(Qt.PointingHandCursor))
-        later.setFont(QFont("Arial", 10, QFont.Bold))
+        later.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        later.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         later.setFixedHeight(40)
         later.setStyleSheet(
             f"QPushButton{{background:transparent;color:{mute};border:none;}}"
@@ -1966,8 +1968,8 @@ class UpdateNotifier(QDialog):
         fv.addStretch(1)
 
         download = QPushButton("Download")
-        download.setCursor(QCursor(Qt.PointingHandCursor))
-        download.setFont(QFont("Arial", 10, QFont.Bold))
+        download.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        download.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         download.setFixedSize(132, 40)
         download.setStyleSheet(
             f"QPushButton{{background:{green};color:white;border-radius:10px;}}"
@@ -1978,8 +1980,8 @@ class UpdateNotifier(QDialog):
         v.addWidget(footer)
 
     def _open_releases(self):
-        from PyQt5.QtCore import QUrl
-        from PyQt5.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
 
         if not QDesktopServices.openUrl(QUrl(self._url)):
             log.warning("could not open releases page in browser: %s", self._url)
@@ -1998,13 +2000,13 @@ class StarPromptNotifier(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
-        from PyQt5.QtGui import QColor, QFont, QFontMetrics
-        from PyQt5.QtWidgets import QFrame, QLabel, QWidget
+        from PyQt6.QtGui import QColor, QFont, QFontMetrics
+        from PyQt6.QtWidgets import QFrame, QLabel, QWidget
 
         self._url = f"https://github.com/{GITHUB_REPO}"
         self.setWindowTitle("Enjoying Sunnify?")
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setModal(True)
         self.setFont(QFont("Arial", 10))
 
@@ -2015,7 +2017,7 @@ class StarPromptNotifier(QDialog):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 26, 28, 30)  # room for the drop shadow
         # fractional dpi under-measures the wrapped body and squeezes the card (#64)
-        outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
+        outer.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
 
         card = QFrame()
         card.setObjectName("card")
@@ -2042,15 +2044,15 @@ class StarPromptNotifier(QDialog):
         hv.setSpacing(0)  # gaps are set explicitly between rows below
 
         eyebrow = QLabel("FIRST SONG DOWNLOADED")
-        ef = QFont("Arial", 9, QFont.Bold)
-        ef.setLetterSpacing(QFont.AbsoluteSpacing, 1.5)
+        ef = QFont("Arial", 9, QFont.Weight.Bold)
+        ef.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 1.5)
         eyebrow.setFont(ef)
         eyebrow.setStyleSheet("color: rgba(255,255,255,0.85);")
         hv.addWidget(eyebrow)
         hv.addSpacing(8)
 
         name = QLabel("Enjoying Sunnify?")
-        nfont = QFont("Arial", 22, QFont.Bold)
+        nfont = QFont("Arial", 22, QFont.Weight.Bold)
         name.setFont(nfont)
         name.setStyleSheet("color: #FFFFFF;")
         # large bold glyphs exceed QLabel's tight default box; reserve full height
@@ -2079,8 +2081,8 @@ class StarPromptNotifier(QDialog):
         fv.setSpacing(10)
 
         later = QPushButton("Maybe later")
-        later.setCursor(QCursor(Qt.PointingHandCursor))
-        later.setFont(QFont("Arial", 10, QFont.Bold))
+        later.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        later.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         later.setFixedHeight(40)
         # pad right so the invisible hit area matches the other card's dismiss
         later.setStyleSheet(
@@ -2093,8 +2095,8 @@ class StarPromptNotifier(QDialog):
         fv.addStretch(1)
 
         star = QPushButton("Star on GitHub")
-        star.setCursor(QCursor(Qt.PointingHandCursor))
-        sfont = QFont("Arial", 10, QFont.Bold)
+        star.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        sfont = QFont("Arial", 10, QFont.Weight.Bold)
         star.setFont(sfont)
         star.setFixedHeight(40)
         # metrics-derived width; a fixed box clips when linux substitutes arial
@@ -2109,8 +2111,8 @@ class StarPromptNotifier(QDialog):
         v.addWidget(footer)
 
     def _open_repo(self):
-        from PyQt5.QtCore import QUrl
-        from PyQt5.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
 
         if not QDesktopServices.openUrl(QUrl(self._url)):
             log.warning("could not open repo page in browser: %s", self._url)
@@ -2167,7 +2169,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             log.info("update notifier skipped: another modal dialog is active")
             return
         log.info("update available: %s -> %s; showing notifier", __version__, latest)
-        UpdateNotifier(self, __version__, latest, url).exec_()
+        UpdateNotifier(self, __version__, latest, url).exec()
 
     @pyqtSlot(int)
     def _maybe_show_star_prompt(self, count: int):
@@ -2188,7 +2190,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._config["star_prompt_shown"] = True
         save_config(self._config)
         log.info("first song landed - showing one-time star prompt")
-        StarPromptNotifier(self).exec_()
+        StarPromptNotifier(self).exec()
 
     def _get_default_download_path(self):
         """Get a sensible default download path that's writable."""
@@ -2232,7 +2234,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self,
             "Select Download Folder",
             os.path.expanduser("~"),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks,
         )
         if folder:
             # Keep downloads contained in a "Sunnify" subfolder, but avoid
@@ -2253,7 +2255,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         cfg_for_dialog = dict(self._config)
         cfg_for_dialog["download_path"] = self.download_path
         dialog = SettingsDialog(self, cfg_for_dialog)
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             new = dialog.result_config()
             if new.get("download_path"):
                 self.download_path = new["download_path"]
@@ -2434,36 +2436,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     # DRAGGLESS INTERFACE
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.m_drag = True
-            self.m_DragPosition = event.globalPos() - self.pos()
+            self.m_DragPosition = event.globalPosition().toPoint() - self.pos()
             event.accept()
-            self.setCursor(QCursor(Qt.ClosedHandCursor))
+            self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor))
 
     def mouseMoveEvent(self, QMouseEvent):
         try:
-            if Qt.LeftButton and self.m_drag:
-                self.move(QMouseEvent.globalPos() - self.m_DragPosition)
+            if Qt.MouseButton.LeftButton and self.m_drag:
+                self.move(QMouseEvent.globalPosition().toPoint() - self.m_DragPosition)
                 QMouseEvent.accept()
         except AttributeError:
             pass
 
     def mouseReleaseEvent(self, QMouseEvent):
         self.m_drag = False
-        self.setCursor(QCursor(Qt.ArrowCursor))
+        self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
 
     def CloseSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(250)
         self.animation.setEndValue(QSize(0, 440))
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self.animation.start()
 
     def OpenSongInformation(self):
         self.animation = QPropertyAnimation(self.SONGINFORMATION, b"size")
         self.animation.setDuration(1000)
         self.animation.setEndValue(QSize(350, 440))
-        self.animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         self.animation.start()
 
     def show_preview(self, state):
@@ -2473,7 +2475,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.CloseSongInformation()
 
     def exitprogram(self):
-        sys.exit()
+        # QApplication.quit() unwinds the event loop cleanly so app.exec()
+        # returns and the atexit session-end runs; sys.exit() inside a slot
+        # raised SystemExit into qt's excepthook and logged a false crash
+        QApplication.quit()
 
     def Linkedin(self):
         webbrowser.open("https://www.linkedin.com/in/sunny-patel-30b460204/")
@@ -2485,25 +2490,25 @@ if __name__ == "__main__":
     # read-only log dir). Failure here just means no log file this session.
     with contextlib.suppress(Exception):
         setup_logging()
-    # let a terminal ctrl+c terminate cleanly instead of surfacing a traceback
-    # on the next qt slot (qt's c++ loop defers python's sigint until then)
+    # a terminal ctrl+c terminates immediately instead of surfacing a stray
+    # traceback on the next qt slot (qt's c++ loop defers python's sigint).
+    # SIG_DFL over a clean-quit handler on purpose: quit() is a no-op before
+    # exec() starts, so a ctrl+c during the ~200ms startup window would hang.
     with contextlib.suppress(Exception):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
     # fixed-pixel ui overflows on fractional dpi without this (#64); PassThrough avoids
-    # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-5/highdpi.html
+    # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-6/highdpi.html
     try:
         QApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     except Exception as exc:  # log so a scaling failure (rendering bugs) is diagnosable
         log.debug("high-dpi setup skipped: %s", exc)
     app = QApplication(sys.argv)
     Screen = MainWindow()
     Screen.setFixedHeight(500)
     Screen.setFixedWidth(750)
-    Screen.setWindowFlags(Qt.FramelessWindowHint)
-    Screen.setAttribute(Qt.WA_TranslucentBackground)
+    Screen.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+    Screen.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     Screen.show()
     sys.exit(app.exec())

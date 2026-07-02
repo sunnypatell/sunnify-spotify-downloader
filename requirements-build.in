@@ -3,8 +3,3 @@
 #   uv pip compile requirements-build.in --universal --generate-hashes -o requirements-build.txt
 -r req.txt
 pyinstaller>=6.21.0
-
-# pyqt5-qt5 published no Windows wheels after 5.15.2; an unconstrained
-# universal resolve breaks the Windows build.
-pyqt5-qt5==5.15.2 ; sys_platform == 'win32'
-pyqt5-qt5>=5.15.16 ; sys_platform != 'win32'

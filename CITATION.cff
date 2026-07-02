@@ -7,10 +7,10 @@ authors:
     given-names: Sunny Jayendra
 repository-code: "https://github.com/sunnypatell/sunnify-spotify-downloader"
 url: "https://github.com/sunnypatell/sunnify-spotify-downloader"
-abstract: "Educational student project: Spotify playlist downloader with a PyQt5 desktop app, Flask backend, and Next.js web client."
+abstract: "Educational student project: Spotify playlist downloader with a PyQt6 desktop app, Flask backend, and Next.js web client."
 keywords:
   - spotify
   - music
-  - pyqt5
+  - pyqt6
   - python
 license-url: "https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/LICENSE"

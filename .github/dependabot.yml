@@ -2,15 +2,12 @@
 # grouped (one PR per ecosystem), monthly, 7-day cooldown so a compromised
 # release (tj-actions pattern) gets caught upstream before a bump lands here.
 #
-# Three guardrails learned the hard way (see PRs #56/#57/#68 + the v2.0.14
+# Two guardrails learned the hard way (see PRs #56/#57/#68 + the v2.0.14
 # release failure):
 # - lock-check.yml gates every change to requirements-build.txt with a
 #   3-platform `pip install --require-hashes --dry-run`; dependabot's lock
 #   regen dropped pyinstaller's platform-marker transitives (macholib/pefile)
 #   in #70 and it only surfaced when the release build went red.
-# - pyqt5-qt5 is hand-pinned per-platform in requirements-build.in (no win32
-#   wheels past 5.15.2); dependabot bumping it breaks the Windows build, so
-#   it's ignored here.
 # - webclient framework majors (next/react/tailwind/eslint/ts) are hands-on
 #   migrations, not bumps; grouped, they produce an unmergeable PR. Majors are
 #   ignored; minor+patch still flow.
@@ -41,8 +38,6 @@ updates:
         patterns: ["*"]
     cooldown:
       default-days: 7
-    ignore:
-      - dependency-name: "pyqt5-qt5"
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 2

@@ -18,7 +18,7 @@ Describe the change and the user-facing impact.
 
 ## Scope (select all that apply)
 
-- [ ] Desktop (PyQt5 GUI)
+- [ ] Desktop (PyQt6 GUI)
 - [ ] Backend (Flask API)
 - [ ] Webclient (Next.js)
 - [ ] Core Providers (`spotifydown_api.py`)

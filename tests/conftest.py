@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# Force the offscreen Qt platform BEFORE any test imports PyQt5. Tests that
+# Force the offscreen Qt platform BEFORE any test imports PyQt6. Tests that
 # construct QApplication / QDialog without this hit the cocoa qFatal path on
 # headless CI and the macOS pytest run alike; conftest.py is collected before
 # the test modules so this env var is set in time.
@@ -17,14 +17,14 @@ import pytest  # noqa: F401, E402
 
 
 # Module-scoped QApplication so every Qt test in the session reuses one
-# instance. PyQt5 + macOS gets unhappy if QApplication is constructed
+# instance. PyQt6 + macOS gets unhappy if QApplication is constructed
 # multiple times in the same process, and the cocoa platform's
 # QWidgetPrivate constructor will qFatal on what looks like a half-shutdown
 # Qt state. Providing a single managed instance side-steps that whole
 # class of pytest-Qt interaction bugs.
 @pytest.fixture(scope="session")
 def qapp():
-    from PyQt5.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication
 
     instance = QApplication.instance()
     if instance is None:

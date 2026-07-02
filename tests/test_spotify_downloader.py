@@ -1557,6 +1557,117 @@ class TestMainWindow:
         assert home in expected_contains
 
 
+class TestMainWindowInteractions:
+    """Exercises the enum-heavy interaction surfaces that plain construction
+    tests miss. A pyqt5->pyqt6 port turns every un-scoped enum into a runtime
+    AttributeError, and these paths (the preview animation's QEasingCurve, the
+    frameless-drag handlers' mouse-button/globalPosition enums) only fire on
+    real interaction - so a green suite that never drives them would have shipped
+    the QEasingCurve.InOutQuad -> QEasingCurve.Type.InOutQuad crash straight to
+    users on the first 'Show Preview' click."""
+
+    @pytest.fixture(autouse=True)
+    def _no_update_thread(self, monkeypatch):
+        """MainWindow() starts a real UpdateCheckThread that hits the network;
+        left running, the QThread is destroyed with the test-local window and
+        aborts the interpreter ('QThread: Destroyed while thread is still
+        running'). Neutralise it - these tests exercise UI paths, not the
+        update check (which has its own TestUpdateCheck coverage)."""
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
+
+    def test_preview_open_close_animation(self, qapp):
+        """OpenSongInformation drives a QPropertyAnimation with an easing curve;
+        this is the exact path the qt6 QEasingCurve enum-scoping bug crashed on."""
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        win.OpenSongInformation()
+        assert win.SONGINFORMATION is not None
+        win.CloseSongInformation()
+
+    def test_show_preview_slot_both_states(self, qapp):
+        """The 'Show Preview' checkbox slot compares the emitted state to 2;
+        pyqt6 still emits a plain int here, but drive both branches to be sure."""
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        win.showPreviewCheck.setChecked(True)
+        win.showPreviewCheck.setChecked(False)
+
+    def test_frameless_drag_handlers(self, qapp):
+        """The custom window drag uses Qt.MouseButton enums and
+        globalPosition().toPoint() (renamed from globalPos() in qt6). A synthetic
+        press/move/release must not raise."""
+        from PyQt6.QtCore import QEvent, QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent
+
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        no_mod = Qt.KeyboardModifier.NoModifier
+        press = QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            QPointF(10, 10),
+            QPointF(110, 110),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            no_mod,
+        )
+        win.mousePressEvent(press)
+        assert hasattr(win, "m_DragPosition")
+        move = QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(20, 20),
+            QPointF(130, 130),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            no_mod,
+        )
+        win.m_drag = True
+        win.mouseMoveEvent(move)
+        release = QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            QPointF(20, 20),
+            QPointF(130, 130),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            no_mod,
+        )
+        win.mouseReleaseEvent(release)
+
+    def test_exit_uses_app_quit_not_sys_exit(self, qapp, monkeypatch):
+        """exitprogram must quit the event loop cleanly, never raise SystemExit
+        into qt's excepthook (which logged a false 'uncaught exception' crash on
+        every close). Assert it calls QApplication.quit and does not raise."""
+        import Spotify_Downloader as sd
+
+        called = []
+        monkeypatch.setattr(sd.QApplication, "quit", lambda *_: called.append(True))
+        win = sd.MainWindow()
+        win.exitprogram()  # must not raise SystemExit
+        assert called == [True]
+
+    def test_systemexit_is_not_logged_as_crash(self):
+        """The main-thread excepthook must treat SystemExit as a clean exit, not
+        a crash - mirrors the thread excepthook and prevents the false-crash log."""
+        import io
+        import logging
+
+        import Spotify_Downloader as sd
+
+        buf = io.StringIO()
+        h = logging.StreamHandler(buf)
+        h.setLevel(logging.CRITICAL)
+        sd.log.addHandler(h)
+        try:
+            sd._log_excepthook(SystemExit, SystemExit(0), None)
+        finally:
+            sd.log.removeHandler(h)
+        assert "uncaught exception" not in buf.getvalue()
+
+
 class TestCoverEnrichment:
     """Tests for per-track cover art enrichment (fixes #31).
 
@@ -2466,7 +2577,7 @@ class TestStarPrompt:
             def __init__(self, parent):
                 calls.append("shown")
 
-            def exec_(self):
+            def exec(self):
                 return 0
 
         with (
@@ -2557,26 +2668,26 @@ class TestStarPrompt:
         """A real dispatched mouse click on the ghost button must reject and
         close the dialog - the transparent/borderless styling must not eat
         the hit."""
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtTest import QTest
-        from PyQt5.QtWidgets import QDialog, QPushButton
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QDialog, QPushButton
 
         from Spotify_Downloader import StarPromptNotifier
 
         dlg = StarPromptNotifier(None)
         dlg.show()
         later = next(b for b in dlg.findChildren(QPushButton) if b.text() == "Maybe later")
-        QTest.mouseClick(later, Qt.LeftButton)
-        assert dlg.result() == QDialog.Rejected
+        QTest.mouseClick(later, Qt.MouseButton.LeftButton)
+        assert dlg.result() == QDialog.DialogCode.Rejected
         assert not dlg.isVisible()
 
     def test_star_click_opens_repo_url_and_accepts(self, qapp, monkeypatch):
         """Clicking the CTA must hand the repo URL to the OS browser opener
         and accept-close; the browser itself is faked out."""
-        import PyQt5.QtGui as qtgui
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtTest import QTest
-        from PyQt5.QtWidgets import QDialog, QPushButton
+        import PyQt6.QtGui as qtgui
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QDialog, QPushButton
 
         from Spotify_Downloader import GITHUB_REPO, StarPromptNotifier
 
@@ -2588,29 +2699,29 @@ class TestStarPrompt:
                 opened.append(url.toString())
                 return True
 
-        # _open_repo does `from PyQt5.QtGui import QDesktopServices` at call
+        # _open_repo does `from PyQt6.QtGui import QDesktopServices` at call
         # time, so swapping the module attribute intercepts it cleanly
         monkeypatch.setattr(qtgui, "QDesktopServices", _FakeDesktopServices)
 
         dlg = StarPromptNotifier(None)
         dlg.show()
         star = next(b for b in dlg.findChildren(QPushButton) if b.text() == "Star on GitHub")
-        QTest.mouseClick(star, Qt.LeftButton)
+        QTest.mouseClick(star, Qt.MouseButton.LeftButton)
         assert opened == [f"https://github.com/{GITHUB_REPO}"]
-        assert dlg.result() == QDialog.Accepted
+        assert dlg.result() == QDialog.DialogCode.Accepted
         assert not dlg.isVisible()
 
     def test_escape_key_dismisses(self, qapp):
         """Esc is the reflex dismiss on a modal; QDialog's default reject
         path must stay intact despite the frameless window flags."""
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtTest import QTest
-        from PyQt5.QtWidgets import QDialog
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QDialog
 
         from Spotify_Downloader import StarPromptNotifier
 
         dlg = StarPromptNotifier(None)
         dlg.show()
-        QTest.keyClick(dlg, Qt.Key_Escape)
-        assert dlg.result() == QDialog.Rejected
+        QTest.keyClick(dlg, Qt.Key.Key_Escape)
+        assert dlg.result() == QDialog.DialogCode.Rejected
         assert not dlg.isVisible()
