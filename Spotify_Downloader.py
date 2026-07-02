@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.0.14"
+__version__ = "2.0.15"
 
 import atexit
 import concurrent.futures
@@ -1879,8 +1879,7 @@ class UpdateNotifier(QDialog):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 26, 28, 30)  # room for the drop shadow
-        # always exactly content-sized: fractional dpi under-measures the
-        # wrapped body label and quietly compresses the card (see #64)
+        # fractional dpi under-measures the wrapped body and squeezes the card (#64)
         outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
 
         card = QFrame()
@@ -2015,9 +2014,7 @@ class StarPromptNotifier(QDialog):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 26, 28, 30)  # room for the drop shadow
-        # dialog is always exactly its content size: fractional-dpi rounding
-        # under-measured the wrapped body label and squeezed the header,
-        # clipping the headline's descenders (same bug class as #64)
+        # fractional dpi under-measures the wrapped body and squeezes the card (#64)
         outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
 
         card = QFrame()
@@ -2056,12 +2053,10 @@ class StarPromptNotifier(QDialog):
         nfont = QFont("Arial", 22, QFont.Bold)
         name.setFont(nfont)
         name.setStyleSheet("color: #FFFFFF;")
-        # large bold glyphs exceed QLabel's tight default box; reserve full
-        # height plus explicit descender room below (the 'j'/'y'/'g' tails
-        # clipped at 1.5x/2x scale without it)
+        # large bold glyphs exceed QLabel's tight default box; reserve full height
         name.setMinimumHeight(QFontMetrics(nfont).height() + 10)
         hv.addWidget(name)
-        hv.addSpacing(6)
+        hv.addSpacing(6)  # descender room; 'j'/'y'/'g' tails clip at 1.5x without it
         v.addWidget(header)
 
         body = QWidget()
@@ -2087,9 +2082,7 @@ class StarPromptNotifier(QDialog):
         later.setCursor(QCursor(Qt.PointingHandCursor))
         later.setFont(QFont("Arial", 10, QFont.Bold))
         later.setFixedHeight(40)
-        # short label = small text-driven hit box (78px vs the update
-        # notifier's 109px); left-align and pad right so the invisible
-        # clickable area grows without moving a visible pixel
+        # pad right so the invisible hit area matches the other card's dismiss
         later.setStyleSheet(
             f"QPushButton{{background:transparent;color:{mute};border:none;"
             "text-align:left;padding-right:32px;}"
@@ -2104,8 +2097,7 @@ class StarPromptNotifier(QDialog):
         sfont = QFont("Arial", 10, QFont.Bold)
         star.setFont(sfont)
         star.setFixedHeight(40)
-        # width from font metrics, not a fixed box: Arial substitutes on linux
-        # (Liberation Sans) and a hardcoded width can clip the longer label
+        # metrics-derived width; a fixed box clips when linux substitutes arial
         star.setMinimumWidth(QFontMetrics(sfont).horizontalAdvance("Star on GitHub") + 44)
         star.setStyleSheet(
             f"QPushButton{{background:{green};color:white;border-radius:10px;"
@@ -2189,8 +2181,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self._cancel_event.is_set():
             return
         if QApplication.activeModalWidget() is not None:
-            # another toast (e.g. the update notifier) is up; don't stack
-            # modals - the next landed song retries
+            # never stack on the update notifier; the next landed song retries
             log.info("star prompt deferred: another modal dialog is active")
             return
         # persist before showing so a crash mid-dialog can never re-prompt
@@ -2342,8 +2333,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             # Connect the count_updated signal to the update_counter slot
             self.scraper_thread.scraper.count_updated.connect(self.update_counter)
-            # after update_counter so the label already reads "1" when the
-            # one-time star prompt opens on the first landed song
+            # after update_counter so the label reads "1" before the prompt opens
             self.scraper_thread.scraper.count_updated.connect(self._maybe_show_star_prompt)
 
             self.scraper_thread.start()
