@@ -2,7 +2,7 @@
 # grouped (one PR per ecosystem), monthly, 7-day cooldown so a compromised
 # release (tj-actions pattern) gets caught upstream before a bump lands here.
 #
-# Four guardrails learned the hard way (see PRs #56/#57/#68 + the v2.0.14
+# Three guardrails learned the hard way (see PRs #56/#57/#68 + the v2.0.14
 # release failure):
 # - lock-check.yml gates every change to requirements-build.txt with a
 #   3-platform `pip install --require-hashes --dry-run`; dependabot's lock
@@ -11,12 +11,6 @@
 # - pyqt5-qt5 is hand-pinned per-platform in requirements-build.in (no win32
 #   wheels past 5.15.2); dependabot bumping it breaks the Windows build, so
 #   it's ignored here.
-# - eol python 3.9 pins: we still support 3.9 (requires-python in
-#   pyproject.toml, tested in CI), but the ecosystem is dropping it. anything
-#   that raises its floor to >=3.10 fails the 3.9 install and takes the whole
-#   grouped pip PR red, so those are pinned back until we raise requires-python:
-#     mutagen  -> <1.48   (1.48 needs 3.10)
-#     pytest   -> <9.0    (9.0 needs 3.10)
 # - webclient framework majors (next/react/tailwind/eslint/ts) are hands-on
 #   migrations, not bumps; grouped, they produce an unmergeable PR. Majors are
 #   ignored; minor+patch still flow.
@@ -49,10 +43,6 @@ updates:
       default-days: 7
     ignore:
       - dependency-name: "pyqt5-qt5"
-      - dependency-name: "mutagen"
-        versions: [">=1.48.0"] # drops python 3.9; revisit when we raise requires-python
-      - dependency-name: "pytest"
-        versions: [">=9.0.0"] # drops python 3.9; revisit when we raise requires-python
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 2

@@ -10,7 +10,7 @@ Thanks for considering a contribution. Whether it's a bug report, feature idea, 
 
 ## Prerequisites
 
-- **Python**: 3.9+ with pip
+- **Python**: 3.10+ with pip
 - **Node.js**: 20+ with npm
 - **FFmpeg**: Required for desktop app audio processing
 - **yt-dlp**: Required for YouTube fallback downloads
@@ -209,7 +209,7 @@ cd web-app/sunnify-webclient && npx lint-staged
 ## Style Guidelines
 
 ### Python
-- Target Python 3.9+ for compatibility
+- Target Python 3.10+ for compatibility
 - Use type hints for function signatures
 - Prefer explicit errors over silent failures
 - Reuse `requests.Session()` for HTTP calls

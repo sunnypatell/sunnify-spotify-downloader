@@ -1,21 +1,12 @@
 # =============================================================================
 # Release Lock Check
 # =============================================================================
-# Proves requirements-build.txt (the hash-locked release-build manifest) still
-# resolves under `pip install --require-hashes` on all three release
-# platforms, whenever the lock or its inputs change.
-#
-# Exists because of a real incident: dependabot's grouped lock regen in #70
-# silently dropped pyinstaller's platform-marker-only transitives (macholib on
-# darwin, pefile/pywin32-ctypes on win32) AND the pyqt5-qt5==5.15.2 win32 pin,
-# and the breakage only surfaced when the v2.0.14 release build failed on
-# macOS + Windows (linux has no such deps, so nothing else went red).
-# Dependabot edits the lock without a universal resolve; this gate makes that
-# class of edit fail at PR time instead of at release time.
-#
-# --dry-run resolves and hash-verifies without installing; the
-# unpinned-transitive error fires during resolution, so the failure is fast.
-# Python and the pip flags mirror release-build.yml exactly.
+# Proves requirements-build.txt still resolves under --require-hashes on all
+# three release platforms whenever the lock or its inputs change. Exists
+# because dependabot's lock regen (#70) dropped pyinstaller's platform-marker
+# transitives and the breakage only surfaced when the v2.0.14 release build
+# went red on macOS/Windows; this fails that class of edit at PR time.
+# Python and pip flags mirror release-build.yml exactly.
 # =============================================================================
 
 name: Lock Check
@@ -56,11 +47,9 @@ jobs:
       - name: Set up Python (same version as release builds)
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Resolve the hash lock without installing
-        # runner pip already supports --dry-run (needs >=22.2) and
-        # release-build.yml doesn't self-upgrade pip either - staying on the
-        # runner's pip mirrors the release environment exactly
+        # runner pip as-is, mirroring release-build.yml (which never self-upgrades)
         shell: bash
         run: pip install --require-hashes --dry-run -r requirements-build.txt

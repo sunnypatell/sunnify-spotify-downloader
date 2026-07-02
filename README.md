@@ -103,7 +103,7 @@ Your downloads land in a folder named after the playlist or album, tagged and re
 
 ## Build from source
 
-Requires **Python 3.9+**. FFmpeg must be available (bundled in the prebuilt apps; otherwise install via Homebrew, your package manager, or PATH).
+Requires **Python 3.10+**. FFmpeg must be available (bundled in the prebuilt apps; otherwise install via Homebrew, your package manager, or PATH).
 
 ```bash
 git clone https://github.com/sunnypatell/sunnify-spotify-downloader.git

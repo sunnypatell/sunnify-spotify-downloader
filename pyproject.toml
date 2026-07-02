@@ -1,9 +1,9 @@
 [project]
 name = "sunnify-spotify-downloader"
-version = "2.0.14"
+version = "2.0.15"
 description = "Spotify playlist downloader with PyQt5 GUI, Flask backend, and Next.js web client"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "Custom - Educational Use Only" }
 authors = [{ name = "Sunny Jayendra Patel", email = "sunnypatel124555@gmail.com" }]
 keywords = ["spotify", "downloader", "playlist", "music", "pyqt5"]
@@ -15,7 +15,7 @@ issues = "https://github.com/sunnypatell/sunnify-spotify-downloader/issues"
 
 # ruff - modern python linter + formatter (replaces black, isort, flake8)
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 indent-width = 4
 exclude = [
@@ -42,7 +42,6 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
-    "B905",   # zip without strict= (py3.10+)
     "ARG001", # unused function argument (common in qt signals)
     "ARG002", # unused method argument (common in qt overrides)
 ]
@@ -56,7 +55,7 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
 
-# pytest configuration (if tests are added later)
+# pytest configuration
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
@@ -65,7 +64,7 @@ addopts = "-v --tb=short"
 
 # mypy configuration (optional static type checking)
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true

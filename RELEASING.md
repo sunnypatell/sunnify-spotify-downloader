@@ -18,7 +18,7 @@ grep -rnE "2\.0\.13|2, 0, 13" --include="*.py" --include="*.toml" \
   --include="*.spec" --include="*.txt" --include="*.md" .
 ```
 
-Known locations: `version.txt` (bare + comma form), `pyproject.toml`,
+Known locations: `version.txt` (bare line), `pyproject.toml`,
 `Spotify_Downloader.py` `__version__`, `Template.py` UI label,
 `Sunnify.spec` (BOTH the `filevers`/`prodvers` numeric tuples AND the
 string fields - the tuples were historically left stale),
