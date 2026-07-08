@@ -4,13 +4,14 @@
   "description": "",
   "main": "dist-electron-main/main.js",
   "scripts": {
-    "build": "npm run electron-main:build && npm run frontend:build",
+    "build": "npm run electron-main:build && npm run frontend:build && npm run backend:build",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "electron-main:dev": "electron .",
-    "electron-main:build": "tsc",
     "electron-main:start": "npm run electron-main:build && npm run electron-main:dev",
-    "frontend:build": "cd ../app-v2/frontend-react && pnpm run build"
+    "electron-main:build": "tsc",
+    "frontend:build": "cd ../app-v2/frontend-react && pnpm run build",
+    "backend:build": "exit 0"
   },
   "keywords": [],
   "author": "Jacopo Marrone <@tresorama> (https://github.com/tresorama)",
