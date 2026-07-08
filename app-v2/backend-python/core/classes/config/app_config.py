@@ -1,64 +1,42 @@
-import os
 from pathlib import Path
-import sys
-from pydantic_settings import BaseSettings
+from typing import Literal
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from core.classes.utils.utils_os import UtilsOS
 
-# constants
-USER_CONFIG_FILE_NAME = "config--for-react-app.json"
-
-class UserConfigFilePathApi():
-  """API for getting the path to the user config file based on OS"""
-  
-  @staticmethod
-  def get_dir_path() -> Path:
-    """Return the per-user config directory, creating it if needed."""
-    if sys.platform == "win32":
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
-    elif sys.platform == "darwin":
-        base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
-    else:
-        base = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
-    configDir = Path(base) / "Sunnify"
-    configDir.mkdir(parents=True, exist_ok=True)
-    return configDir
-  
-  @staticmethod
-  def get_file_path() -> Path:
-    """Return the absolute path to config.json"""
-    finalPath = UserConfigFilePathApi.get_dir_path() / USER_CONFIG_FILE_NAME
-    return finalPath
-
-
+class EnvironmentVariables(BaseSettings):
+  """Environment Variables, read from .env file or environment variables"""
+  model_config = SettingsConfigDict(
+    env_file=".env",
+    case_sensitive=True,
+  )
+  BACKEND_PORT: int
+  FRONTEND_PORT: int
+  STATIC_DIR_TO_SERVE_PATH: str | None = None
+  LOG_LEVEL: Literal["debug", "info"]
+    
 class AppConfigRuntime():
   """App Config part of runtime stuff"""
-  # props
-  binaries_path: Path = Path.cwd() / ".bin"
-  download_path = Path("~/Music/Sunnify").expanduser()
-  user_config_file_path: Path = UserConfigFilePathApi.get_file_path()
-
-class AppConfigStatic(BaseSettings):
-  """App Config part of static stuff, derived from .env file"""
-  # Spotify
-  spotify_client_id: str = ""
-  spotify_client_secret: str = ""
-
-  # Server
-  debug: bool = True
-  log_level: str = "info"
-  backend_port: int = 8000
-  cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
-
-  class Config:
-    env_file = ".env"
-    case_sensitive = False
-
+  def __init__(self, envVars: EnvironmentVariables):
+    self.binaries_path: Path = Path.cwd() / ".bin"
+    self.user_config_dir_path: Path = Path(UtilsOS.getUserAppDataDirectoryPath()) / "Sunnify"
+    self.user_config_file_path: Path = Path(UtilsOS.getUserAppDataDirectoryPath()) / "Sunnify" / "config--for-react-app.json"
+    self.cors_origins: list[str] = [
+      f"http://localhost:{envVars.FRONTEND_PORT}",
+    ]
+  def dump(self):
+    return {
+      "binaries_path": str(self.binaries_path),
+      "user_config_dir_path": str(self.user_config_dir_path),
+      "user_config_file_path": str(self.user_config_file_path),
+      "cors_origins": self.cors_origins
+    }
 
 class AppConfig():
   """App Config"""
   def __init__(
     self,
-    static: AppConfigStatic,
+    envVars: EnvironmentVariables,
     runtime: AppConfigRuntime,
   ):
-    self.static: AppConfigStatic = static
+    self.envVars: EnvironmentVariables = envVars
     self.runtime: AppConfigRuntime = runtime

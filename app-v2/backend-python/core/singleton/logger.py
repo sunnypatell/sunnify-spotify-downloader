@@ -1,8 +1,8 @@
 import logging
-from core.singleton.app_config import appConfigStatic
+from core.singleton.app_config import appConfig
 
 # init
 logging.basicConfig(
-  level=appConfigStatic.log_level.upper(),
+  level=appConfig.envVars.LOG_LEVEL.upper(),
 )
 logger = logging.getLogger(name="main")

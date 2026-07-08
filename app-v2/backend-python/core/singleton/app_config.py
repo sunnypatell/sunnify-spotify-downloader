@@ -1,9 +1,13 @@
-from core.classes.config.app_config import AppConfigStatic, AppConfigRuntime, AppConfig
+from core.classes.config.app_config import (
+  EnvironmentVariables,
+  AppConfigRuntime, 
+  AppConfig, 
+)
 
 # init singletons
-appConfigStatic = AppConfigStatic()
-appConfigRuntime = AppConfigRuntime()
+envVars=EnvironmentVariables() # pyright: ignore[reportCallIssue]
+appConfigRuntime=AppConfigRuntime(envVars=envVars)
 appConfig = AppConfig(
-  static=appConfigStatic,
-  runtime=appConfigRuntime
+  envVars=envVars,
+  runtime=appConfigRuntime,
 )
