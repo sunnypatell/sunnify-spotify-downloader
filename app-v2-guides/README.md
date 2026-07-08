@@ -13,8 +13,14 @@ In dev, we launch the backend (python) and the frontend (react+vite) in 2 separa
 # backend
 cd app-v2
 cd backend-python
-source .venv/bin/activate
+source .venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt # only first time
+cp .env.example .env # only first time
 python main.py
+
+# API at: http://localhost:8000
+# API Docs at: http://localhost:8000/docs
+
 ```
 
 ```bash
@@ -22,7 +28,15 @@ python main.py
 cd app-v2
 cd frontend-react
 pnpm run dev
+
+# UI at: http://localhost:3000
 ```
+
+**How to do other common dev tasks?**
+
+See the following guides:
+- [app-v2/backend-python/README.md](../app-v2//backend-python/README.md)
+- [app-v2/frontend-react/README.md](../app-v2//frontend-react/README.md)
 
 ### Production
 
@@ -60,7 +74,7 @@ generate the static SPA of the frontend with `pnpm build`, that output files in 
 
 **DISTRIBUTION**  
 
-Choose you method for distributing the app bundle, like:
+Choose your method for distributing the app bundle, like:
 - usb drive
 - cloud storage
 - email
