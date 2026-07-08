@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from core.singleton.logger import logger
@@ -86,15 +87,20 @@ def createFastApiApp():
     logger.info(f"FastAPI APP: Registering router: {router.prefix or '/'}")
     app.include_router(router)
   
-# register API endpoints
-logger.info("API Router: Registering API endpoints...")
-app.include_router(health.router)
-app.include_router(ws.router)
-app.include_router(demo.router)
-app.include_router(playlist.router)
-app.include_router(settings.router)
-app.include_router(utils.router)
-
+  # register /static/** endpoint (to serve the static files)
+  if not appConfig.envVars.STATIC_DIR_TO_SERVE_PATH:
+    logger.info("FastAPI APP: Skip static files serving, because STATIC_DIR_TO_SERVE_PATH is not set...")
+  else:
+    logger.info("FastAPI APP: Register that /static/** will serve static files...")
+    app.mount(
+      "/static",
+      StaticFiles(
+        directory=appConfig.envVars.STATIC_DIR_TO_SERVE_PATH,
+        html=True,
+      ),
+      name="static-files",
+    )
+  
   return app
 
 
