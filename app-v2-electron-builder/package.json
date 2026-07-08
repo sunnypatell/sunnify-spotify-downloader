@@ -24,7 +24,6 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "cross-env": "^10.1.0",
-    "serve": "^14.2.6"
+    "cross-env": "^10.1.0"
   }
 }
