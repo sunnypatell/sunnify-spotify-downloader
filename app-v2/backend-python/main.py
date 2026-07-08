@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from core.singleton.logger import logger
+from core.singleton.app_config import appConfig
 from core.singleton.native_deps_checker import nativeDepsChecker
 from core.singleton.websocket_active_connections import webSocketActiveConnections
 
@@ -19,11 +20,14 @@ from routers import (
 # ============================================================================
 # Setup API
 # ============================================================================
+
 def createFastApiApp():
 
   logger.info("")
   logger.info("Initializing Backend...")
   
+  logger.info(f"APP CONFIG - Environment variables: \n{appConfig.envVars.model_dump_json()}")
+  logger.info(f"APP CONFIG - Runtime variables: \n{appConfig.runtime.dump()}")
   
   logger.info("Checking presence of native dependencies...")
   nativeDepsChecker.checkAllDepsPresenceAndDownloadThemIfMissing()
