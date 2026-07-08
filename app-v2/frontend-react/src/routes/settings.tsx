@@ -5,8 +5,9 @@ import { useMutationUpdateSettings, useSettings } from '@/data/use-settings';
 import { SettingsReadonlyForm } from '#/components/views/settings-readonly-form';
 import { SettingsMutableForm } from '#/components/views/settings-mutable-form';
 
-import { RootContentMain, RootContentTopBar } from '@/components/ui/root';
+import { RootSidebarContentMain, RootSidebarContentTopBar } from '@/components/ui/root';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert } from '#/components/ui/alert';
 
 export const Route = createFileRoute('/settings')({
   component: RouteComponent,
@@ -20,12 +21,12 @@ function RouteComponent() {
   if (querySettings.isLoading) {
     return (
       <>
-        <RootContentTopBar>
+        <RootSidebarContentTopBar>
           <Skeleton className="w-50 h-8" />
-        </RootContentTopBar>
-        <RootContentMain>
+        </RootSidebarContentTopBar>
+        <RootSidebarContentMain>
           {null}
-        </RootContentMain>
+        </RootSidebarContentMain>
       </>
     );
   }
@@ -33,14 +34,14 @@ function RouteComponent() {
   if (querySettings.isError || !querySettings.data) {
     return (
       <>
-        <RootContentTopBar>
+        <RootSidebarContentTopBar>
           Settings
-        </RootContentTopBar>
-        <RootContentMain>
-          <p>
+        </RootSidebarContentTopBar>
+        <RootSidebarContentMain>
+          <Alert variant="destructive">
             There was an error loading settings
-          </p>
-        </RootContentMain>
+          </Alert>
+        </RootSidebarContentMain>
       </>
     );
   }
@@ -48,11 +49,11 @@ function RouteComponent() {
 
   return (
     <>
-      <RootContentTopBar>
+      <RootSidebarContentTopBar>
         Settings
-      </RootContentTopBar>
-      <RootContentMain>
-        <div className="w-full grid grid-cols-2 gap-4">
+      </RootSidebarContentTopBar>
+      <RootSidebarContentMain>
+        <div className="w-full flex flex-col gap-4">
           <SettingsReadonlyForm
             settingsReadonly={querySettings.data.readonly}
           />
@@ -65,7 +66,7 @@ function RouteComponent() {
             }}
           />
         </div>
-      </RootContentMain>
+      </RootSidebarContentMain>
     </>
   );
 }

@@ -14,7 +14,7 @@ import { Button } from "#/components/ui/button";
 import { IconIsInvalid, IconIsValid } from "#/components/ui/icons-common";
 import { DebugOnly } from "#/components/ui/debug.with-state";
 
-export function NavGroupJobProgress() {
+export function AppSidebarNavGroupJobProgress() {
   // global state
   const globalWs = useGlobalWebSocket();
   const jobProgress = useGlobalJobProgress();
@@ -54,15 +54,17 @@ export function NavGroupJobProgress() {
             <span>Disconnected</span>
           </div>
         )}
-        <Button
-          onClick={() => mutationDemoJobDemoStart.mutate()}
-          isLoading={mutationDemoJobDemoStart.isPending}
-          disabled={mutationDemoJobDemoStart.isPending}
-          variant="link"
-          size="xs"
-        >
-          Job Demo - Start
-        </Button>
+        <DebugOnly>
+          <Button
+            onClick={() => mutationDemoJobDemoStart.mutate()}
+            isLoading={mutationDemoJobDemoStart.isPending}
+            disabled={mutationDemoJobDemoStart.isPending}
+            variant="link"
+            size="xs"
+          >
+            Job Demo - Start
+          </Button>
+        </DebugOnly>
       </ProgressBoxBottomBar>
     </ProgressBoxWrapper>
   );

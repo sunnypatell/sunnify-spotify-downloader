@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { RootContentMain, RootContentTopBar } from '@/components/ui/root';
+import { RootSidebarContentMain, RootSidebarContentTopBar } from '@/components/ui/root';
 
 export const Route = createFileRoute('/')({
   component: RouteComponent,
@@ -8,12 +8,12 @@ export const Route = createFileRoute('/')({
 function RouteComponent() {
   return (
     <>
-      <RootContentTopBar>
+      <RootSidebarContentTopBar>
         Home
-      </RootContentTopBar>
-      <RootContentMain>
+      </RootSidebarContentTopBar>
+      <RootSidebarContentMain>
         {null}
-      </RootContentMain>
+      </RootSidebarContentMain>
     </>
   );
 }

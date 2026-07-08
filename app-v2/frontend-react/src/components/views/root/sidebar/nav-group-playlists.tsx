@@ -1,11 +1,12 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
 
-import { usePlaylists } from "#/data/use-playlists";
+import { usePlaylists } from "@/data/use-playlists";
 
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton } from "#/components/ui/sidebar";
-import { Badge } from "#/components/ui/badge";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton } from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 
-export function NavGroupPlaylists() {
+export function AppSidebarNavGroupPlaylists() {
   const { data: playlists, isLoading, isError, error } = usePlaylists();
   const matchRoute = useMatchRoute();
 
@@ -19,9 +20,11 @@ export function NavGroupPlaylists() {
           />
         ))
       ) : (isError || !playlists) ? (
-        <SidebarMenuItem className="px-3 text-xs text-muted-foreground">
-          <p>Error</p>
-          {error && <p>{error.message}</p>}
+        <SidebarMenuItem className="px-1">
+          <Alert variant="destructive">
+            <p>Error</p>
+            {error && <p>{error.message}</p>}
+          </Alert>
         </SidebarMenuItem>
       ) : playlists.sortedItems.length === 0 ? (
         <SidebarMenuItem className="text-sm text-muted-foreground">
