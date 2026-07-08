@@ -27,6 +27,7 @@ class UtilsOperations:
       maxRetries = 5
       retryCount = 0
       execTimer = UtilsTimeExecutionTimer()
+      errorCodes: list[str] = []
       while (retryCount < maxRetries):
         retryCount += 1
         # download
@@ -42,6 +43,7 @@ class UtilsOperations:
           )
           return output
         # if failed -> retry
+        errorCodes.append(output[1])
         await webSocketEventEmitter.emit(
           eventPayload=WsBackendEventPayloadTypeMessage(text=f"Attempt {retryCount}/{maxRetries} to download track. Failed {output[1]}. Retrying...")
         )
@@ -50,7 +52,7 @@ class UtilsOperations:
       await webSocketEventEmitter.emit(
         eventPayload=WsBackendEventPayloadTypeMessage(text=f"Failed to download track after {maxRetries} attempts. Duration: {executionTime}")
       )
-      return (False, "MAX_RETRIES_EXCEEDED")
+      return (False, "MAX_RETRIES_EXCEEDED", errorCodes)
     
     async def addMetadataToFile(trackDerived: TrackDerived):
       maxRetries = 5
@@ -86,10 +88,12 @@ class UtilsOperations:
 
     # 2. Download track with retry
     logger.info(f"Downloading track {trackDerived.artists} - {trackDerived.title}")
-    download_result = await downloadFile(trackDerived=trackDerived)
-    if not download_result[0]:
-      logger.warning(f"Downloading track {trackDerived.artists} - {trackDerived.title} ❌ FAILED: {download_result[1]}")
-      return download_result
+    downloadResult = await downloadFile(trackDerived=trackDerived)
+    if not downloadResult[0]:
+      errorCode = downloadResult[1]
+      errorReason = len(downloadResult) > 2 and downloadResult[2] or None
+      logger.warning(f"Downloading track {trackDerived.artists} - {trackDerived.title} ❌ FAILED: {errorCode} - {errorReason or ''}")
+      return downloadResult
 
     # 3. Embed metadata if enabled
     if userConfigApi.config_as_object.setting_disk_add_meta_tags:
