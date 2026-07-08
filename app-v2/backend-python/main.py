@@ -29,6 +29,9 @@ def createFastApiApp():
   logger.info(f"APP CONFIG - Environment variables: \n{appConfig.envVars.model_dump_json()}")
   logger.info(f"APP CONFIG - Runtime variables: \n{appConfig.runtime.dump()}")
   
+  logger.info("Create user config file directory if necessary...")
+  appConfig.runtime.user_config_dir_path.mkdir(parents=True, exist_ok=True)
+  
   logger.info("Checking presence of native dependencies...")
   nativeDepsChecker.checkAllDepsPresenceAndDownloadThemIfMissing()
   
