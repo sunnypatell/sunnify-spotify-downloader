@@ -8,7 +8,6 @@ from core.singleton.app_config import appConfig
 from core.singleton.native_deps_checker import nativeDepsChecker
 from core.singleton.websocket_active_connections import webSocketActiveConnections
 
-# Import API Routers
 from routers import (
   health,
   ws,
@@ -111,13 +110,13 @@ def createFastApiApp():
 app = createFastApiApp()
 
 if __name__ == "__main__":
-  logger.info("Serving Backend with Uvicorn...")
+  logger.info("\n\nServing Backend with Uvicorn...")
   import uvicorn
   uvicorn.run(
     "main:app",
     host="127.0.0.1",
-    port=appConfigStatic.backend_port,
-    reload=appConfigStatic.debug,
-    log_level=appConfigStatic.log_level,
+    port=appConfig.envVars.BACKEND_PORT,
+    reload=True,
+    log_level=appConfig.envVars.LOG_LEVEL,
   )
-  logger.info("Backend stopped")
+  logger.info("\n\nBackend stopped")

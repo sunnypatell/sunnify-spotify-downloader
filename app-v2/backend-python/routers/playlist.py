@@ -1,9 +1,15 @@
 from __future__ import annotations
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
-from models.new import PlaylistAddPlaylistPayload, PlaylistRaw, TrackRaw, PlaylistDerived, PlaylistEditTrackPayload, WsBackendEventPayloadTypeMessage
+from models.new import (
+  PlaylistRaw, 
+  TrackRaw, 
+  PlaylistDerived, 
+  PlaylistAddPlaylistPayload, 
+  PlaylistEditTrackPayload, 
+  WsBackendEventPayloadTypeMessage,
+)
 from core.singleton.logger import logger
 from core.singleton.user_config_api import userConfigReaderApi, userConfigApi
 from core.singleton.jobs_executor import jobsExecutor
@@ -13,7 +19,6 @@ from core.classes.operations.utils_operations import UtilsOperations
 from core.classes.music_providers.utils_spotify import UtilsSpotify
 from core.classes.music_providers.utils_youtube_fetcher_api import UtilsYoutubeFetcherApi
 from core.classes.music_providers.utils_track_disk import UtilsTrackDisk
-from core.classes.utils.utils_disk import UtilsDisk
 from core.classes.utils.utils_time import UtilsTime, UtilsTimeExecutionTimer
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
