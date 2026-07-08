@@ -65,6 +65,59 @@ function TheForm({
           <br />IMPORTANT: Backup this file!
         </FieldDescription>
       </Field>
+
+      <Field>
+        <FieldLabel>
+          Binary Deno file path
+        </FieldLabel>
+        <div className="flex-1 flex gap-2">
+          <Input
+            readOnly
+            value={settingsReadonly.binary_deno_file_path}
+          />
+          {/* <Button
+            onClick={() => mutationUtilDiskRevealInFinder.mutate({
+              path: settingsReadonly.user_config_file_path
+            })}
+            isLoading={mutationUtilDiskRevealInFinder.isPending}
+            disabled={mutationUtilDiskRevealInFinder.isPending}
+            variant="secondary"
+          >
+            <HardDriveIcon />
+            Reveal
+          </Button> */}
+        </div>
+        <FieldDescription>
+          This is the path to the deno binary file used by the backend.
+        </FieldDescription>
+      </Field>
+
+      <Field>
+        <FieldLabel>
+          Binary FFMPEG file path
+        </FieldLabel>
+        <div className="flex-1 flex gap-2">
+          <Input
+            readOnly
+            value={settingsReadonly.binary_ffmpeg_file_path}
+          />
+          {/* <Button
+            onClick={() => mutationUtilDiskRevealInFinder.mutate({
+              path: settingsReadonly.user_config_file_path
+            })}
+            isLoading={mutationUtilDiskRevealInFinder.isPending}
+            disabled={mutationUtilDiskRevealInFinder.isPending}
+            variant="secondary"
+          >
+            <HardDriveIcon />
+            Reveal
+          </Button> */}
+        </div>
+        <FieldDescription>
+          This is the path to the ffmpeg binary file used by the backend.
+        </FieldDescription>
+      </Field>
+
     </FieldGroup>
   );
 

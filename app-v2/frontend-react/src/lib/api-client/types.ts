@@ -106,6 +106,8 @@ export type WsBackendEvent = z.infer<typeof schemaWsBackendEvent>;
 export const schemaSettings = z.object({
   readonly: z.object({
     user_config_file_path: z.string(),
+    binary_deno_file_path: z.string(),
+    binary_ffmpeg_file_path: z.string(),
   }),
   mutable: z.object({
     setting_disk_download_path: z.string().min(1),
