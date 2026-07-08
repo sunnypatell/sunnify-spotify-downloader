@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 
 export const Route = createFileRoute('/')({
   component: RouteComponent,
+  pendingComponent: RouteComponent,
 });
 
 function RouteComponent() {
