@@ -1,6 +1,7 @@
+import { CONSTANTS } from '@/constants';
 import { ApiClient } from './client';
 
 export const apiClient = new ApiClient({
-  baseUrlHttp: 'http://127.0.0.1:8000',
-  baseUrlWs: 'ws://127.0.0.1:8000',
+  baseUrlHttp: CONSTANTS.BACKEND_HTTP_API_URL,
+  baseUrlWs: CONSTANTS.BACKEND_WS_API_URL,
 });
