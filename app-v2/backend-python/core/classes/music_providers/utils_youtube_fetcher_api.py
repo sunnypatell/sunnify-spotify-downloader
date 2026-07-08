@@ -1,9 +1,7 @@
-import os
-import sys
 import yt_dlp
 from models.new import TrackDerived
 from core.singleton.logger import logger
-from core.singleton.app_config import appConfig
+from core.singleton.native_deps_checker import nativeDepsChecker
 from core.classes.music_providers.utils_youtube import UtilsYoutube
 from core.classes.utils.utils_disk import UtilsDisk
 
@@ -46,24 +44,29 @@ class UtilsYoutubeFetcherApi:
     """Download track from YouTube as MP3 and save to disk"""
     
     # ensure ffmpeg is installed
-    if not UtilsFFMPEG.getFFmpegPath():
+    ffmpegPath = nativeDepsChecker.getFFmpegPath()
+    if not ffmpegPath:
       return (False, "FFMPEG_NOT_INSTALLED")
     
     # ensure deno is installed
-    denoPath = UtilsDeno.getDenoPath()
+    denoPath = nativeDepsChecker.getDenoPath()
     if not denoPath:
       return (False, "DENO_NOT_INSTALLED")
 
     # get track data
     rawYoutubeUrl = trackDerived.youtube_url
     diskFilePathWithoutExtension = trackDerived.disk_file_path_without_extension
+    diskDirPath = UtilsDisk.deriveDirPathFromFilePath(diskFilePathWithoutExtension)
+    
+    # maybe create playlist dir
+    UtilsDisk.createDirIfNotExists(diskDirPath)
 
     # if no URL found, return
     if not rawYoutubeUrl:
       return (False, "NO_YOUTUBE_URL")
     
     # if disk path is not accessible, return
-    if not UtilsDisk.getFolderIsWritable(diskFilePathWithoutExtension):
+    if not UtilsDisk.checkIfFolderIsWritable(diskDirPath):
       return (False, "DISK_PATH_NOT_ACCESSIBLE")
 
     # clean up URL
@@ -88,57 +91,14 @@ class UtilsYoutubeFetcherApi:
         'js_runtimes': {
           'deno': {'path': str(denoPath)},
           'node': {'path': None}
-        }
+        },
+        'ffmpeg_location': str(ffmpegPath)
       }
       with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.extract_info(youtubeUrl, download=True)
         return (True,"SUCCESS")
     except Exception as e:
       logger.error(f"Download failed: {e}")
-      return (False,"ERROR_DOWNLOADING", e)
+      return (False,"ERROR_DOWNLOADING", [e])
     
     
-class UtilsDeno:
-  @staticmethod
-  def getDenoPath():
-    denoPath = appConfig.runtime.binaries_path / "deno"
-    logger.info(f"denoPath: {denoPath}")
-    if os.path.exists(denoPath):
-      return denoPath
-    return None
-    
-class UtilsFFMPEG:
-  @staticmethod
-  def getFFmpegPath():
-    """Get path to FFmpeg - checks bundled first, then system paths."""
-    # Check bundled FFmpeg first (for PyInstaller builds)
-    if getattr(sys, "frozen", False):
-        base_path = sys._MEIPASS
-        if sys.platform == "win32":
-            ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg.exe")
-        else:
-            ffmpeg = os.path.join(base_path, "ffmpeg", "ffmpeg")
-        if os.path.exists(ffmpeg):
-            return os.path.join(base_path, "ffmpeg")
-
-    # Check common system paths (for homebrew/system installs)
-    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    common_paths = [
-        "/opt/homebrew/bin",  # macOS ARM homebrew
-        "/usr/local/bin",  # macOS Intel homebrew / Linux
-        "/usr/bin",  # Linux system
-    ]
-
-    for path in common_paths:
-        ffmpeg = os.path.join(path, ffmpeg_name)
-        if os.path.exists(ffmpeg):
-            return path
-
-    # Check if ffmpeg is in PATH
-    import shutil
-
-    ffmpeg_in_path = shutil.which("ffmpeg")
-    if ffmpeg_in_path:
-        return os.path.dirname(ffmpeg_in_path)
-
-    return None

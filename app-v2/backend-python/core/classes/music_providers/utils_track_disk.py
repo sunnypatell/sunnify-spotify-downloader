@@ -86,8 +86,18 @@ class UtilsTrackDisk:
   @staticmethod
   def derivePlaylistPath(playlistRaw: PlaylistRaw, userConfigApi: UserConfigApi) -> str:
     """Calculate playlist path from PlaylistRaw"""
-    clean_name = playlistRaw.name.replace("/","").replace("\\","").replace(":","").replace("*","").replace("?","").replace("\"","").replace("<","").replace(">","").replace("|","").replace("'","")
     base_path = userConfigApi.config_as_object.setting_disk_download_path
+    clean_name = playlistRaw.name
+    clean_name = clean_name.replace("/","")
+    clean_name = clean_name.replace("\\","")
+    clean_name = clean_name.replace(":","")
+    clean_name = clean_name.replace("*","")
+    clean_name = clean_name.replace("?","")
+    clean_name = clean_name.replace("\"","")
+    clean_name = clean_name.replace("<","")
+    clean_name = clean_name.replace(">","")
+    clean_name = clean_name.replace("|","")
+    clean_name = clean_name.replace("'","")
     return base_path + "/" + clean_name
   
   @staticmethod
