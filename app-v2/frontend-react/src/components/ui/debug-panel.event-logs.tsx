@@ -3,7 +3,7 @@ import { utilsJson } from "#/utils/json";
 
 export function DebugEventLogsList({ children }: { children: React.ReactNode; }) {
   return (
-    <div className="h-full overflow-auto flex flex-col-reverse">
+    <div className="flex flex-col-reverse">
       {children}
     </div>
   );
