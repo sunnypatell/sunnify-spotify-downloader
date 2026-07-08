@@ -1,25 +1,13 @@
 {
-  "backend": {
-    "base": {},
-    "dev": {
-      "port": 8000
-    },
-    "prod": {
-      "port": 8000
-    }
+  "general": {
+    "version": "0.0.1"
   },
-  "frontend": {
+  "electronWindow": {
     "base": {
       "window": {
         "width": 1440,
         "height": 900
       }
-    },
-    "dev": {
-      "port": 3000
-    },
-    "prod": {
-      "port": 3123
     }
   }
 }

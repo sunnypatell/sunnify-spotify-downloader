@@ -1,56 +1,69 @@
 import fs from "node:fs";
+import path from "node:path";
 
 // main class
 
 export class Logger {
   key: string;
-  color: Color;
   transports: LoggerTransport[];
   constructor({
     key,
-    color,
     transports,
   }: {
     key: string;
-    color: Color;
     transports: LoggerTransport[],
   }) {
     this.key = key;
-    this.color = color;
     this.transports = transports;
   }
+
   get keyNice() {
-    return color[this.color](`[${this.key}]`);
+    return `[${this.key}]`;
   }
   log(...args: Parameters<typeof console.log>) {
-    const parts = [this.keyNice, ...args];
-    this.transports.forEach(t => t.printLog(...parts));
+    this.transports.forEach(t => t.printLog(this.keyNice, ...args));
   }
   error(...args: Parameters<typeof console.error>) {
-    const parts = [this.keyNice, ...args];
-    this.transports.forEach(t => t.printLog(...parts));
+    this.transports.forEach(t => t.printLog(this.keyNice, ...args));
   }
 }
 
 // sub classes
 
 export type LoggerTransport = {
-  printLog: (...args: Parameters<typeof console.log>) => void;
+  printLog: (key: string, ...args: Parameters<typeof console.log>) => void;
 };
 
 export class LoggerTransportConsole implements LoggerTransport {
-  printLog(...args: Parameters<typeof console.log>) {
-    console.log(...args);
+  color: Color;
+  constructor({
+    color
+  }: {
+    color: Color;
+  }) {
+    this.color = color;
+  }
+  printLog(key: string, ...args: Parameters<typeof console.log>) {
+    const keyNice = color[this.color](key);
+    const parts = [keyNice, ...args];
+    console.log(...parts);
   }
 }
 export class LoggerTransportFile implements LoggerTransport {
   filePath: string;
   constructor(filePath: string) {
     this.filePath = filePath;
+    this.createDirIfNotExists();
   }
-  printLog(...args: Parameters<typeof console.log>) {
-    // print to file (append)
-    fs.appendFileSync(this.filePath, args.join(' ') + '\n');
+  printLog(key: string, ...args: Parameters<typeof console.log>) {
+    const parts = [key, ...args];
+    fs.appendFileSync(this.filePath, parts.join(' ') + '\n');
+  }
+  private createDirIfNotExists() {
+    const dirPath = path.dirname(this.filePath);
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
   }
 }
 

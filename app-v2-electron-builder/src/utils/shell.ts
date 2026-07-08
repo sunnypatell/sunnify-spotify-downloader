@@ -1,13 +1,11 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 export type { ChildProcess };
 
 export const utilsShell = {
   launchProcess: spawn,
+  launchProcessSync: spawnSync,
   killProcess: (childProcess?: ChildProcess | null) => {
-    if (!childProcess) {
-      return;
-    }
-    childProcess.kill();
+    childProcess?.kill();
   }
 };

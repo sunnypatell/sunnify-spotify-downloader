@@ -1,24 +1,34 @@
-appId: com.sunnify.app # Identificatore unico dell'app
-productName: SpotiDisk # Nome mostrato all'utente
+# Identificatore unico dell'app
+appId: com.sunnify.app 
+# Nome mostrato all'utente
+productName: SpotiDisk 
+# if `true` the bundled app will use asar format (like a zip file)
+# if `false` the bundled app will use plain files/folders
 asar: false
+# Copy directories to bundle
 directories:
   buildResources: assets # Cartella per icone, screenshot
   output: dist # Dove mettere gli installer
-files: # ← CRITICO: cosa includere nel bundle
-  # copy electron files
+# Copy files to bundle
+files:
+  # electron-main files
   - "node_modules/**" # node dep (production only deps - no devDependencies)
-  - "dist-electron-main/**" # compiled electron main files
   - "package.json" # Metadati app
+  - "dist-electron-main/**" # compiled electron main files
   - "config.json" # Metadati app
+  # frontend-react files
   - from: ../app-v2/frontend-react/dist
     to: dist-frontend
-    filter: "**/*"
+    filter: 
+      - "**/*"
+  # backend-python
   - from: ../app-v2/backend-python
     to: dist-backend
-    filter: "**/*"
-extraResources:
-  - from: "node_modules/.bin/serve"
-    to: "app/node_modules/.bin/serve"
+    filter: 
+      - "**/*"
+      - "!**/.bin"
+
+# Define MAC OS executable config
 mac:
   target:
     - dmg
@@ -34,6 +44,8 @@ mac:
 #       y: 220
 #       type: link
 #       path: /Applications
+
+# Define Windows executable config
 # win:
 #   target:
 #     - nsis
@@ -41,6 +53,8 @@ mac:
 # nsis:
 #   oneClick: false
 #   allowToChangeInstallationDirectory: true
+
+# Define Linux executable config
 # linux:
 #   target:
 #     - AppImage
