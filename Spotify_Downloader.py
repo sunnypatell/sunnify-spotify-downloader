@@ -189,11 +189,8 @@ SUPPORTED_QUALITIES = ("128", "192", "256", "320")
 # "auto" keeps whatever rate the source stream has (YouTube audio is 48 kHz).
 SUPPORTED_SAMPLE_RATES = ("auto", "44100", "48000")
 
-# Resume manifest: a JSON-lines file dropped inside each playlist/album folder
-# recording which tracks already downloaded. On a re-run we skip those tracks
-# before fetching their metadata, so a huge playlist throttled by Spotify's
-# rate limit can be finished across several sessions instead of one long sit
-# (closes #40).
+# Resume manifest: JSON-lines file per playlist folder recording landed tracks,
+# so a rate-limited playlist finishes across sessions instead of restarting (#40).
 MANIFEST_FILENAME = ".sunnify-manifest.jsonl"
 
 
@@ -516,21 +513,14 @@ class MusicScraper(QThread):
 
     def prepare_playlist_folder(self, base_folder, playlist_name):
         os.makedirs(base_folder, exist_ok=True)
-        # Folder names go through the same documented cross-platform sanitizer as
-        # track files (sanitize_filename): drops only the Windows-reserved
-        # punctuation + control chars, trims trailing dots/spaces, escapes
-        # reserved device names (CON, NUL, ...) and NFC-normalizes, per the
-        # Microsoft + POSIX filename rules. The old ascii-only allowlist missed
-        # the reserved-device-name case (a playlist named "CON" produced an
-        # uncreatable folder on Windows) and silently dropped punctuation.
+        # Same cross-platform sanitizer as track files (windows reserved
+        # chars/device names, posix rules - see sanitize_filename's doc refs).
         safe_name = sanitize_filename(playlist_name)
         if not safe_name or safe_name == "Unknown":
             safe_name = "Sunnify Playlist"
         playlist_folder = os.path.join(base_folder, safe_name)
-        # Backward-compat: older builds dropped punctuation via an ascii-only
-        # allowlist (e.g. "Name - Owner" -> "Name  Owner"). If that older folder
-        # already exists, keep using it so a re-run resumes into the same folder
-        # instead of orphaning the previous download + its manifest (#40).
+        # If the ascii-allowlist-era folder name ("Name  Owner") exists, keep
+        # using it so re-runs resume there instead of orphaning the manifest (#40).
         legacy_name = "".join(
             ch for ch in playlist_name if ch.isalnum() or ch in (" ", "_")
         ).strip()
@@ -575,18 +565,12 @@ class MusicScraper(QThread):
             return search_query
         return f"ytsearch5:{stripped}"
 
-    # Max gap (seconds) between the Spotify track length and a YouTube
-    # candidate's length for the candidate to count as the "same" recording.
-    # The top YouTube hit is often the music video (extra intro/skit/outro) or
-    # an extended/remix cut, which plays as a different song even though the
-    # filename is right. Matching on duration steers us to the real audio.
+    # Max spotify-vs-youtube length gap to count as the same recording; the
+    # top hit is often the music video or an extended cut.
     _DURATION_TOLERANCE_S = 7
 
-    # Wider tolerance for the title-and-duration combined check: if a candidate
-    # has the right title but its duration is wildly off (>30s), it's almost
-    # certainly a remix / live / extended edit of the right song rather than
-    # the original. Better to fail loudly than ship something that fades out
-    # in the wrong place.
+    # Wider bound for the title+duration combined check: right title but >30s
+    # off means remix/live/extended - fail loudly rather than ship it.
     _DURATION_TOLERANCE_S_WIDE = 30
 
     @staticmethod
@@ -614,10 +598,9 @@ class MusicScraper(QThread):
         # Strip apostrophes BEFORE the general punctuation->space step so
         # "I'm" becomes "im" not "i m".
         s = s.replace("'", "").replace("’", "")
-        # Keep letters/digits/marks from ANY script so non-Latin titles can
-        # match their uploads (#77). Category M is load-bearing: Indic/Thai
-        # vowel signs are marks with combining class 0, and dropping them
-        # collapses distinct words ("दिल"/"दाल") into one skeleton.
+        # Keep letters/digits/marks from ANY script (#77). Category M is
+        # load-bearing: indic/thai vowel signs are combining-class-0 marks,
+        # and dropping them collapses distinct words ("दिल"/"दाल").
         s = "".join(
             ch if (ch.isspace() or unicodedata.category(ch)[0] in "LNM") else " " for ch in s
         )
@@ -744,21 +727,14 @@ class MusicScraper(QThread):
                     return self._loose_pick(entries, expected_duration_s)
                 return None
 
-            # When the artists are known, require at least one to appear in
-            # the YouTube title alongside the song name. This rejects
-            # "right-song-name, wrong-uploader's-remix" - e.g. Spotify's
-            # Mi Gente by DJ Goja vs YouTube's SkywiinPROD's Mi Gente Remix.
-            # User feedback (#52) was crystal clear: prefer not-found over
-            # wrong audio. Falls back to title-only matching when no
-            # expected_artists is given (legacy callers, single-track flows
-            # before the v2.0.9 wire-up).
+            # Require an artist in the YouTube title alongside the song name:
+            # rejects right-title-wrong-uploader remixes. Prefer not-found
+            # over wrong audio (#52). Title-only when no artists are known.
             pool = title_ok
             if expected_artists:
-                # Split FIRST on collaboration separators (commas / ampersands
-                # / `feat`), then normalize each artist independently. Doing
-                # this in the other order loses commas during normalization
-                # (they become spaces) and collapses the whole multi-artist
-                # string into one token nobody would match.
+                # Split on collaboration separators BEFORE normalizing -
+                # normalization eats commas, which would collapse the
+                # multi-artist string into one unmatchable token.
                 raw_tokens = re.split(
                     r"[,&]+|\s+(?:feat\.?|ft\.?)\s+",
                     expected_artists,
@@ -776,11 +752,9 @@ class MusicScraper(QThread):
                         )
                     ]
                     if not pool and not any(re.search(r"[a-z0-9]", t) for t in artist_tokens):
-                        # Native-script artists commonly appear romanized in
-                        # YouTube titles (Молчат Дома -> "Molchat Doma"), so
-                        # an all-non-Latin token set would reject everything;
-                        # fall back to title-only, the same guarantee used
-                        # when no artist is known.
+                        # Native-script artists usually appear romanized on
+                        # YouTube, so an all-non-latin token set would reject
+                        # everything; fall back to title-only.
                         log.info(
                             "artist gate skipped: no latin token in %r, falling back to title-only",
                             expected_artists,
@@ -801,11 +775,8 @@ class MusicScraper(QThread):
                 timed = [e for e in pool if e.get("duration")]
                 if timed:
                     chosen = min(timed, key=lambda e: abs(e["duration"] - expected_duration_s))
-                    # Even if title+artist both match, refuse a candidate
-                    # whose duration is wildly off the Spotify track - that
-                    # means it's a live cover / extended mix and shipping
-                    # it under the original's metadata still corrupts the
-                    # library.
+                    # Right title+artist but wildly wrong duration = live
+                    # cover / extended mix; still the wrong audio to ship.
                     off = abs(chosen["duration"] - expected_duration_s)
                     if off > self._DURATION_TOLERANCE_S_WIDE:
                         log.info(
@@ -893,34 +864,23 @@ class MusicScraper(QThread):
             "postprocessors": [postprocessor],
         }
         if self.sample_rate != "auto" and fmt in ("mp3", "flac", "wav"):
-            # "extractaudio" is the arg key yt-dlp matches for this PP (the
-            # "ffmpegextractaudio" spelling is silently ignored - verified).
-            # opus is excluded (libopus outputs 48 kHz regardless of -ar) and
-            # so is m4a: yt-dlp stream-copies aac sources into m4a, and
-            # ffmpeg silently drops -ar under copy - a sometimes-works
-            # setting is worse than an honest unsupported one.
+            # "extractaudio" is the only key yt-dlp matches for this PP.
+            # opus excluded (libopus is 48 kHz-only); m4a excluded (may
+            # stream-copy aac, where ffmpeg silently drops -ar).
             ydl_opts["postprocessor_args"] = {"extractaudio": ["-ar", self.sample_rate]}
 
         expected_path = base + "." + ext
 
-        # Primary query (widened to 5 results), then a simplified fallback if
-        # the first pass produced nothing. For each, pick the duration-closest
-        # candidate (avoids grabbing the music video / wrong edit) and download
-        # that specific video. Success is decided purely by whether an audio
-        # file landed on disk, so a search with no playable source fails loudly
-        # instead of silently reporting a path that does not exist.
+        # Widened query then a simplified fallback; success = an audio file
+        # actually on disk, so an empty search fails loudly.
         queries = [self._widen_search(search_query)]
         fallback = self._simplify_search(search_query)
         if fallback not in queries:
             queries.append(fallback)
 
-        # Two download attempts per resolved video: the default (web) client
-        # first (unchanged happy path), then a fallback that forces the
-        # non-web player clients. YouTube increasingly bot-challenges the web
-        # client per-IP, and the alternate clients (android/ios/tv) use
-        # different endpoints that often still serve audio. The fallback only
-        # runs when the first attempt produced no file, so a working download
-        # is byte-for-byte the same as before.
+        # Default web client first, then the alternate player clients:
+        # youtube bot-challenges web per-IP while android/ios/tv endpoints
+        # often still serve. Fallback only runs when no file landed.
         fallback_opts = {
             **ydl_opts,
             "extractor_args": {
@@ -1019,11 +979,9 @@ class MusicScraper(QThread):
 
         filepath = os.path.join(playlist_folder_path, cap_filename(filename))
 
-        # Filename collision guard: two different tracks can sanitize to the
-        # same filename (e.g. "Café" vs "Cafe"). Under parallel downloads the
-        # naive os.path.exists check has a TOCTOU race where both workers pass
-        # the check and clobber each other's files. Claim the filename via a
-        # lock; if taken, suffix with track id to de-dupe.
+        # Collision guard: distinct tracks can sanitize to the same name, and
+        # parallel workers racing os.path.exists would clobber each other.
+        # Claim under a lock; if taken, suffix the track id.
         with self._filename_lock:
             if filepath in self._in_flight_files:
                 if self.include_track_number:
@@ -1037,16 +995,10 @@ class MusicScraper(QThread):
                 )
             self._in_flight_files.add(filepath)
 
-        # Per-track cover enrichment. Spotify's playlist embed trackList does
-        # not include per-track cover URLs at all, so without this enrichment
-        # every track ends up falling back to default_cover_url (the playlist
-        # cover). That's the reported bug: "all 300 songs have the same cover".
-        # Fix: when cover_url is missing, fetch /embed/track/{id} which has
-        # the real visualIdentity.image. The request runs synchronously
-        # inside the worker before the YouTube search, so it adds roughly
-        # 100-300ms per track in sequential mode. In parallel mode that
-        # per-track cost overlaps with downloads running in other workers,
-        # so aggregate wall-clock impact on a full playlist stays small.
+        # Per-track cover enrichment: the playlist embed has no per-track
+        # cover urls (the "all 300 songs have the same cover" report), so
+        # fetch /embed/track/{id} when missing. ~100-300ms per track,
+        # overlapped by other workers in parallel mode.
         cover_url = track.cover_url
         release_date = track.release_date or ""
         if (
@@ -1078,10 +1030,8 @@ class MusicScraper(QThread):
             "trackNumber": track_num,
         }
 
-        # Emit song_meta so the preview panel shows the current track. With
-        # multiple workers running, this label races between workers and ends
-        # up showing whichever track most recently started, which is fine
-        # (and better than a blank panel).
+        # Preview panel shows whichever track most recently started; the
+        # worker race is fine (better than a blank panel).
         self.song_meta.emit(dict(song_meta))
 
         try:
@@ -1217,10 +1167,7 @@ class MusicScraper(QThread):
             raise ValueError("Expected a playlist or album URL")
         self.PlaylistID.emit(playlist_id)
 
-        # Check cancel before doing any network work. Large playlists can
-        # spend real time inside iter_playlist_tracks doing spclient + per
-        # track embed fetches; if the user already clicked stop we shouldn't
-        # bother.
+        # Bail before network work if stop was already clicked.
         if self.is_cancelled():
             self.PlaylistCompleted.emit("Download cancelled")
             return
@@ -1245,13 +1192,9 @@ class MusicScraper(QThread):
                 f"Resuming: skipping {len(already_done)} already-downloaded track(s)"
             )
 
-        # Materialize the generator into a list. iter_playlist_tracks is a
-        # generator and generators are not thread-safe. Consuming it upfront
-        # also lets us pick the right worker count based on track count.
-        # Cancel is checked between yields so very large playlists (where
-        # iter_playlist_tracks issues hundreds of spclient + per-track embed
-        # requests serially) can abort mid-fetch instead of waiting through
-        # the full window before the stop button takes effect.
+        # Materialize the generator (not thread-safe; count also picks the
+        # worker pool size). Cancel is checked between yields so huge
+        # playlists abort mid-fetch instead of after the full window.
         expected_total = metadata.track_count or 0
         tracks: list = []
         for track in spotify_api.iter_playlist_tracks(
@@ -1290,12 +1233,9 @@ class MusicScraper(QThread):
             self.audio_quality,
         )
 
-        # Prefer the canonical Spotify playlist position when the API gave
-        # one (it does for any playlist whose tracks went through the
-        # spclient fallback, which is the only place enumerate-of-yield-
-        # order would diverge from playlist order). Fall back to enumerate
-        # index for albums + small playlists where every track came from
-        # the embed page already in order. Closes #51.
+        # Canonical playlist position over enumerate order: spclient yields
+        # in http-completion order on >100-track playlists (#51). Enumerate
+        # only for albums/small playlists, which arrive already ordered.
         def _track_num_for(track, idx):
             return track.position if getattr(track, "position", None) else idx
 
@@ -1341,11 +1281,8 @@ class MusicScraper(QThread):
                             log.error("unexpected worker error", exc_info=exc)
                             self.error_signal.emit(f"Unexpected worker error: {exc}")
             finally:
-                # Reset parallel_mode only after the executor has fully shut
-                # down (context manager exit waits on in-flight workers). If
-                # we reset inside the `with`, workers that are still running
-                # after a break would observe False and start emitting
-                # single-track UI signals.
+                # Reset only after executor shutdown: in-flight workers that
+                # observed False mid-run would emit single-track UI signals.
                 self._parallel_mode = False
 
         if self.is_cancelled():
@@ -1716,10 +1653,8 @@ class SettingsDialog(QDialog):
 
         from PyQt6.QtWidgets import QLabel, QLineEdit
 
-        # QLineEdit (read-only) handles arbitrarily long paths cleanly: it
-        # elides mid-path with horizontal scroll on focus, rather than
-        # truncating and leaving the user guessing. Tooltip always shows the
-        # full value.
+        # Read-only QLineEdit: long paths scroll instead of truncating;
+        # tooltip carries the full value.
         self._folder_label = QLineEdit(self._config.get("download_path") or "(not set)")
         self._folder_label.setReadOnly(True)
         self._folder_label.setFrame(False)
@@ -1771,13 +1706,9 @@ class SettingsDialog(QDialog):
         # initial enable/disable sync needs every dependent combo to exist
         self._on_format_change(self._format_cb.currentText())
 
-        # Per-setting QVBoxLayout block: each setting is a self-contained
-        # vertical mini-layout owning its own height. QFormLayout was tried
-        # earlier and wrapping hint labels got clipped because the row height
-        # was computed from the (empty) label column rather than from the
-        # word-wrapped value column. Owning the height per-block via QFrame
-        # + QVBoxLayout + Preferred size policy lets each hint expand to
-        # however many lines its text needs at the dialog's current width.
+        # Each setting owns its height as a QFrame+QVBoxLayout block:
+        # QFormLayout computes row height from the label column and clips
+        # word-wrapped hints, this lets every hint take the lines it needs.
         from PyQt6.QtGui import QFontMetrics, QPalette
         from PyQt6.QtWidgets import QFrame, QSizePolicy
 
@@ -2236,10 +2167,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.Select_Home.clicked.connect(self.Linkedin)
         self.SettingsBtn.clicked.connect(self.open_settings)
 
-        # Hide the Album row in the preview panel: Spotify's unauthenticated
-        # embed endpoints do not expose album name anywhere we can reach it,
-        # so the field would always be blank. A missing row reads better than
-        # a permanently empty label.
+        # No Album row: the unauthenticated embed endpoints never expose
+        # album name, and a missing row beats a permanently blank one.
         self.label_8.hide()
         self.AlbumText.hide()
 
@@ -2582,12 +2511,10 @@ if __name__ == "__main__":
     with contextlib.suppress(Exception):
         setup_logging()
 
-    # sigint/sigterm: log WHICH signal killed us, then die with default
-    # semantics (re-raise under SIG_DFL). historical "app died right after
-    # launch, no session-end, no crash log" reports were untraceable because
-    # a default-action signal skips atexit and every hook; this keeps the
-    # instant-kill behaviour (no dependence on the event loop, so no hang
-    # window) but leaves one forensic line behind.
+    # sigint/sigterm: log WHICH signal killed us, then re-raise under
+    # SIG_DFL. A default-action signal skips atexit and every hook (why
+    # signal deaths never left a log line); this keeps instant-kill
+    # semantics with no event-loop dependence, plus one forensic line.
     def _fatal_signal(sig, _frame):
         with contextlib.suppress(Exception):
             log.info("terminated by signal %s (ctrl+c or external)", signal.Signals(sig).name)
