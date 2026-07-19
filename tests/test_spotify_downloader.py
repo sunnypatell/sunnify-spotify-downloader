@@ -608,6 +608,100 @@ class TestYoutubeMatchSelection:
         assert MusicScraper._normalize_title("MONTAGEM BAILÃO") == "montagem bailao"
         assert MusicScraper._normalize_title("Beyoncé") == "beyonce"
 
+    def test_normalize_preserves_non_latin_scripts(self):
+        """The old [^a-z0-9] class erased Cyrillic/CJK/Greek titles to "" so
+        no candidate could ever match (#77). Normalization must keep word
+        characters from any script, lowercased where the script has case."""
+        from Spotify_Downloader import MusicScraper
+
+        assert MusicScraper._normalize_title("Группа крови") == "группа крови"
+        assert MusicScraper._normalize_title("君の名は") == "君の名は"
+        assert MusicScraper._normalize_title("Ελλάδα") == "ελλαδα"
+        # punctuation still collapses regardless of script
+        assert MusicScraper._normalize_title("Кино: «Группа крови»!") == "кино группа крови"
+        # Indic vowel signs are Mn/Mc marks with combining class 0: they
+        # must survive normalization or distinct words collapse to the same
+        # consonant skeleton ("दिल" heart vs "दाल" lentils) and the title
+        # filter gains a wrong-audio vector.
+        assert MusicScraper._normalize_title("दिल") != MusicScraper._normalize_title("दाल")
+        assert MusicScraper._normalize_title("देवनागरी गीत") == "देवनागरी गीत"
+        assert MusicScraper._normalize_title("เพลงไทย") == "เพลงไทย"
+
+    def test_non_latin_artist_falls_back_to_title_only(self):
+        """A native-script artist whose YouTube uploads are romanized must not
+        arm the artist gate into rejecting everything. Pre-unicode these
+        tokens vanished and the gate was skipped; that semantic is kept
+        (Молчат Дома vs 'Molchat Doma' uploads)."""
+        entries = [
+            {"id": "md", "duration": 205, "title": "Molchat Doma - Discoteque (Official Audio)"},
+            {"id": "other", "duration": 400, "title": "Something Else Entirely"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Discoteque Молчат Дома audio",
+                205,
+                expected_title="Discoteque",
+                expected_artists="Молчат Дома",
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=md"
+
+    def test_latin_artist_gate_still_enforced(self):
+        """The fallback must NOT weaken #52 for Latin artists: right title by
+        the wrong uploader still gets rejected when the artist never appears."""
+        entries = [
+            {"id": "cover", "duration": 200, "title": "Mi Gente (Best Cover 2024)"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Mi Gente DJ Goja audio",
+                200,
+                expected_title="Mi Gente",
+                expected_artists="DJ Goja",
+            )
+        finally:
+            ctx.stop()
+        assert url is None
+
+    def test_same_script_cyrillic_title_matches_strict(self):
+        """A Cyrillic Spotify track vs a Cyrillic YouTube upload must match in
+        STRICT mode - this was the #77 report ('files with Cyrillic in the
+        name don't download'): an identical title was rejected."""
+        entries = [
+            {"id": "kino", "duration": 285, "title": "Кино - Группа крови (Официальное аудио)"},
+            {"id": "wrong", "duration": 500, "title": "Кино - Пачка сигарет"},
+        ]
+        ctx = self._patched(entries)
+        try:
+            url = self._scraper()._select_youtube_match(
+                "ytsearch5:Группа крови Кино audio",
+                285,
+                expected_title="Группа крови",
+                expected_artists="Кино",
+            )
+        finally:
+            ctx.stop()
+        assert url == "https://www.youtube.com/watch?v=kino"
+
+    def test_latin_matching_pins_unchanged(self):
+        """Pin the exact normalized forms the #52 guardrail decisions rely on;
+        the unicode-aware class must be byte-identical to the old ASCII one
+        for Latin input (proven by 100k-case fuzz before shipping)."""
+        from Spotify_Downloader import MusicScraper
+
+        pins = {
+            "Mi Gente (feat. J Balvin)": "mi gente",
+            "Hello - Live": "hello live",
+            "I'm Yours": "im yours",
+            "Blinding Lights": "blinding lights",
+            "wag_wan": "wag wan",
+        }
+        for raw, expected in pins.items():
+            assert MusicScraper._normalize_title(raw) == expected, raw
+
 
 class TestDetectImageMime:
     """Tests for _detect_image_mime image-format sniffing (closes #46).
@@ -2152,6 +2246,194 @@ class TestTrackNumberInFilename:
         assert isinstance(cfg["include_track_number"], bool)
 
 
+class TestArtistFirstInFilename:
+    """Tests for the artist_first filename-order option (#77).
+
+    The order swap happens AFTER sanitize_filename on both components, so
+    the cross-platform filename guarantees (Windows reserved chars/device
+    names, POSIX rules, NFC - see sanitize_filename's doc refs) hold for
+    either order by construction. These tests pin the composed shapes.
+    """
+
+    def _track(self, tid="t1"):
+        from spotifydown_api import TrackInfo
+
+        return TrackInfo(
+            id=tid,
+            title="Title",
+            artists="Artist",
+            album="Album",
+            release_date="2024-01-01",
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+
+    def _stub(self, scraper):
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+    def _run(self, scraper, tmp_path, track_num=3):
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+        scraper._download_one_track(self._track(), str(tmp_path), "", track_num=track_num)
+        return captured
+
+    def test_default_off_keeps_legacy_order(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        assert scraper.artist_first is False
+        captured = self._run(scraper, tmp_path)
+        assert captured[0].endswith("Title - Artist.mp3")
+
+    def test_enabled_swaps_order(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        captured = self._run(MusicScraper(artist_first=True), tmp_path)
+        assert captured[0].endswith("Artist - Title.mp3")
+
+    def test_composes_with_track_number(self, tmp_path):
+        """Both toggles on: the padded prefix stays first, then the swapped
+        pair - '03. Artist - Title.mp3'."""
+        from Spotify_Downloader import MusicScraper
+
+        captured = self._run(MusicScraper(artist_first=True, include_track_number=True), tmp_path)
+        assert os.path.basename(captured[0]) == "03. Artist - Title.mp3"
+
+    def test_collision_suffix_keeps_swapped_order(self, tmp_path):
+        """The collision-guard variant (same sanitized name in flight) must
+        use the same order as the primary path."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(artist_first=True)
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+        # pre-claim the primary filename so the second call takes the
+        # collision branch and suffixes the track id
+        scraper._in_flight_files.add(os.path.join(str(tmp_path), "Artist - Title.mp3"))
+        scraper._download_one_track(self._track(tid="xyz"), str(tmp_path), "", track_num=1)
+        assert os.path.basename(captured[0]) == "Artist - Title [xyz].mp3"
+
+    def test_cyrillic_title_survives_both_orders(self, tmp_path):
+        """i18n + order swap together: non-Latin characters pass through
+        sanitize_filename untouched in either position (#77)."""
+        from Spotify_Downloader import MusicScraper
+        from spotifydown_api import TrackInfo
+
+        track = TrackInfo(
+            id="k1",
+            title="Группа крови",
+            artists="Кино",
+            album=None,
+            release_date=None,
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+        scraper = MusicScraper(artist_first=True)
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+        scraper._download_one_track(track, str(tmp_path), "", track_num=1)
+        assert os.path.basename(captured[0]) == "Кино - Группа крови.mp3"
+
+
+class TestSampleRateOption:
+    """Tests for the sample_rate setting (#80).
+
+    The value rides yt-dlp's postprocessor_args under the "extractaudio"
+    key (the "ffmpegextractaudio" spelling is silently ignored - verified
+    empirically before wiring). opus never gets -ar because libopus
+    outputs 48 kHz regardless.
+    """
+
+    def _captured_opts(self, scraper):
+        """Drive download_track_audio far enough to capture the YoutubeDL
+        ctor opts, then bail (no file is ever produced)."""
+        import contextlib
+        from unittest.mock import MagicMock, patch
+
+        captured = []
+        with (
+            patch("Spotify_Downloader.get_ffmpeg_path", return_value="/usr/bin/true"),
+            patch("Spotify_Downloader.YoutubeDL") as ydl,
+        ):
+            ydl.side_effect = lambda opts: (
+                captured.append(opts)
+                or MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                )
+            )
+            scraper._select_youtube_match = lambda *_a, **_k: "https://www.youtube.com/watch?v=x"
+            with contextlib.suppress(RuntimeError):
+                scraper.download_track_audio("ytsearch1:x", "/tmp/never-written.mp3")
+        return captured
+
+    def test_default_auto_adds_no_postprocessor_args(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(audio_format="flac")
+        assert scraper.sample_rate == "auto"
+        opts = self._captured_opts(scraper)
+        assert opts and "postprocessor_args" not in opts[0]
+
+    def test_forced_rate_rides_extractaudio_key(self):
+        from Spotify_Downloader import MusicScraper
+
+        opts = self._captured_opts(MusicScraper(audio_format="flac", sample_rate="44100"))
+        assert opts[0]["postprocessor_args"] == {"extractaudio": ["-ar", "44100"]}
+
+    def test_opus_and_m4a_never_get_ar(self):
+        """opus: libopus is 48 kHz-only. m4a: yt-dlp stream-copies aac
+        sources and ffmpeg drops -ar under copy, so the option would only
+        sometimes work - it's excluded instead."""
+        from Spotify_Downloader import MusicScraper
+
+        for fmt in ("opus", "m4a"):
+            opts = self._captured_opts(MusicScraper(audio_format=fmt, sample_rate="44100"))
+            assert "postprocessor_args" not in opts[0], fmt
+
+    def test_invalid_rate_coerces_to_auto(self):
+        from Spotify_Downloader import MusicScraper
+
+        assert MusicScraper(sample_rate="22050").sample_rate == "auto"
+        assert MusicScraper(sample_rate=None).sample_rate == "auto"
+
+
 class TestSettingsDialog:
     """Construction tests for the Settings dialog.
 
@@ -2223,13 +2505,30 @@ class TestSettingsDialog:
             "format": "m4a",
             "quality": "256",
             "include_track_number": True,
+            "artist_first": True,
+            "sample_rate": "44100",
         }
         dlg = SettingsDialog(None, cfg)
         out = dlg.result_config()
         assert out["format"] == "m4a"
         assert out["quality"] == "256"
         assert out["include_track_number"] is True
+        assert out["artist_first"] is True
+        assert out["sample_rate"] == "44100"
         assert out["download_path"] == "/tmp/sunnify-music"
+
+    def test_non_transcode_formats_disable_sample_rate_selector(self, qapp):
+        """opus and m4a can't honor a pinned rate (48 kHz-only codec /
+        stream-copy remux) so the selector greys out for both, same
+        pattern as bitrate-vs-lossless."""
+        from Spotify_Downloader import SettingsDialog
+
+        dlg = SettingsDialog(None, {"format": "opus", "quality": "192"})
+        assert not dlg._sample_rate_cb.isEnabled()
+        dlg._format_cb.setCurrentText("m4a")
+        assert not dlg._sample_rate_cb.isEnabled()
+        dlg._format_cb.setCurrentText("flac")
+        assert dlg._sample_rate_cb.isEnabled()
 
 
 class TestLogging:
@@ -2653,6 +2952,15 @@ class TestStarPrompt:
             assert load_config()["star_prompt_shown"] is False
             cfg_file.write_text(json.dumps({"star_prompt_shown": True}))
             assert load_config()["star_prompt_shown"] is True
+            # v2.1.1 keys follow the same coercion contract
+            cfg_file.write_text(json.dumps({"artist_first": "yes", "sample_rate": 44100}))
+            cfg = load_config()
+            assert cfg["artist_first"] is False
+            assert cfg["sample_rate"] == "auto"
+            cfg_file.write_text(json.dumps({"artist_first": True, "sample_rate": "44100"}))
+            cfg = load_config()
+            assert cfg["artist_first"] is True
+            assert cfg["sample_rate"] == "44100"
 
     def test_notifier_constructs_and_targets_repo(self, qapp):
         """Headless construction is enough to catch layout assembly crashes

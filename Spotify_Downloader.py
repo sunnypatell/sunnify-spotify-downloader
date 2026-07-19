@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 import atexit
 import concurrent.futures
@@ -186,6 +186,8 @@ SUPPORTED_FORMATS = {
     "wav": {"ext": "wav", "lossy": False},
 }
 SUPPORTED_QUALITIES = ("128", "192", "256", "320")
+# "auto" keeps whatever rate the source stream has (YouTube audio is 48 kHz).
+SUPPORTED_SAMPLE_RATES = ("auto", "44100", "48000")
 
 # Resume manifest: a JSON-lines file dropped inside each playlist/album folder
 # recording which tracks already downloaded. On a re-run we skip those tracks
@@ -304,6 +306,8 @@ def load_config() -> dict:
         "format": "mp3",
         "quality": "192",
         "include_track_number": False,
+        "artist_first": False,
+        "sample_rate": "auto",
         "loose_match": False,
         "star_prompt_shown": False,
     }
@@ -319,6 +323,10 @@ def load_config() -> dict:
             defaults["quality"] = "192"
         if not isinstance(defaults["include_track_number"], bool):
             defaults["include_track_number"] = False
+        if not isinstance(defaults["artist_first"], bool):
+            defaults["artist_first"] = False
+        if defaults["sample_rate"] not in SUPPORTED_SAMPLE_RATES:
+            defaults["sample_rate"] = "auto"
         if not isinstance(defaults["loose_match"], bool):
             defaults["loose_match"] = False
         if not isinstance(defaults["star_prompt_shown"], bool):
@@ -430,6 +438,8 @@ class MusicScraper(QThread):
         audio_format: str = "mp3",
         audio_quality: str = "192",
         include_track_number: bool = False,
+        artist_first: bool = False,
+        sample_rate: str = "auto",
         loose_match: bool = False,
     ):
         super().__init__()
@@ -443,6 +453,8 @@ class MusicScraper(QThread):
         self.audio_format = audio_format if audio_format in SUPPORTED_FORMATS else "mp3"
         self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
         self.include_track_number = bool(include_track_number)
+        self.artist_first = bool(artist_first)
+        self.sample_rate = sample_rate if sample_rate in SUPPORTED_SAMPLE_RATES else "auto"
         # opt-in: when strict title/artist matching fails, fall back to the
         # duration-closest youtube result (recovers cross-script matches);
         # off by default so the wrong-audio safeguard (#52) stays the default.
@@ -490,6 +502,13 @@ class MusicScraper(QThread):
     def sanitize_text(self, text):
         """Sanitize text for filename usage."""
         return sanitize_filename(text, allow_spaces=True)
+
+    def _name_parts(self, sanitized_title, sanitized_artists):
+        """Filename component order per the artist_first setting (#77). Both
+        parts are already sanitized, so the swap can't change path safety."""
+        if self.artist_first:
+            return sanitized_artists, sanitized_title
+        return sanitized_title, sanitized_artists
 
     def format_playlist_name(self, metadata: PlaylistInfo):
         owner = metadata.owner or "Spotify"
@@ -573,8 +592,8 @@ class MusicScraper(QThread):
     @staticmethod
     def _normalize_title(s: str | None) -> str:
         """Lowercase, strip diacritics, drop bracketed segments + `feat./ft.`
-        tails, collapse to alphanumerics + spaces. Used on BOTH sides of
-        title comparison.
+        tails, collapse to word characters + spaces (any script). Used on
+        BOTH sides of title comparison.
 
         Critically: this does NOT split on ` - ` because YouTube titles
         commonly use the `Artist - Song` convention; splitting would turn
@@ -595,7 +614,13 @@ class MusicScraper(QThread):
         # Strip apostrophes BEFORE the general punctuation->space step so
         # "I'm" becomes "im" not "i m".
         s = s.replace("'", "").replace("’", "")
-        s = re.sub(r"[^a-z0-9\s]", " ", s)
+        # Keep letters/digits/marks from ANY script so non-Latin titles can
+        # match their uploads (#77). Category M is load-bearing: Indic/Thai
+        # vowel signs are marks with combining class 0, and dropping them
+        # collapses distinct words ("दिल"/"दाल") into one skeleton.
+        s = "".join(
+            ch if (ch.isspace() or unicodedata.category(ch)[0] in "LNM") else " " for ch in s
+        )
         s = re.sub(r"\s+", " ", s).strip()
         return s
 
@@ -750,6 +775,17 @@ class MusicScraper(QThread):
                             for artist in artist_tokens
                         )
                     ]
+                    if not pool and not any(re.search(r"[a-z0-9]", t) for t in artist_tokens):
+                        # Native-script artists commonly appear romanized in
+                        # YouTube titles (Молчат Дома -> "Molchat Doma"), so
+                        # an all-non-Latin token set would reject everything;
+                        # fall back to title-only, the same guarantee used
+                        # when no artist is known.
+                        log.info(
+                            "artist gate skipped: no latin token in %r, falling back to title-only",
+                            expected_artists,
+                        )
+                        pool = title_ok
                     if not pool:
                         log.info(
                             "artist filter rejected all %d title-matches (artists=%r)",
@@ -856,6 +892,14 @@ class MusicScraper(QThread):
             "ignoreerrors": True,
             "postprocessors": [postprocessor],
         }
+        if self.sample_rate != "auto" and fmt in ("mp3", "flac", "wav"):
+            # "extractaudio" is the arg key yt-dlp matches for this PP (the
+            # "ffmpegextractaudio" spelling is silently ignored - verified).
+            # opus is excluded (libopus outputs 48 kHz regardless of -ar) and
+            # so is m4a: yt-dlp stream-copies aac sources into m4a, and
+            # ffmpeg silently drops -ar under copy - a sometimes-works
+            # setting is worse than an honest unsupported one.
+            ydl_opts["postprocessor_args"] = {"extractaudio": ["-ar", self.sample_rate]}
 
         expected_path = base + "." + ext
 
@@ -966,11 +1010,12 @@ class MusicScraper(QThread):
         artists = track.artists
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
+        first, second = self._name_parts(sanitized_title, sanitized_artists)
 
         if self.include_track_number:
-            filename = f"{track_num:02d}. {sanitized_title} - {sanitized_artists}.mp3"
+            filename = f"{track_num:02d}. {first} - {second}.mp3"
         else:
-            filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+            filename = f"{first} - {second}.mp3"
 
         filepath = os.path.join(playlist_folder_path, cap_filename(filename))
 
@@ -982,11 +1027,9 @@ class MusicScraper(QThread):
         with self._filename_lock:
             if filepath in self._in_flight_files:
                 if self.include_track_number:
-                    filename = (
-                        f"{track_num:02d}. {sanitized_title} - {sanitized_artists} [{track.id}].mp3"
-                    )
+                    filename = f"{track_num:02d}. {first} - {second} [{track.id}].mp3"
                 else:
-                    filename = f"{sanitized_title} - {sanitized_artists} [{track.id}].mp3"
+                    filename = f"{first} - {second} [{track.id}].mp3"
 
                 filepath = os.path.join(
                     playlist_folder_path,
@@ -1355,7 +1398,8 @@ class MusicScraper(QThread):
         artists = track.artists
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
-        filename = f"{sanitized_title} - {sanitized_artists}.mp3"
+        first, second = self._name_parts(sanitized_title, sanitized_artists)
+        filename = f"{first} - {second}.mp3"
         filepath = os.path.join(music_folder, cap_filename(filename))
 
         album_name = track.album or ""
@@ -1424,6 +1468,8 @@ class ScraperThread(QThread):
         audio_format: str = "mp3",
         audio_quality: str = "192",
         include_track_number: bool = False,
+        artist_first: bool = False,
+        sample_rate: str = "auto",
         loose_match: bool = False,
     ):
         super().__init__()
@@ -1435,6 +1481,8 @@ class ScraperThread(QThread):
             audio_format=audio_format,
             audio_quality=audio_quality,
             include_track_number=include_track_number,
+            artist_first=artist_first,
+            sample_rate=sample_rate,
             loose_match=loose_match,
         )
 
@@ -1696,13 +1744,32 @@ class SettingsDialog(QDialog):
             self._quality_cb.addItem(f"{q} kbps")
         current_q = self._config.get("quality", "192")
         self._quality_cb.setCurrentText(f"{current_q} kbps")
-        self._on_format_change(self._format_cb.currentText())
 
         self._include_track_number_cb = QCheckBox()
         self._include_track_number_cb.setChecked(self._config.get("include_track_number", False))
 
+        self._artist_first_cb = QCheckBox()
+        self._artist_first_cb.setChecked(self._config.get("artist_first", False))
+
+        # display text <-> stored value; stored value is what ffmpeg -ar gets
+        self._sample_rate_labels = {
+            "auto": "auto (keep source)",
+            "44100": "44.1 kHz",
+            "48000": "48 kHz",
+        }
+        self._sample_rate_cb = QComboBox()
+        for value in SUPPORTED_SAMPLE_RATES:
+            self._sample_rate_cb.addItem(self._sample_rate_labels[value])
+        current_sr = self._config.get("sample_rate", "auto")
+        if current_sr not in SUPPORTED_SAMPLE_RATES:
+            current_sr = "auto"
+        self._sample_rate_cb.setCurrentText(self._sample_rate_labels[current_sr])
+
         self._loose_match_cb = QCheckBox()
         self._loose_match_cb.setChecked(self._config.get("loose_match", False))
+
+        # initial enable/disable sync needs every dependent combo to exist
+        self._on_format_change(self._format_cb.currentText())
 
         # Per-setting QVBoxLayout block: each setting is a self-contained
         # vertical mini-layout owning its own height. QFormLayout was tried
@@ -1738,6 +1805,19 @@ class SettingsDialog(QDialog):
                 self._include_track_number_cb,
                 'Off → "Song - Artist.mp3".   On → "01. Song - Artist.mp3".   '
                 "Files sort in playlist order in your file manager.",
+            ),
+            (
+                "Artist first in filename:",
+                self._artist_first_cb,
+                'Off → "Song - Artist.mp3".   On → "Artist - Song.mp3".   '
+                "Applies to new downloads; files already on disk keep their names.",
+            ),
+            (
+                "Sample rate:",
+                self._sample_rate_cb,
+                "auto keeps the source rate (YouTube audio is 48 kHz). "
+                "44.1 kHz matches CDs and older players. "
+                "Applies to mp3, flac and wav; opus and m4a keep their source rate.",
             ),
             (
                 "Use closest result if no match:",
@@ -1846,15 +1926,21 @@ class SettingsDialog(QDialog):
             self._folder_label.setToolTip(chosen)
 
     def _on_format_change(self, fmt: str) -> None:
-        """Lossless formats (flac/wav) ignore the bitrate selector."""
+        """Lossless formats (flac/wav) ignore the bitrate selector. The
+        sample-rate selector only applies to formats that always transcode
+        (mp3/flac/wav): opus is 48 kHz-only and m4a may stream-copy."""
         is_lossy = SUPPORTED_FORMATS.get(fmt, {}).get("lossy", True)
         self._quality_cb.setEnabled(is_lossy)
+        self._sample_rate_cb.setEnabled(fmt in ("mp3", "flac", "wav"))
 
     def result_config(self) -> dict:
         self._config["download_path"] = self._folder_label.text()
         self._config["format"] = self._format_cb.currentText()
         self._config["quality"] = self._quality_cb.currentText().split()[0]
         self._config["include_track_number"] = self._include_track_number_cb.isChecked()
+        self._config["artist_first"] = self._artist_first_cb.isChecked()
+        label_to_value = {v: k for k, v in self._sample_rate_labels.items()}
+        self._config["sample_rate"] = label_to_value.get(self._sample_rate_cb.currentText(), "auto")
         self._config["loose_match"] = self._loose_match_cb.isChecked()
         return self._config
 
@@ -2267,6 +2353,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     "format": new.get("format", "mp3"),
                     "quality": new.get("quality", "192"),
                     "include_track_number": new.get("include_track_number", False),
+                    "artist_first": new.get("artist_first", False),
+                    "sample_rate": new.get("sample_rate", "auto"),
                     "loose_match": new.get("loose_match", False),
                 }
             )
@@ -2320,6 +2408,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 audio_format=self._config.get("format", "mp3"),
                 audio_quality=self._config.get("quality", "192"),
                 include_track_number=self._config.get("include_track_number", False),
+                artist_first=self._config.get("artist_first", False),
+                sample_rate=self._config.get("sample_rate", "auto"),
                 loose_match=self._config.get("loose_match", False),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
