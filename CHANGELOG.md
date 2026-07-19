@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-07-13
+
 ### Added
+- **filename order is now a setting: "Artist - Song" instead of "Song - Artist" (closes #77).** a checkbox in Settings swaps the two components in every naming path (playlist, single track, and the duplicate-name collision guard), composing with the track-number prefix (`01. Artist - Song.mp3`). both parts still go through the same cross-platform sanitizer documented against the [windows naming rules](https://learn.microsoft.com/windows/win32/fileio/naming-a-file) and [posix pathname rules](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html), so the swap cannot change path safety - verified with an adversarial battery (reserved device names, trailing dots, control chars, emoji, 300-char titles) in both orders.
+- **sample rate is now a setting: auto (source), 44.1 kHz, or 48 kHz (closes #80).** youtube audio is 48 kHz, so flac/wav rips came out 48 kHz with no way to get cd-standard 44.1; the new selector rides yt-dlp's [`postprocessor_args`](https://github.com/yt-dlp/yt-dlp#post-processing-options) into ffmpeg's `-ar`. deliberately scoped to the formats that always transcode (mp3/flac/wav): opus is [48 kHz-only by codec design](https://datatracker.ietf.org/doc/html/rfc6716#section-2), and m4a may stream-copy an aac source (where ffmpeg silently ignores `-ar`), so both grey the selector out instead of sometimes-working.
+- **the macOS Intel binary is back: `Sunnify-macOS-Intel.zip` (closes #79).** intel builds were dropped in 01c241e5 on the mistaken premise that rosetta covers intel macs - rosetta 2 only translates x86_64 to apple silicon, never the reverse, so intel users on macOS 15 (the [last macOS for intel hardware](https://support.apple.com/en-us/120282)) got "not supported on this type of Mac" while the readme still claimed intel support. builds now run natively on github's [`macos-15-intel` runner](https://github.com/actions/runner-images/issues/13045) against [qt 6.11's supported x86_64 target](https://doc.qt.io/qt-6/supported-platforms.html), with the same hash-locked deps, sha-pinned ffmpeg, and slsa l3 attestation as every other binary. the homebrew cask now picks the right architecture automatically. intel builds ride github's final x86_64 image (supported into august 2027), carrying intel macs through the rest of their supported life alongside apple's own timeline.
+- **every macOS build must now boot before it ships.** the release pipeline launches the freshly built app headless on the build runner and fails the release if it dies within 10 seconds - the exact gate that would have caught arm64-only binaries being served to intel users.
 - **a signal death now leaves a forensic line in the log.** historical "the app died right after launch, no session-end, nothing in the log" reports were untraceable: a default-action SIGINT/SIGTERM skips atexit and every hook. the app now logs `terminated by signal <NAME>`, flushes, and re-raises under `SIG_DFL` - identical instant-kill behavior (verified: no hang at any timing from 0.15s to 2.5s after launch), but the next mystery kill names its killer.
+
+### Fixed
+- **non-latin tracks download again: cyrillic, greek, cjk, indic (closes the #77 report "files with cyrillic in the name don't download").** the youtube match normalizer collapsed every non-latin title to an empty string, so even a character-identical youtube upload was rejected and the track skipped. normalization now keeps letters, digits, and combining marks from any script (category-based per [unicode's general categories](https://www.unicode.org/reports/tr44/#General_Category_Values) - marks must survive or distinct indic words collapse into the same consonant skeleton), and a fully non-latin artist no longer arms the artist gate against romanized uploads. latin matching is byte-identical to before - proven by a 100,000-case fuzz against the old implementation and pinned in tests - so the #52 wrong-audio safeguard is untouched.
+
+### Notes
+- verified before shipping: 228 tests green; the exact reported scenario reproduced first (identical cyrillic title rejected by the matcher, live) and re-verified fixed end-to-end with real downloads landing `Группа крови - Кино.mp3` and a 44.1 kHz flac confirmed by ffprobe; an x86_64 build was produced and boot-verified locally under rosetta before the ci intel job was written; the full pipeline (all four binaries) dry-ran green on a throwaway rc tag before this release was cut. binaries built with yt-dlp 2026.6.9 on python 3.13.
 
 ## [2.1.0] - 2026-07-02
 
@@ -307,7 +319,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.15...v2.1.0
 [2.0.15]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.14...v2.0.15
 [2.0.14]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.13...v2.0.14

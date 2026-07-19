@@ -14,7 +14,7 @@ Don't trust a fixed file list - grep for the current version first, because a
 location has been missed before:
 
 ```bash
-grep -rnE "2\.1\.0|2, 1, 0" --include="*.py" --include="*.toml" \
+grep -rnE "2\.1\.1|2, 1, 1" --include="*.py" --include="*.toml" \
   --include="*.spec" --include="*.txt" --include="*.md" .
 ```
 
@@ -63,8 +63,9 @@ gh workflow run release.yml -f tag=vX.Y.Z
 gh run watch
 ```
 
-What the pipeline does, in order: validates the tag shape, builds all three
-platforms via the `release-build.yml` reusable workflow (hash-locked deps,
+What the pipeline does, in order: validates the tag shape, builds all four
+binaries (Windows, Linux, macOS arm64 + Intel) via the `release-build.yml`
+reusable workflow (hash-locked deps,
 SHA-verified FFmpeg, deterministic-build env vars, per-binary SLSA L3
 provenance attestation signed inside the reusable workflow), generates and
 attests the SBOM, blocks on osv-scanner CVEs, builds and attests the source
@@ -80,8 +81,9 @@ git pull   # picks up the cask auto-update commit
 ```
 
 Reply to any issues the release closes (house style: `@user shipped a fix in
-[vX.Y.Z](link)`, "what was happening" / "what changes" headers, honest
-caveat, upgrade nudge).
+[vX.Y.Z](link)`, "what was happening" / "what changes" headers, limitations
+stated truthfully but woven in naturally - never as a labeled "caveat"
+section - and an upgrade nudge).
 
 ## Dry-running the pipeline
 
@@ -112,8 +114,8 @@ pattern the attestation work exists to kill.
   `.github/workflows/release-build.yml`
 - **Dependency pins**: Dependabot opens one grouped PR per ecosystem per
   month (action SHAs, python, npm); merging it is the whole job - the
-  `lock-check.yml` gate proves the hash lock still resolves on all three
-  platforms before it can merge. The `requirements-build.txt` hash lock
+  `lock-check.yml` gate proves the hash lock still resolves on every release
+  platform (including macOS Intel) before it can merge. The `requirements-build.txt` hash lock
   regenerates with:
   `uv pip compile requirements-build.in --universal --generate-hashes -o requirements-build.txt`
 - Everything else (CodeQL, Scorecard, zizmor/actionlint, stale-bot) is
