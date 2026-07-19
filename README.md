@@ -41,9 +41,12 @@ It is a desktop GUI built with Python and PyQt6. Metadata is read from Spotify's
 
 | Platform | Get it | Notes |
 | :--- | :--- | :--- |
-| **macOS** | [`Sunnify-macOS.zip`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) or Homebrew (below) | Apple Silicon + Intel |
+| **macOS (Apple Silicon)** | [`Sunnify-macOS.zip`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) or Homebrew (below) | M-series Macs, macOS 13+ |
+| **macOS (Intel)** | [`Sunnify-macOS-Intel.zip`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) or Homebrew (below) | Intel Macs, macOS 13+ |
 | **Windows** | [`Sunnify-Windows.exe`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Run directly, no install |
 | **Linux** | [`Sunnify-Linux`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | `chmod +x Sunnify-Linux` then run |
+
+Homebrew picks the right architecture automatically. Intel builds ride GitHub's final x86_64 runner image ([`macos-15-intel`](https://github.com/actions/runner-images/issues/13045), supported until August 2027), covering Intel Macs through the rest of their supported life.
 
 FFmpeg is bundled inside every prebuilt app, so there is nothing else to install.
 

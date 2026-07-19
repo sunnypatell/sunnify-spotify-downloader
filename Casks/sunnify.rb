@@ -4,10 +4,14 @@
 #   brew install --cask sunnify
 
 cask "sunnify" do
-  version "2.1.0"
-  sha256 "d0d687a6fa8c63cbc4788fc42f64abc0aab0483bd71cd232a763e290a38198b5"
+  arch arm: "", intel: "-Intel"
 
-  url "https://github.com/sunnypatell/sunnify-spotify-downloader/releases/download/v#{version}/Sunnify-macOS.zip"
+  version "2.1.0"
+  # both shas are recomputed and rewritten by the release workflow
+  sha256 arm:   "d0d687a6fa8c63cbc4788fc42f64abc0aab0483bd71cd232a763e290a38198b5",
+         intel: "d0d687a6fa8c63cbc4788fc42f64abc0aab0483bd71cd232a763e290a38198b5"
+
+  url "https://github.com/sunnypatell/sunnify-spotify-downloader/releases/download/v#{version}/Sunnify-macOS#{arch}.zip"
   name "Sunnify"
   desc "Download Spotify playlists to local MP3s with artwork and tags"
   homepage "https://github.com/sunnypatell/sunnify-spotify-downloader"
@@ -37,7 +41,7 @@ cask "sunnify" do
     requires a paid Apple Developer membership; this is an unfunded student
     project). The install step above already removed macOS quarantine, so
     the app opens normally. Verify the build's provenance any time with:
-      gh attestation verify Sunnify-macOS.zip --repo sunnypatell/sunnify-spotify-downloader
+      gh attestation verify Sunnify-macOS#{arch}.zip --repo sunnypatell/sunnify-spotify-downloader
 
     Educational use only. Ensure compliance with copyright laws.
   EOS

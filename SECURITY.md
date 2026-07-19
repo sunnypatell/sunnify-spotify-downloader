@@ -13,10 +13,10 @@ We currently support the active development branch and the latest 2.x release li
 | Version | Supported |
 | ------: | :-------: |
 | main    | ✅        |
-| 2.1.0   | ✅        |
+| 2.1.1   | ✅        |
+| 2.1.0   | ❌        |
 | 2.0.15  | ❌        |
-| 2.0.14  | ❌        |
-| < 2.0.14 | ❌       |
+| < 2.0.15 | ❌       |
 
 ## Reporting a Vulnerability
 
@@ -46,7 +46,7 @@ from a specific source commit, built by the workflow they can inspect.
 
 | Asset | What it is |
 | :--- | :--- |
-| `Sunnify-Windows.exe` / `Sunnify-Linux` / `Sunnify-macOS.zip` | Platform binaries |
+| `Sunnify-Windows.exe` / `Sunnify-Linux` / `Sunnify-macOS.zip` / `Sunnify-macOS-Intel.zip` | Platform binaries |
 | `<binary>.sigstore.json` | Offline-verifiable sigstore attestation bundle for each binary |
 | `sunnify-sbom.cdx.json` | CycloneDX SBOM describing the delivered artifacts |
 | `sunnify-vX.Y.Z-source.tar.gz` | `git archive` of the source at the release commit |

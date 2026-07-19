@@ -37,7 +37,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        # macos-15-intel proves the lock resolves x86_64 macOS wheels too -
+        # the Intel release build installs from this same lock.
+        os: [ubuntu-latest, windows-latest, macos-14, macos-15-intel]
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

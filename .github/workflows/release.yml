@@ -88,6 +88,15 @@ jobs:
           - platform: macos
             runner: macos-14
             asset: Sunnify-macOS.zip
+          # Intel Macs cannot run arm64 binaries (Rosetta translates one way,
+          # x86_64 -> arm64), so Intel gets its own native build (#79).
+          # macos-15-intel is GitHub's final x86_64 image (retires Aug 2027,
+          # https://github.com/actions/runner-images/issues/13045); Intel
+          # support sunsets with it.
+          - platform: macos
+            runner: macos-15-intel
+            asset: Sunnify-macOS-Intel.zip
+            artifact_name: macos-intel-build
     permissions:
       contents: read
       id-token: write       # forwarded to release-build.yml for sigstore signing
@@ -98,6 +107,7 @@ jobs:
       platform: ${{ matrix.platform }}
       runner: ${{ matrix.runner }}
       asset: ${{ matrix.asset }}
+      artifact_name: ${{ matrix.artifact_name || '' }}
 
   upload-release:
     name: Upload to Release
@@ -132,11 +142,12 @@ jobs:
         run: |
           set -euo pipefail
           fail=0
-          # 1. All three binaries present and >50MB, each with its sigstore
+          # 1. All four binaries present and >50MB, each with its sigstore
           #    bundle staged by release-build.yml.
           for f in artifacts/windows-build/Sunnify-Windows.exe \
                    artifacts/linux-build/Sunnify-Linux \
-                   artifacts/macos-build/Sunnify-macOS.zip; do
+                   artifacts/macos-build/Sunnify-macOS.zip \
+                   artifacts/macos-intel-build/Sunnify-macOS-Intel.zip; do
             if [ ! -f "$f" ]; then
               echo "MISSING: $f"
               fail=1
@@ -158,11 +169,14 @@ jobs:
             || { echo "Windows binary is not PE format"; fail=1; }
           file artifacts/linux-build/Sunnify-Linux | grep -E 'ELF' >/dev/null \
             || { echo "Linux binary is not ELF"; fail=1; }
-          # 3. macOS zip contains the .app and bundled FFmpeg.
-          unzip -l artifacts/macos-build/Sunnify-macOS.zip | grep -q 'Sunnify.app/' \
-            || { echo "macOS zip missing Sunnify.app"; fail=1; }
-          unzip -l artifacts/macos-build/Sunnify-macOS.zip | grep -qiE 'ffmpeg' \
-            || { echo "macOS zip missing FFmpeg"; fail=1; }
+          # 3. Both macOS zips contain the .app and bundled FFmpeg.
+          for mz in artifacts/macos-build/Sunnify-macOS.zip \
+                    artifacts/macos-intel-build/Sunnify-macOS-Intel.zip; do
+            unzip -l "$mz" | grep -q 'Sunnify.app/' \
+              || { echo "$mz missing Sunnify.app"; fail=1; }
+            unzip -l "$mz" | grep -qiE 'ffmpeg' \
+              || { echo "$mz missing FFmpeg"; fail=1; }
+          done
           if [ "$fail" -ne 0 ]; then
             echo "Pre-upload sanity check FAILED"
             exit 1
@@ -216,6 +230,7 @@ jobs:
             ./artifacts/windows-build/Sunnify-Windows.exe
             ./artifacts/linux-build/Sunnify-Linux
             ./artifacts/macos-build/Sunnify-macOS.zip
+            ./artifacts/macos-intel-build/Sunnify-macOS-Intel.zip
           predicate-type: "https://cyclonedx.org/bom/v1.5"
           predicate-path: ./sunnify-sbom.cdx.json
 
@@ -257,6 +272,8 @@ jobs:
               artifacts/linux-build/Sunnify-Linux.sigstore.json \
               artifacts/macos-build/Sunnify-macOS.zip \
               artifacts/macos-build/Sunnify-macOS.zip.sigstore.json \
+              artifacts/macos-intel-build/Sunnify-macOS-Intel.zip \
+              artifacts/macos-intel-build/Sunnify-macOS-Intel.zip.sigstore.json \
               sunnify-sbom.cdx.json \
               "sunnify-${TAG}-source.tar.gz" \
               | sed -E 's|artifacts/[^/]+/||'
@@ -283,6 +300,8 @@ jobs:
               Sunnify-Linux.sigstore.json \
               Sunnify-macOS.zip \
               Sunnify-macOS.zip.sigstore.json \
+              Sunnify-macOS-Intel.zip \
+              Sunnify-macOS-Intel.zip.sigstore.json \
               sunnify-sbom.cdx.json \
               "sunnify-${TAG}-source.tar.gz" \
               checksums.txt; do
@@ -305,6 +324,8 @@ jobs:
             artifacts/linux-build/Sunnify-Linux.sigstore.json
             artifacts/macos-build/Sunnify-macOS.zip
             artifacts/macos-build/Sunnify-macOS.zip.sigstore.json
+            artifacts/macos-intel-build/Sunnify-macOS-Intel.zip
+            artifacts/macos-intel-build/Sunnify-macOS-Intel.zip.sigstore.json
             sunnify-sbom.cdx.json
             sunnify-${{ github.event.inputs.tag }}-source.tar.gz
             checksums.txt
@@ -331,7 +352,8 @@ jobs:
           WIN_URL="$(cat artifacts/windows-build/Sunnify-Windows.exe.attestation-url.txt)"
           LINUX_URL="$(cat artifacts/linux-build/Sunnify-Linux.attestation-url.txt)"
           MAC_URL="$(cat artifacts/macos-build/Sunnify-macOS.zip.attestation-url.txt)"
-          export WIN_URL LINUX_URL MAC_URL
+          MAC_INTEL_URL="$(cat artifacts/macos-intel-build/Sunnify-macOS-Intel.zip.attestation-url.txt)"
+          export WIN_URL LINUX_URL MAC_URL MAC_INTEL_URL
           gh release view "$TAG" --json body --jq '.body' > /tmp/current-body.md
           python3 - <<'PYEOF' > /tmp/new-body.md
           import os, re
@@ -345,6 +367,7 @@ jobs:
               f'- [build provenance: Sunnify-Windows.exe]({os.environ["WIN_URL"]})\n'
               f'- [build provenance: Sunnify-Linux]({os.environ["LINUX_URL"]})\n'
               f'- [build provenance: Sunnify-macOS.zip]({os.environ["MAC_URL"]})\n'
+              f'- [build provenance: Sunnify-macOS-Intel.zip]({os.environ["MAC_INTEL_URL"]})\n'
               f'- [sbom attestation for the binaries]({os.environ["SBOM_URL"]})\n'
               f'- [build provenance for the source tarball]({os.environ["SRC_URL"]})\n\n'
               'the `*.sigstore.json` assets attached above are the same attestations as offline-verifiable bundles. these get auto-refreshed on every release re-build, so the links above always correspond to the binaries currently attached to this release.\n'
@@ -429,36 +452,42 @@ jobs:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch macOS asset + compute SHA256
+      - name: Fetch macOS assets + compute SHA256s
         id: get-sha
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
-          # Poll for the asset to be available. softprops finishes uploading
+          # Poll for the assets to be available. softprops finishes uploading
           # before this job starts, but GitHub's release API is eventually
-          # consistent; first call after upload can 404. ~60s budget.
-          for i in $(seq 1 12); do
-            if gh release download "$TAG" \
-                 --repo "${{ github.repository }}" \
-                 --pattern "Sunnify-macOS.zip" \
-                 --dir /tmp \
-                 --clobber 2>/dev/null; then
-              break
-            fi
-            echo "Attempt $i: asset not yet available, waiting 5s"
-            sleep 5
+          # consistent; first call after upload can 404. ~60s budget each.
+          for pattern in "Sunnify-macOS.zip" "Sunnify-macOS-Intel.zip"; do
+            for i in $(seq 1 12); do
+              if gh release download "$TAG" \
+                   --repo "${{ github.repository }}" \
+                   --pattern "$pattern" \
+                   --dir /tmp \
+                   --clobber 2>/dev/null; then
+                break
+              fi
+              echo "Attempt $i: $pattern not yet available, waiting 5s"
+              sleep 5
+            done
+            test -f "/tmp/$pattern" || { echo "$pattern never appeared after 60s"; exit 1; }
           done
-          test -f /tmp/Sunnify-macOS.zip || { echo "Asset never appeared after 60s"; exit 1; }
-          SHA256=$(sha256sum /tmp/Sunnify-macOS.zip | cut -d' ' -f1)
-          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
-          echo "SHA256: $SHA256"
+          SHA_ARM=$(sha256sum /tmp/Sunnify-macOS.zip | cut -d' ' -f1)
+          SHA_INTEL=$(sha256sum /tmp/Sunnify-macOS-Intel.zip | cut -d' ' -f1)
+          echo "sha_arm=$SHA_ARM" >> "$GITHUB_OUTPUT"
+          echo "sha_intel=$SHA_INTEL" >> "$GITHUB_OUTPUT"
+          echo "arm: $SHA_ARM"
+          echo "intel: $SHA_INTEL"
 
       - name: Update cask file (python, line-anchored regex)
         env:
           TAG: ${{ github.event.inputs.tag }}
-          SHA256: ${{ steps.get-sha.outputs.sha256 }}
+          SHA_ARM: ${{ steps.get-sha.outputs.sha_arm }}
+          SHA_INTEL: ${{ steps.get-sha.outputs.sha_intel }}
         run: |
           # Python instead of sed -i: strict input validation, line-anchored
           # regex (so a commented `# version "x.y.z"` example never gets
@@ -471,11 +500,13 @@ jobs:
           import sys
 
           tag = os.environ["TAG"]
-          sha = os.environ["SHA256"]
+          sha_arm = os.environ["SHA_ARM"]
+          sha_intel = os.environ["SHA_INTEL"]
           version = tag.lstrip("v")
 
-          if not re.fullmatch(r"[a-f0-9]{64}", sha):
-              sys.exit(f"Invalid SHA256: {sha!r}")
+          for name, sha in (("arm", sha_arm), ("intel", sha_intel)):
+              if not re.fullmatch(r"[a-f0-9]{64}", sha):
+                  sys.exit(f"Invalid {name} SHA256: {sha!r}")
           # Mirror the bash semver allowlist above.
           if not re.fullmatch(
               r"\d+\.\d+\.\d+(-[a-zA-Z0-9][a-zA-Z0-9.-]*|\+[a-zA-Z0-9][a-zA-Z0-9.-]*)?",
@@ -499,26 +530,26 @@ jobs:
           if n_version != 1:
               sys.exit("Could not find a top-level `version` line to update")
 
-          # sha256 appears as either "..." (normal) or :no_check (initial template).
-          updated, n_sha_str = re.subn(
-              r'^(\s*)sha256 "[^"]*"',
-              rf'\1sha256 "{sha}"',
+          # Arch-keyed sha256 stanza (v2.1.1+, one line, both archs).
+          updated, n_sha = re.subn(
+              r'^(\s*)sha256 arm:\s*"[^"]*", intel:\s*"[^"]*"',
+              rf'\1sha256 arm:   "{sha_arm}",\n\1       intel: "{sha_intel}"',
               updated,
               count=1,
               flags=re.MULTILINE,
           )
-          updated, n_sha_sym = re.subn(
-              r'^(\s*)sha256 :no_check',
-              rf'\1sha256 "{sha}"',
-              updated,
-              count=1,
-              flags=re.MULTILINE,
-          )
-          if n_sha_str + n_sha_sym != 1:
-              sys.exit(
-                  f"Expected exactly one top-level sha256 line; matched "
-                  f"{n_sha_str} quoted + {n_sha_sym} :no_check"
+          if n_sha != 1:
+              # Second form: the same stanza already split across two lines
+              # (the shape this very script writes).
+              updated, n_sha = re.subn(
+                  r'^(\s*)sha256 arm:\s*"[^"]*",\n\s*intel:\s*"[^"]*"',
+                  rf'\1sha256 arm:   "{sha_arm}",\n\1       intel: "{sha_intel}"',
+                  updated,
+                  count=1,
+                  flags=re.MULTILINE,
               )
+          if n_sha != 1:
+              sys.exit("Could not find the arch-keyed sha256 stanza to update")
 
           if updated == original:
               sys.exit("Cask file unchanged after substitution; aborting")
@@ -527,7 +558,7 @@ jobs:
               f.write(updated)
           PYEOF
           echo "Cask updated:"
-          head -10 Casks/sunnify.rb
+          head -14 Casks/sunnify.rb
 
       - name: Commit and push
         env:

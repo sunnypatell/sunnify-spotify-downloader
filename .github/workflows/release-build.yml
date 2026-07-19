@@ -24,8 +24,9 @@
 # -----------------------------------------------------------------------------
 # Windows + Linux use BtbN/FFmpeg-Builds (released to GitHub). macOS uses
 # evermeet.cx (their stable versioned release). To bump:
-#   1. Pick a fresh BtbN autobuild from
-#      https://github.com/BtbN/FFmpeg-Builds/releases
+#   1. Pick a fresh MONTH-END BtbN autobuild from
+#      https://github.com/BtbN/FFmpeg-Builds/releases (intermediates get
+#      pruned after ~2 weeks; month-end builds are permanent).
 #      Update FFMPEG_BTBN_TAG + FFMPEG_BTBN_BUILD below.
 #   2. Pick the matching stable FFmpeg release from
 #      https://evermeet.cx/ffmpeg/
@@ -50,20 +51,27 @@ on:
         required: true
         type: string
       runner:
-        description: "runs-on label (windows-latest / ubuntu-latest / macos-14)"
+        description: "runs-on label (windows-latest / ubuntu-latest / macos-14 / macos-15-intel)"
         required: true
         type: string
+      artifact_name:
+        description: "Artifact name override; needed when two jobs share a platform (macos arm64 + intel)"
+        required: false
+        type: string
+        default: ""
       asset:
         description: "Final asset filename (e.g. Sunnify-Windows.exe)"
         required: true
         type: string
 
 env:
-  # BtbN (Windows + Linux): pinned autobuild
-  FFMPEG_BTBN_TAG: "autobuild-2026-06-08-14-24"
-  FFMPEG_BTBN_BUILD: "N-124881-g6028720d70"
-  FFMPEG_WIN_SHA256: "2cd538df51b0753547030dc997902606b13378df11db3866c81db7ca07fe7a54"
-  FFMPEG_LINUX_SHA256: "404a23515343c8c568a74ca39270879387d0ec92b9f52a44d416ecf7d9961230"
+  # BtbN (Windows + Linux): pinned autobuild. Pin ONLY month-end builds
+  # (autobuild-YYYY-MM-<last-day>-*): BtbN prunes dated intermediates after
+  # ~2 weeks; month-end builds are retained permanently.
+  FFMPEG_BTBN_TAG: "autobuild-2026-06-30-13-34"
+  FFMPEG_BTBN_BUILD: "N-125365-g9a01c1cb6a"
+  FFMPEG_WIN_SHA256: "52c0383c460f0ec1039088f1591921fb82e3b870b32aab8faf2ff1e5ae14bf9d"
+  FFMPEG_LINUX_SHA256: "85fe3e1754ddf9ad7b9e55b0b6a1bd97dc442ebcafc48c027ae5abaf9257281f"
   # evermeet.cx (macOS): pinned to FFmpeg release 8.1.1
   FFMPEG_MAC_VERSION: "8.1.1"
   FFMPEG_MAC_FFMPEG_SHA256: "4610988e2f54c243c50da73a09e4e2c36d9bb77546f9aa6c84cb328dcb1a98c1"
@@ -286,6 +294,15 @@ jobs:
           }
           codesign --force --deep --sign - dist/Sunnify.app
           codesign --verify --deep --strict --verbose=2 dist/Sunnify.app
+          # Boot smoke: the app must start and hold a Qt event loop on the
+          # arch we're shipping - catches wrong-arch or broken bundles
+          # before they reach users (#79).
+          QT_QPA_PLATFORM=offscreen dist/Sunnify.app/Contents/MacOS/Sunnify &
+          APP_PID=$!
+          sleep 10
+          kill -0 "$APP_PID" || { echo "App exited within 10s on $(uname -m); build is broken"; exit 1; }
+          kill "$APP_PID"
+          echo "Boot smoke passed on $(uname -m)"
           mkdir -p out
           ditto -c -k --keepParent dist/Sunnify.app "out/${ASSET}"
           size=$(stat -f %z "out/${ASSET}")
@@ -319,6 +336,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ inputs.platform }}-build
+          name: ${{ inputs.artifact_name != '' && inputs.artifact_name || format('{0}-build', inputs.platform) }}
           path: out/
           if-no-files-found: error
