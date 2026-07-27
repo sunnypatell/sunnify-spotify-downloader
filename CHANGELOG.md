@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **every binary is now also a headless CLI (#81).** `sunnify download <url>` drives the exact GUI engine - same matcher, naming, tag writer, resume manifest, and `config.json` - with zero drift possible: the CLI constructs the app's own scraper, and a settings registry (single source of truth) generates its flags, so a future app setting reaches the CLI with no CLI changes. commands: `download`, `info`, `status`, `config`, `doctor`; NDJSON progress events and typed error envelopes for scripts and AI agents per the [command line interface guidelines](https://clig.dev/); meaningful exit codes; per-folder pid lock; graceful ctrl+c. full reference in docs/CLI.md.
+- **`sunnify` lands on PATH through every existing channel.** the homebrew cask symlinks it ([`binary` stanza](https://docs.brew.sh/Cask-Cookbook#stanza-binary)); new `scripts/install.sh` (curl | sh) and `scripts/install.ps1` (iwr | iex) install user-scope with zero prompts and zero elevation, verifying the release asset's sha256 against `checksums.txt` before installing; `pipx install git+...` works via the new packaging metadata. all binary installs route through github release assets, so the readme's download badge keeps counting every channel.
+- **releases now smoke-test both personalities.** the pipeline runs `--version` and `config` on every freshly built binary (all four platforms) before it can be attested and shipped - inside the same reusable workflow, so slsa l3 provenance is unchanged.
+
 ## [2.1.1] - 2026-07-13
 
 ### Added

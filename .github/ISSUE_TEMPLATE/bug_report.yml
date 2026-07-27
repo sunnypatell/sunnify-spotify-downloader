@@ -10,7 +10,8 @@ body:
       label: Component
       description: Which part of the repo is affected?
       options:
-        - Desktop (PyQt5 GUI)
+        - Desktop app (GUI)
+        - Desktop CLI (headless)
         - Backend (Flask API)
         - Webclient (Next.js)
         - Core Providers (spotifydown_api.py)
@@ -93,7 +94,8 @@ body:
       description: |
         The single most useful thing for a fast fix. In the desktop app, open
         Settings and click "Open logs folder", then drag `sunnify.log` in here
-        (or a `.zip` of the folder). The folder is also at:
+        (or a `.zip` of the folder). CLI runs write to the same file - `sunnify doctor`
+        prints the folder path. It is also at:
         - Windows: `%LOCALAPPDATA%\Sunnify\logs`
         - macOS: `~/Library/Logs/Sunnify`
         - Linux: `~/.local/state/sunnify/logs`

@@ -9,7 +9,8 @@ body:
     attributes:
       label: Component
       options:
-        - Desktop (PyQt5 GUI)
+        - Desktop app (GUI)
+        - Desktop CLI (headless)
         - Backend (Flask API)
         - Webclient (Next.js)
         - Core Providers (spotifydown_api.py)
