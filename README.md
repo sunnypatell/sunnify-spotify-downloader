@@ -45,6 +45,7 @@ It is a desktop GUI built with Python and PyQt6. Metadata is read from Spotify's
 | **macOS (Intel)** | [`Sunnify-macOS-Intel.zip`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) or Homebrew (below) | Intel Macs, macOS 13+ |
 | **Windows** | [`Sunnify-Windows.exe`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Run directly, no install |
 | **Linux** | [`Sunnify-Linux`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | `chmod +x Sunnify-Linux` then run |
+| **CLI (all platforms)** | Ships inside every binary above ([CLI reference](docs/CLI.md)) | [One-liners below](#command-line-headless) put `sunnify` on your PATH |
 
 Homebrew picks the right architecture automatically. Intel builds ride GitHub's final x86_64 runner image ([`macos-15-intel`](https://github.com/actions/runner-images/issues/13045), supported until August 2027), covering Intel Macs through the rest of their supported life.
 
@@ -69,7 +70,7 @@ sunnify info "<url>" --json                                # metadata only
 sunnify doctor                                             # self-check
 ```
 
-One-line installs that put `sunnify` on your PATH (no admin rights, checksum-verified):
+Alternative one-step installs: these fetch the latest release and put `sunnify` on your PATH (no admin rights, checksum-verified). Already downloaded the app? Same binary; these just add the command name.
 
 ```bash
 # macOS / Linux

@@ -55,14 +55,14 @@ from a specific source commit, built by the workflow they can inspect.
 
 ### Four independent verification paths
 
-**1. Plain checksums** — no extra tooling. Download `checksums.txt` and the
+**1. Plain checksums.** No extra tooling. Download `checksums.txt` and the
    asset you care about, then:
 
    ```bash
    sha256sum -c checksums.txt --ignore-missing
    ```
 
-**2. SLSA Build L3 provenance** — proves the binary came from a specific
+**2. SLSA Build L3 provenance.** Proves the binary came from a specific
    commit in this repo, built by the dedicated
    [`release-build.yml`](.github/workflows/release-build.yml) reusable
    workflow in an isolated runner. The reusable-workflow split is what makes
@@ -81,13 +81,13 @@ from a specific source commit, built by the workflow they can inspect.
    (`--signer-workflow` is optional but pins the trusted builder; without it
    you still verify repo + source commit.)
 
-**3. SBOM attestation** — proves the SBOM published alongside the release
+**3. SBOM attestation.** Proves the SBOM published alongside the release
    was produced from those exact binaries (binary digest -> SBOM digest
    binding), signed by the same Sigstore chain. Same command, same repo;
    `gh attestation verify` accepts the binary and finds both predicate
    types automatically.
 
-**4. Offline bundle** — every binary ships with its `<name>.sigstore.json`
+**4. Offline bundle.** Every binary ships with its `<name>.sigstore.json`
    attestation bundle as a release asset, so verification works without
    GitHub's attestation API in the loop:
 
