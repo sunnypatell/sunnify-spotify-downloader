@@ -79,6 +79,7 @@ a = Analysis(
         ('Template.py', '.'),
     ] + ffmpeg_datas,
     hiddenimports=[
+        'sunnify_cli',
         'PyQt6',
         'PyQt6.QtCore',
         'PyQt6.QtGui',

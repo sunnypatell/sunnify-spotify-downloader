@@ -189,6 +189,94 @@ SUPPORTED_QUALITIES = ("128", "192", "256", "320")
 # "auto" keeps whatever rate the source stream has (YouTube audio is 48 kHz).
 SUPPORTED_SAMPLE_RATES = ("auto", "44100", "48000")
 
+
+class _Setting:
+    """One user setting: config key, validation, scraper wiring, CLI surface."""
+
+    __slots__ = ("key", "default", "kind", "choices", "scraper_kwarg", "cli_flag", "help")
+
+    def __init__(self, key, default, kind, choices=(), scraper_kwarg=None, cli_flag=None, help=""):
+        self.key = key
+        self.default = default
+        self.kind = kind  # "choice" | "bool" | "path"
+        self.choices = choices
+        self.scraper_kwarg = scraper_kwarg
+        self.cli_flag = cli_flag
+        self.help = help
+
+    def coerce(self, value):
+        """Validated value or the default - never raises on user data."""
+        if self.kind == "bool":
+            return value if isinstance(value, bool) else self.default
+        if self.kind == "choice":
+            return value if value in self.choices else self.default
+        return value if isinstance(value, str) or value is None else self.default
+
+
+# Single source of truth for user settings. Config load/validation, scraper
+# construction, and every CLI flag derive from this - a new setting added
+# here reaches the CLI with zero CLI changes (the dialog row stays bespoke).
+SETTINGS = (
+    _Setting("download_path", None, "path", help="where downloads land"),
+    _Setting(
+        "format",
+        "mp3",
+        "choice",
+        tuple(SUPPORTED_FORMATS),
+        scraper_kwarg="audio_format",
+        cli_flag="--format",
+        help="audio format",
+    ),
+    _Setting(
+        "quality",
+        "192",
+        "choice",
+        SUPPORTED_QUALITIES,
+        scraper_kwarg="audio_quality",
+        cli_flag="--quality",
+        help="bitrate in kbps, lossy formats only",
+    ),
+    _Setting(
+        "sample_rate",
+        "auto",
+        "choice",
+        SUPPORTED_SAMPLE_RATES,
+        scraper_kwarg="sample_rate",
+        cli_flag="--sample-rate",
+        help="output sample rate, applies to mp3/flac/wav",
+    ),
+    _Setting(
+        "include_track_number",
+        False,
+        "bool",
+        scraper_kwarg="include_track_number",
+        cli_flag="--track-numbers",
+        help="prefix filenames with playlist position",
+    ),
+    _Setting(
+        "artist_first",
+        False,
+        "bool",
+        scraper_kwarg="artist_first",
+        cli_flag="--artist-first",
+        help='name files "Artist - Song" instead of "Song - Artist"',
+    ),
+    _Setting(
+        "loose_match",
+        False,
+        "bool",
+        scraper_kwarg="loose_match",
+        cli_flag="--loose-match",
+        help="fall back to the closest result when strict matching finds nothing",
+    ),
+)
+
+
+def scraper_kwargs_from(settings: dict) -> dict:
+    """Registry-derived MusicScraper kwargs from a config/settings dict."""
+    return {s.scraper_kwarg: settings.get(s.key, s.default) for s in SETTINGS if s.scraper_kwarg}
+
+
 # Resume manifest: JSON-lines file per playlist folder recording landed tracks,
 # so a rate-limited playlist finishes across sessions instead of restarting (#40).
 MANIFEST_FILENAME = ".sunnify-manifest.jsonl"
@@ -294,40 +382,25 @@ def _config_path() -> str:
 
 
 def load_config() -> dict:
-    """Load persisted user config. Missing or corrupt file returns defaults."""
+    """Load persisted user config. Missing or corrupt file returns defaults.
+
+    Every user setting is validated through the SETTINGS registry;
+    star_prompt_shown is internal state, not a setting."""
     import json
 
-    defaults = {
-        "version": 1,
-        "download_path": None,
-        "format": "mp3",
-        "quality": "192",
-        "include_track_number": False,
-        "artist_first": False,
-        "sample_rate": "auto",
-        "loose_match": False,
-        "star_prompt_shown": False,
-    }
+    defaults = {s.key: s.default for s in SETTINGS}
+    defaults["version"] = 1
+    defaults["star_prompt_shown"] = False
     try:
         with open(_config_path(), encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             return defaults
-        defaults.update({k: v for k, v in data.items() if k in defaults})
-        if defaults["format"] not in SUPPORTED_FORMATS:
-            defaults["format"] = "mp3"
-        if defaults["quality"] not in SUPPORTED_QUALITIES:
-            defaults["quality"] = "192"
-        if not isinstance(defaults["include_track_number"], bool):
-            defaults["include_track_number"] = False
-        if not isinstance(defaults["artist_first"], bool):
-            defaults["artist_first"] = False
-        if defaults["sample_rate"] not in SUPPORTED_SAMPLE_RATES:
-            defaults["sample_rate"] = "auto"
-        if not isinstance(defaults["loose_match"], bool):
-            defaults["loose_match"] = False
-        if not isinstance(defaults["star_prompt_shown"], bool):
-            defaults["star_prompt_shown"] = False
+        for s in SETTINGS:
+            if s.key in data:
+                defaults[s.key] = s.coerce(data[s.key])
+        if isinstance(data.get("star_prompt_shown"), bool):
+            defaults["star_prompt_shown"] = data["star_prompt_shown"]
         return defaults
     except (OSError, json.JSONDecodeError):
         return defaults
@@ -1401,27 +1474,14 @@ class ScraperThread(QThread):
         spotify_link,
         music_folder=None,
         cancel_event: threading.Event | None = None,
-        *,
-        audio_format: str = "mp3",
-        audio_quality: str = "192",
-        include_track_number: bool = False,
-        artist_first: bool = False,
-        sample_rate: str = "auto",
-        loose_match: bool = False,
+        **scraper_opts,
     ):
         super().__init__()
         self.spotify_link = spotify_link
         self.music_folder = music_folder or os.path.join(os.getcwd(), "music")
         self._cancel_event = cancel_event or threading.Event()
-        self.scraper = MusicScraper(
-            cancel_event=self._cancel_event,
-            audio_format=audio_format,
-            audio_quality=audio_quality,
-            include_track_number=include_track_number,
-            artist_first=artist_first,
-            sample_rate=sample_rate,
-            loose_match=loose_match,
-        )
+        # MusicScraper's explicit signature validates the option names
+        self.scraper = MusicScraper(cancel_event=self._cancel_event, **scraper_opts)
 
     def request_cancel(self):
         """Request cancellation of the download."""
@@ -2276,17 +2336,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if new.get("download_path"):
                 self.download_path = new["download_path"]
                 self._download_path_set = True
-            self._config.update(
-                {
-                    "download_path": self.download_path,
-                    "format": new.get("format", "mp3"),
-                    "quality": new.get("quality", "192"),
-                    "include_track_number": new.get("include_track_number", False),
-                    "artist_first": new.get("artist_first", False),
-                    "sample_rate": new.get("sample_rate", "auto"),
-                    "loose_match": new.get("loose_match", False),
-                }
-            )
+            self._config.update({s.key: s.coerce(new.get(s.key, s.default)) for s in SETTINGS})
+            self._config["download_path"] = self.download_path
             save_config(self._config)
             self.statusMsg.setText("Settings saved")
 
@@ -2334,12 +2385,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 spotify_url,
                 self.download_path,
                 cancel_event=self._cancel_event,
-                audio_format=self._config.get("format", "mp3"),
-                audio_quality=self._config.get("quality", "192"),
-                include_track_number=self._config.get("include_track_number", False),
-                artist_first=self._config.get("artist_first", False),
-                sample_rate=self._config.get("sample_rate", "auto"),
-                loose_match=self._config.get("loose_match", False),
+                **scraper_kwargs_from(self._config),
             )
             self.scraper_thread.progress_update.connect(self.update_progress)
             self.scraper_thread.finished.connect(self.thread_finished)
@@ -2506,6 +2552,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 # Main
 if __name__ == "__main__":
+    # Headless CLI dispatch (before any Qt/logging setup): a known first arg
+    # routes to sunnify_cli; anything else - including a bare double-click -
+    # is the GUI, byte-identical to before. The alias makes the frozen
+    # binary's __main__ and `import Spotify_Downloader` the same module.
+    if len(sys.argv) > 1 and sys.argv[1] in (
+        "download",
+        "info",
+        "status",
+        "config",
+        "doctor",
+        "--version",
+        "-V",
+        "--help",
+        "-h",
+    ):
+        sys.modules.setdefault("Spotify_Downloader", sys.modules[__name__])
+        import sunnify_cli
+
+        sys.exit(sunnify_cli.main(sys.argv[1:]))
+
     # Logging must never stop the app from launching (e.g. a locked-down or
     # read-only log dir). Failure here just means no log file this session.
     with contextlib.suppress(Exception):
