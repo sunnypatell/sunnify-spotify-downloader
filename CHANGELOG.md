@@ -7,10 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-27
+
 ### Added
 - **every binary is now also a headless CLI (#81).** `sunnify download <url>` drives the exact GUI engine - same matcher, naming, tag writer, resume manifest, and `config.json` - with zero drift possible: the CLI constructs the app's own scraper, and a settings registry (single source of truth) generates its flags, so a future app setting reaches the CLI with no CLI changes. commands: `download`, `info`, `status`, `config`, `doctor`; NDJSON progress events and typed error envelopes for scripts and AI agents per the [command line interface guidelines](https://clig.dev/); meaningful exit codes; per-folder pid lock; graceful ctrl+c. full reference in docs/CLI.md.
 - **`sunnify` lands on PATH through every existing channel.** the homebrew cask symlinks it ([`binary` stanza](https://docs.brew.sh/Cask-Cookbook#stanza-binary)); new `scripts/install.sh` (curl | sh) and `scripts/install.ps1` (iwr | iex) install user-scope with zero prompts and zero elevation, verifying the release asset's sha256 against `checksums.txt` before installing; `pipx install git+...` works via the new packaging metadata. all binary installs route through github release assets, so the readme's download badge keeps counting every channel.
 - **releases now smoke-test both personalities.** the pipeline runs `--version` and `config` on every freshly built binary (all four platforms) before it can be attested and shipped - inside the same reusable workflow, so slsa l3 provenance is unchanged.
+- **cli runs leave the same forensic trail as the app.** shared rotating session log, `cli invoked` + exit-code markers around every run, and the same signal forensics: a SIGTERM'd cli run logs `terminated by signal <NAME> (cli)` before dying with default semantics - verified by killing a mid-flight download.
+
+### Changed
+- **yt-dlp 2026.6.9 -> 2026.7.4 in shipped binaries.** youtube extraction moves fast; verified live (matcher search + full cli download) before locking.
+
+### Notes
+- verified before shipping: 249 tests green (21 new cli tests incl. registry-parity guards); real downloads through both the source tree and the ci-built frozen binary (human + `--json` modes, resume, flac, `status`, `doctor`); the gui's no-argument launch proven byte-identical offscreen; installers shellcheck-clean and prompt-free by design; a full pipeline dry-run built all four binaries green with the new cli smoke before this release was cut. binaries built with yt-dlp 2026.7.4 on python 3.13.
 
 ## [2.1.1] - 2026-07-13
 
@@ -324,7 +333,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.15...v2.1.0
 [2.0.15]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.14...v2.0.15
