@@ -17,6 +17,9 @@ cask "sunnify" do
   homepage "https://github.com/sunnypatell/sunnify-spotify-downloader"
 
   app "Sunnify.app"
+  # headless CLI: the app binary dispatches on argv, so one symlink gives
+  # `sunnify download/info/status/config/doctor` on PATH
+  binary "#{appdir}/Sunnify.app/Contents/MacOS/Sunnify", target: "sunnify"
 
   # App is ad-hoc signed (no paid Apple cert); brew already SHA256-verified
   # the archive, so strip quarantine to make first launch just work.
@@ -36,6 +39,8 @@ cask "sunnify" do
 
   caveats <<~EOS
     FFmpeg is bundled with the app - no separate installation needed.
+
+    Headless CLI: `sunnify --help` (same engine and settings as the app).
 
     Transparency note: Sunnify is ad-hoc signed, not notarized (notarization
     requires a paid Apple Developer membership; this is an unfunded student
