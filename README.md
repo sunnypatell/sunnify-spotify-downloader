@@ -61,7 +61,7 @@ The cask verifies the download's checksum and clears macOS quarantine for you, s
 
 ### Command line (headless)
 
-Every Sunnify binary doubles as a headless CLI — same engine, same settings, no window:
+Every Sunnify binary doubles as a headless CLI: same engine, same settings, no window.
 
 ```bash
 sunnify download "https://open.spotify.com/playlist/..."   # or album/track
@@ -81,7 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/sunnypatell/sunnify-spotify-downloa
 iwr -useb https://raw.githubusercontent.com/sunnypatell/sunnify-spotify-downloader/main/scripts/install.ps1 | iex
 ```
 
-Full reference — commands, flags, NDJSON output for scripts and AI agents, exit codes — in [docs/CLI.md](docs/CLI.md).
+Full reference (commands, flags, NDJSON output for scripts and AI agents, exit codes) in [docs/CLI.md](docs/CLI.md).
 
 <details>
 <summary><strong>macOS: opening the app from a direct download</strong></summary>
@@ -110,7 +110,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 - **Unicode-safe filenames.** Accented, CJK, and Cyrillic titles are preserved; only characters your filesystem actually rejects are stripped.
 - **Accurate audio matching.** Sunnify matches on title, artist, and duration rather than grabbing the first search hit, so you get the real recording, not a remix or a sped-up edit.
 - **Bundled FFmpeg, no account.** Everything needed ships inside the app, and nothing asks you to log in.
-- **Headless CLI built in.** `sunnify download <url>` scripts every feature of the app — machine-readable output, meaningful exit codes, resume, and a `doctor` self-check. Made for terminals, cron jobs, and AI agents. See [docs/CLI.md](docs/CLI.md).
+- **Headless CLI built in.** `sunnify download <url>` scripts every feature of the app: machine-readable output, meaningful exit codes, resume, and a `doctor` self-check. Made for terminals, cron jobs, and AI agents. See [docs/CLI.md](docs/CLI.md).
 
 <div align="center">
 <img src="./readmeAssets/demonstration%202.jpg" alt="Sunnify settings showing audio format and quality options" width="680" />
