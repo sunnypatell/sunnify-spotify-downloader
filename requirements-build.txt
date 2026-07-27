@@ -248,7 +248,7 @@ urllib3==2.7.0 \
     # via
     #   -r req.txt
     #   requests
-yt-dlp==2026.6.9 \
-    --hash=sha256:442ba4c75724b9496144c8434b617962ee08d0ee7c26ec663848fe9b78d5a3e4 \
-    --hash=sha256:d50fcb95f48d61bedde33e408c1881d4c279e51c31354a599ce09e96ba0f4b86
+yt-dlp==2026.7.4 \
+    --hash=sha256:b094813404f87a9dd2186f00815231df32e5fd8a5403be0f807b3bb2d21a4432 \
+    --hash=sha256:f11f2b11d5a8ac4059f9bdf29fa4407dc7c6bb00c5097e95ca22a7a9db518266
     # via -r req.txt
