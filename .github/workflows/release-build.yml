@@ -240,6 +240,29 @@ jobs:
           export SOURCE_DATE_EPOCH
           pyinstaller Sunnify.spec
 
+      - name: CLI smoke (all platforms)
+        shell: bash
+        # the binary is also the headless CLI; a release must prove both
+        # personalities: --version (dispatch + module wiring) and config
+        # (settings registry + config io), no network involved
+        env:
+          EXPECTED_VERSION: ${{ inputs.tag }}
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            windows) BIN="dist/Sunnify.exe" ;;
+            linux)   BIN="dist/Sunnify" ;;
+            macos)   BIN="dist/Sunnify.app/Contents/MacOS/Sunnify" ;;
+          esac
+          OUT="$("$BIN" --version)"
+          echo "version output: $OUT"
+          STRIPPED="${EXPECTED_VERSION#v}"
+          STRIPPED="${STRIPPED%%-*}"
+          [[ "$OUT" == "sunnify ${STRIPPED}" ]] || { echo "version mismatch (want sunnify ${STRIPPED})"; exit 1; }
+          "$BIN" config >/dev/null
+          echo "CLI smoke passed"
+
       - name: Package + sanity-check (Windows)
         if: inputs.platform == 'windows'
         shell: bash
