@@ -70,7 +70,7 @@ sunnify info "<url>" --json                                # metadata only
 sunnify doctor                                             # self-check
 ```
 
-Alternative one-step installs: these fetch the latest release and put `sunnify` on your PATH (no admin rights, checksum-verified). Already downloaded the app? Same binary; these just add the command name.
+Each one-liner below is a complete install: it fetches the latest release (the app and CLI are one binary) and puts the `sunnify` command on your PATH. No admin rights, checksum-verified, and identical to the commands in the [CLI reference](docs/CLI.md), so run them from either page. Already downloaded the app? You already have the CLI; the one-liner just adds the `sunnify` command name to your terminal.
 
 ```bash
 # macOS / Linux
