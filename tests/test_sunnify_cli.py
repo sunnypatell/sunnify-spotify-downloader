@@ -230,3 +230,28 @@ class TestBinaryDispatch:
     def test_unknown_command_is_usage_error(self):
         result = self._run("download")  # missing url
         assert result.returncode == cli.EXIT_USAGE
+
+    def test_typoed_command_suggests_instead_of_launching_gui(self):
+        result = self._run("downlaod", "some-url")
+        assert result.returncode == cli.EXIT_USAGE
+        assert "did you mean 'download'" in result.stderr
+
+    def test_typoed_command_is_case_insensitive(self):
+        result = self._run("Download", "some-url")
+        assert result.returncode == cli.EXIT_USAGE
+        assert "did you mean 'download'" in result.stderr
+
+    def test_unknown_word_is_rejected_not_swallowed(self):
+        result = self._run("upgrade")
+        assert result.returncode == cli.EXIT_USAGE
+        assert "unknown command 'upgrade'" in result.stderr
+
+    def test_help_command_alias(self):
+        result = self._run("help")
+        assert result.returncode == 0
+        assert "usage: sunnify" in result.stdout
+
+    def test_help_command_with_topic(self):
+        result = self._run("help", "download")
+        assert result.returncode == 0
+        assert "usage: sunnify download" in result.stdout

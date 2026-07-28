@@ -521,6 +521,25 @@ def cmd_doctor(args) -> int:
     except Exception as exc:
         checks.append({"check": "yt_dlp", "ok": False, "detail": str(exc)})
 
+    # ok stays True either way: being behind is a nudge, not an unhealthy env
+    try:
+        r = app.requests.get(
+            app._LATEST_RELEASE_API, timeout=5, headers={"Accept": "application/vnd.github+json"}
+        )
+        tag = (r.json().get("tag_name") or "").lstrip("vV") if r.status_code == 200 else ""
+        if tag and app._is_newer_version(tag, app.__version__):
+            detail = f"{app.__version__} installed, {tag} available: {app._RELEASES_PAGE}"
+        elif tag:
+            detail = f"{app.__version__} is the latest release"
+        elif r.status_code in (403, 429):
+            # unauthenticated github rest is 60 req/hour/ip; never worth failing over
+            detail = f"{app.__version__} (release check rate-limited by github, try later)"
+        else:
+            detail = f"{app.__version__} (release check got http {r.status_code})"
+    except Exception as exc:
+        detail = f"{app.__version__} (release check unreachable: {exc})"
+    checks.append({"check": "version", "ok": True, "detail": detail})
+
     all_ok = all(c["ok"] for c in checks)
     if args.json:
         print(json.dumps({"ok": all_ok, "checks": checks}, ensure_ascii=False, indent=2))
@@ -548,7 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  sunnify status                            # what's landed in the download folder\n"
             "  sunnify config --set format=m4a           # persist a setting (shared with the GUI)\n"
             "  sunnify doctor                            # self-check when downloads misbehave\n"
-            "\nfull reference: docs/CLI.md"
+            "\nfull reference: https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/docs/CLI.md"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -667,6 +686,11 @@ def main(argv: list[str] | None = None) -> int:
         app.log.info("cli invoked: %s", " ".join(argv or sys.argv[1:]))
     with contextlib.suppress(Exception):
         signal.signal(signal.SIGTERM, _forensic_sigterm)
+    if argv is None:
+        argv = sys.argv[1:]
+    # git-style `help [command]` alias
+    if argv[:1] == ["help"]:
+        argv = [argv[1], "--help"] if len(argv) > 1 else ["--help"]
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

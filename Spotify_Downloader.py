@@ -2556,21 +2556,25 @@ if __name__ == "__main__":
     # routes to sunnify_cli; anything else - including a bare double-click -
     # is the GUI, byte-identical to before. The alias makes the frozen
     # binary's __main__ and `import Spotify_Downloader` the same module.
-    if len(sys.argv) > 1 and sys.argv[1] in (
-        "download",
-        "info",
-        "status",
-        "config",
-        "doctor",
-        "--version",
-        "-V",
-        "--help",
-        "-h",
-    ):
+    _cli_commands = ("download", "info", "status", "config", "doctor", "help")
+    _arg1 = sys.argv[1] if len(sys.argv) > 1 else ""
+    if _arg1 in _cli_commands or _arg1 in ("--version", "-V", "--help", "-h"):
         sys.modules.setdefault("Spotify_Downloader", sys.modules[__name__])
         import sunnify_cli
 
         sys.exit(sunnify_cli.main(sys.argv[1:]))
+    if _arg1.isascii() and _arg1.isalpha():
+        # a bare word is a command attempt, not launcher argv (macOS -psn_*,
+        # file paths all carry non-letters); don't swallow it into a GUI launch
+        import difflib
+
+        close = difflib.get_close_matches(_arg1.lower(), _cli_commands, n=1)
+        hint = f" (did you mean '{close[0]}'?)" if close else ""
+        print(
+            f"sunnify: unknown command '{_arg1}'{hint}\nrun 'sunnify --help' for usage",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     # Logging must never stop the app from launching (e.g. a locked-down or
     # read-only log dir). Failure here just means no log file this session.
