@@ -1,6 +1,6 @@
 # Sunnify Backend
 
-Lightweight Flask API that fetches Spotify playlist and track **metadata** (no audio). Powers the [web client](../sunnify-webclient); for actual MP3 downloads, use the desktop app.
+Lightweight Flask API that fetches Spotify playlist and track **metadata** (no audio). Powers the [web client](../sunnify-webclient); for actual MP3 downloads, use the desktop app or its bundled CLI.
 
 Optimized for free-tier hosting (512MB RAM, 0.1 CPU): a single reusable client, aggressive GC, metadata-only responses.
 

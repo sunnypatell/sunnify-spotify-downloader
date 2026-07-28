@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in the desktop app, backend API, webclient, or core providers
+description: Report a reproducible problem in the desktop app or CLI, backend API, webclient, or core providers
 title: "bug: <short summary>"
 labels:
   - type: bug

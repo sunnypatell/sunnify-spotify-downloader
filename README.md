@@ -5,7 +5,7 @@
 <h1>Sunnify &middot; Spotify Playlist Downloader</h1>
 
 <p><strong>Download Spotify playlists, albums, and tracks to local MP3s with embedded artwork and tags.</strong><br/>
-Free, open source, cross-platform desktop app. No account, no subscription, no command line.</p>
+Free, open source, cross-platform. Point-and-click desktop app with a built-in headless CLI. No account, no subscription.</p>
 
 <a href="https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/sunnypatell/sunnify-spotify-downloader?style=flat-square&logo=github&label=download&color=8B2BE6&labelColor=0d1117"></a>
 <a href="https://github.com/sunnypatell/sunnify-spotify-downloader/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/sunnypatell/sunnify-spotify-downloader/total?style=flat-square&label=downloads&color=1ED760&labelColor=0d1117"></a>
@@ -27,9 +27,9 @@ Free, open source, cross-platform desktop app. No account, no subscription, no c
 
 ## What is Sunnify?
 
-**Sunnify is a free, open-source Spotify playlist downloader for macOS, Windows, and Linux.** Paste any Spotify playlist, album, or track link and Sunnify saves it as local audio files (MP3, M4A, FLAC, Opus, or WAV) with the cover art, title, artist, album, year, and track number written straight into the file's tags. No Spotify account, no API keys, no command line, no separate FFmpeg install.
+**Sunnify is a free, open-source Spotify playlist downloader for macOS, Windows, and Linux.** Paste any Spotify playlist, album, or track link and Sunnify saves it as local audio files (MP3, M4A, FLAC, Opus, or WAV) with the cover art, title, artist, album, year, and track number written straight into the file's tags. No Spotify account, no API keys, no separate FFmpeg install, and nothing that requires a terminal unless you want one.
 
-It is a desktop GUI built with Python and PyQt6. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine.
+It is a desktop GUI built with Python and PyQt6, and every binary doubles as a headless [CLI](docs/CLI.md) for scripts, servers, and AI agents. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine.
 
 <div align="center">
 <img src="./readmeAssets/demonstration%201.jpg" alt="Sunnify desktop app downloading a Spotify playlist to local MP3s" width="760" />
@@ -179,7 +179,7 @@ Sunnify reads track metadata from Spotify's public embed pages (no authenticatio
 
 > **Sunnify was built solely as an educational demonstration of software engineering.** It exists to showcase technical skills for academic and portfolio purposes. The developer does not condone, encourage, or support copyright infringement or piracy.
 
-It demonstrates desktop application development with Python and PyQt6, public-API integration and reverse engineering, multi-threaded architecture, and a hardened CI/CD release pipeline. It is provided free of charge as an open-source educational resource, not for commercial use.
+It demonstrates desktop application and headless CLI development with Python and PyQt6, public-API integration and reverse engineering, multi-threaded architecture, and a hardened CI/CD release pipeline. It is provided free of charge as an open-source educational resource, not for commercial use.
 
 ### Terms of use
 

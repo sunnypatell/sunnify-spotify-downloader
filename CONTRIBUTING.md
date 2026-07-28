@@ -12,7 +12,7 @@ Thanks for considering a contribution. Whether it's a bug report, feature idea, 
 
 - **Python**: 3.10+ with pip
 - **Node.js**: 20+ with npm
-- **FFmpeg**: Required for desktop app audio processing
+- **FFmpeg**: Required for audio processing (GUI and CLI)
 - **yt-dlp**: Required for YouTube fallback downloads
 
 ---
@@ -28,12 +28,13 @@ cd sunnify-spotify-downloader
 git remote add upstream https://github.com/sunnypatell/sunnify-spotify-downloader.git
 ```
 
-### Desktop App (Python)
+### Desktop App & CLI (Python)
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r req.txt
 pip install pre-commit && pre-commit install  # install git hooks
-python Spotify_Downloader.py
+python Spotify_Downloader.py           # GUI
+python Spotify_Downloader.py doctor    # headless CLI, same module
 ```
 
 ### Backend (Flask)

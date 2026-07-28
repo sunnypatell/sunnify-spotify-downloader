@@ -18,7 +18,7 @@ body:
       label: Topic
       description: What is your question about?
       options:
-        - Desktop app setup/usage
+        - Desktop app / CLI setup/usage
         - Backend API setup/usage
         - Webclient setup/usage
         - Provider strategy (Spotify Embed API, yt-dlp)

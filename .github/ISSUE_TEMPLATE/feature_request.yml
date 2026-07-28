@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an enhancement for the desktop app, backend API, webclient, or docs
+description: Suggest an enhancement for the desktop app or CLI, backend API, webclient, or docs
 title: "feat: <short summary>"
 labels:
   - type: feature

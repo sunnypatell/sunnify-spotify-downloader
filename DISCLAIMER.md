@@ -11,6 +11,7 @@
 This software was created to demonstrate technical competencies in:
 
 - Python desktop application development (PyQt6)
+- Headless CLI design for scripting and automation
 - Web API design and implementation (Flask, REST)
 - Modern frontend development (Next.js, React, TypeScript)
 - Audio processing pipelines (FFmpeg, yt-dlp)
