@@ -32,6 +32,15 @@ Install notes, by design:
   [SLSA build provenance](../SECURITY.md#release-integrity).
 - **Re-running updates in place.** Both scripts are idempotent.
 
+## Updating
+
+The GUI shows a banner when a newer release exists. Headless runs never
+phone home, so the CLI reports it only when asked: `sunnify doctor` includes
+a `version` check with the release page URL when you are behind. To update,
+run `brew upgrade --cask sunnify` if Homebrew owns the install, or re-run
+the install one-liner above; both are prompt-free, so agents can run them
+too.
+
 ## Commands
 
 | Command | What it does |
@@ -40,8 +49,11 @@ Install notes, by design:
 | `sunnify info <url>` | Fetch metadata only (no downloads, no FFmpeg needed) |
 | `sunnify status [folder]` | Audio files present, manifest state, active download pid |
 | `sunnify config [--set k=v]` | Show or persist settings (the same `config.json` the GUI uses) |
-| `sunnify doctor` | Self-check: FFmpeg, config, Spotify reachability, yt-dlp |
-| `sunnify --version` / `--help` | You know these |
+| `sunnify doctor` | Self-check: FFmpeg, config, Spotify reachability, yt-dlp, and whether a newer release exists |
+| `sunnify --version` / `--help` | You know these (`sunnify help [command]` works too) |
+
+A mistyped command errors with a suggestion (`did you mean 'download'?`)
+instead of launching the app.
 
 ### download
 
