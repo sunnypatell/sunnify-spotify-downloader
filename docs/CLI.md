@@ -130,7 +130,7 @@ This CLI is designed to be driven autonomously (per the
 
 | Thing | Location |
 | :--- | :--- |
-| Settings | The GUI's `config.json` (see `sunnify config`) |
+| Settings | One shared `config.json`: `sunnify config --set` and the GUI's settings panel read and write the same file, so a choice made in either face applies to both. Flags override it per run. |
 | Logs | Same rotating session log as the app (`sunnify doctor` shows the dir; "Open logs folder" in the GUI) |
 | Resume manifest | `.sunnify-manifest.jsonl` inside each playlist folder |
 | Run lock | `.sunnify-cli.lock` inside the destination folder |
