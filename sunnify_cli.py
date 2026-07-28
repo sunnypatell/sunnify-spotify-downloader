@@ -176,8 +176,12 @@ class _RunState:
         self.emitter = emitter
         self.landed: list[str] = []
         self.skipped: list[str] = []
+        self.resume_skipped = 0
         self._preexisting: set[str] = set()
         self._lock = threading.Lock()
+
+    def on_resume_skipped(self, count: int) -> None:
+        self.resume_skipped = int(count)
 
     def on_song_meta(self, meta: dict) -> None:
         path = meta.get("file", "")
@@ -283,9 +287,15 @@ def cmd_download(args) -> int:
     cancel_event = threading.Event()
     scraper = _build_scraper(args, cfg, cancel_event)
     state = _RunState(emitter)
-    scraper.song_meta.connect(state.on_song_meta)
-    scraper.add_song_meta.connect(state.on_add_song_meta)
-    scraper.error_signal.connect(state.on_error)
+    # workers emit from pool threads; with no qt event loop running, queued
+    # (auto) connections are never delivered, so force direct delivery
+    from PyQt6.QtCore import Qt
+
+    direct = Qt.ConnectionType.DirectConnection
+    scraper.song_meta.connect(state.on_song_meta, type=direct)
+    scraper.add_song_meta.connect(state.on_add_song_meta, type=direct)
+    scraper.resume_skipped.connect(state.on_resume_skipped, type=direct)
+    scraper.error_signal.connect(state.on_error, type=direct)
 
     # graceful ^C: first stops after in-flight tracks, second is immediate
     def _sigint(_sig, _frame):
@@ -328,7 +338,7 @@ def cmd_download(args) -> int:
     emitter.event(
         "run_summary",
         landed=len(state.landed),
-        skipped=len(state.skipped),
+        skipped=len(state.skipped) + state.resume_skipped,
         failed=len(failed),
         failed_titles=failed,
         stopped=stopped,

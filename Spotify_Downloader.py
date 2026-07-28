@@ -495,6 +495,7 @@ class MusicScraper(QThread):
     count_updated = pyqtSignal(int)
     dlprogress_signal = pyqtSignal(int)
     Resetprogress_signal = pyqtSignal(int)
+    resume_skipped = pyqtSignal(int)  # manifest-resumed tracks never reach song_meta
     error_signal = pyqtSignal(str)  # Signal for error messages to UI
 
     # Max concurrent track downloads. 4 is the measured sweet spot:
@@ -1261,6 +1262,7 @@ class MusicScraper(QThread):
         # playlist can be finished across multiple sessions (closes #40).
         already_done = self._load_manifest(playlist_folder_path)
         if already_done:
+            self.resume_skipped.emit(len(already_done))
             self.error_signal.emit(
                 f"Resuming: skipping {len(already_done)} already-downloaded track(s)"
             )
