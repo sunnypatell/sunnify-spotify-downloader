@@ -120,7 +120,7 @@ jobs:
       attestations: write   # write SBOM + source attestations
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
@@ -128,7 +128,7 @@ jobs:
         # Needed both for syft (req.txt + source tree) and for the source
         # tarball we attest below. Pinning to the tag is what makes the
         # source tarball deterministic per release.
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.inputs.tag }}
           persist-credentials: false
@@ -224,7 +224,7 @@ jobs:
         # come from?".
         # Using actions/attest directly with a CycloneDX predicate-type
         # because actions/attest-sbom is now a deprecated wrapper.
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: |
             ./artifacts/windows-build/Sunnify-Windows.exe
@@ -311,7 +311,7 @@ jobs:
           done
 
       - name: Upload assets to release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           # If dry_run, keep the release as a draft so it isn't user-visible.
@@ -429,7 +429,7 @@ jobs:
       contents: write
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
@@ -447,7 +447,7 @@ jobs:
       - name: Checkout repository
         # persist-credentials stays ON for this checkout only: the final step
         # pushes the cask bump to main with the workflow token.
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6.0.3 # zizmor: ignore[artipacked]
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked]
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
