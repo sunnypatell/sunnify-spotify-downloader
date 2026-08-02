@@ -121,7 +121,7 @@ jobs:
 
       - name: Cache FFmpeg archive
         # Poisoning-safe: every restore is SHA256-verified below before use.
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5.0.5 # zizmor: ignore[cache-poisoning]
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: ffmpeg-cache
           # Cache is invalidated automatically the moment any env var

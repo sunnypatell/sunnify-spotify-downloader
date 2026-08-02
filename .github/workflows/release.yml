@@ -447,7 +447,7 @@ jobs:
       - name: Checkout repository
         # persist-credentials stays ON for this checkout only: the final step
         # pushes the cask bump to main with the workflow token.
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.3 # zizmor: ignore[artipacked]
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked]
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
