@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-08-06
+
+### Fixed
+- **playlist and album CLI runs now report what actually happened.** the engine's per-track completion signals are emitted from download worker threads; without the GUI's qt event loop those queued signals were silently dropped, so `--json` runs emitted no `track_done`/`track_skipped` events and `run_summary` claimed `landed: 0, skipped: 0` while the files themselves downloaded fine. signal connections are now direct (the NDJSON emitter was already lock-guarded), and a new `resume_skipped` engine signal feeds manifest-resumed tracks into the summary - they're filtered before the rate-limited metadata fetch by design, so they never reach the per-track path. single-track runs were never affected, and the GUI was never affected (its event loop delivered everything all along).
+
+### Added
+- **mistyped commands error instead of silently launching the GUI.** `sunnify downlaod <url>` now exits 2 with `did you mean 'download'?` (case-insensitive); bare-word argv is treated as a command attempt while launcher argv (`-psn_*`, file paths) still falls through to the app.
+- **`sunnify help [command]`** works git-style.
+- **`sunnify doctor` reports release status.** a `version` check says whether a newer release exists (with the release page link), names github's unauthenticated rate limit instead of a bare http code, and never fails the run - headless commands still make no network calls you didn't ask for.
+- **`--help` links the hosted [CLI reference](https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/docs/CLI.md)** instead of a repo-relative path that means nothing next to a downloaded binary.
+
+### Changed
+- **monthly dependency bumps ride along in the shipped binaries** (certifi 2026.7.22, charset-normalizer 3.4.9; yt-dlp stays 2026.7.4).
+
+### Notes
+- verified before shipping: 26 cli tests green (5 new dispatch tests); the full cli surface driven empirically against live services - every url form (`spotify:` uris, `intl-xx` links, playlist/album/track), all five formats with tag/artwork/sample-rate verification, config precedence (flag > saved > default), interrupt/resume/repair cycles, folder locking with stale-pid recovery, crash recovery rebuilding the manifest with zero re-downloads, and every captured ndjson line parsing clean with `run_summary` always the terminal event. binaries built with yt-dlp 2026.7.4 on python 3.13.
+
 ## [2.2.0] - 2026-07-27
 
 ### Added
@@ -333,7 +350,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.0.15...v2.1.0
