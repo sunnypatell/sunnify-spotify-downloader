@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./readmeAssets/social-preview.png" alt="Sunnify — Spotify Playlist Downloader: download Spotify playlists, albums, and tracks to local MP3s with artwork and tags" width="860" />
+<img src="./readmeAssets/social-preview.png" alt="Sunnify Spotify Playlist Downloader: download Spotify playlists, albums, and tracks to local MP3s with artwork and tags" width="860" />
 
 <h1>Sunnify &middot; Spotify Playlist Downloader</h1>
 
@@ -107,7 +107,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 - **Per-track cover art.** Each song gets its own artwork, not one shared playlist cover.
 - **Parallel downloads.** Multiple songs download at once, so a playlist finishes much faster, with a cooperative Stop that takes effect immediately.
 - **Resume large playlists.** A per-folder manifest records what already landed, so a playlist throttled by rate limits finishes across multiple sessions instead of starting over.
-- **Optional track-number prefixes.** Turn on `01. Song - Artist.mp3` so the folder sorts in playlist order in any file manager.
+- **Filenames your way.** `Song - Artist`, `Artist - Song`, or just `Song` (the artist stays in the tags), with optional `01.` track-number prefixes so folders sort in playlist order. A live preview in Settings shows the result as you toggle.
 - **Unicode-safe filenames.** Accented, CJK, and Cyrillic titles are preserved; only characters your filesystem actually rejects are stripped.
 - **Accurate audio matching.** Sunnify matches on title, artist, and duration rather than grabbing the first search hit, so you get the real recording, not a remix or a sped-up edit.
 - **Bundled FFmpeg, no account.** Everything needed ships inside the app, and nothing asks you to log in.

@@ -236,6 +236,16 @@ def cmd_download(args) -> int:
     out_dir = _resolve_out_dir(args.out, cfg)
     emitter = _Emitter(args.json, args.quiet)
 
+    # explicit flags only: --title-only with a saved artist_first config is
+    # an override, not a conflict (the gui can't express the pair at all)
+    if getattr(args, "title_only", None) and getattr(args, "artist_first", None):
+        emitter.error(
+            "--title-only and --artist-first conflict: a title-only filename has no order",
+            code="conflicting_flags",
+            hint="pass one of the two; --title-only alone also overrides a saved artist_first",
+        )
+        return EXIT_USAGE
+
     try:
         url_type, item_id = app.detect_spotify_url_type(args.url)
     except ValueError:
@@ -317,6 +327,7 @@ def cmd_download(args) -> int:
         quality=scraper.audio_quality,
         sample_rate=scraper.sample_rate,
         artist_first=scraper.artist_first,
+        title_only=scraper.title_only,
         track_numbers=scraper.include_track_number,
         loose_match=scraper.loose_match,
     )

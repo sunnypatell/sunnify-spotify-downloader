@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-09
+
+### Added
+- **filenames can now be song title only (closes #91).** a third naming option alongside track-number prefixes and artist-first: "Song title only" drops the artist from the filename while every tag (artist, album, year, cover art) is still written, for players like MusicBee that render metadata and make the filename artist redundant. available in Settings and as `--title-only` in the CLI (the settings registry generates both from one definition; explicitly passing `--title-only --artist-first` together is a typed usage error since a title-only filename has no order). in Settings the three naming shapes present as one "Filename style" pick-one control with a live preview of the resulting filename, and the dialog now opens clamped to the screen with a scrolling settings column so small laptops and windows dpi scaling never push the buttons off-screen.
+- **same-title tracks can no longer collide, in any naming mode.** two different songs called "Home" were always able to collide under rare sanitization overlaps; title-only makes it common, so the collision guard grew three defenses: filename claims are case-folded (macOS and Windows filesystems treat "Home.mp3" and "home.mp3" as the same file), the resume manifest's id-to-file ownership map is consulted so a later run downloading a different same-titled track suffixes a short id instead of skipping against the wrong file, and the map updates live during a run so a sequential collision inside one playlist is caught too. crash recovery (files present, manifest lost) still skips instead of re-downloading.
+
+### Changed
+- **build toolchain bumps in the release lock** (pyinstaller 6.22.0, setuptools 84.0.0); app dependencies unchanged.
+
+### Notes
+- naming changes apply to new downloads; files already on disk keep their names, and switching modes re-downloads nothing because resume is id-based (verified live: a title-only album re-run with default naming skipped all 9 tracks). copyright year range refreshed to 2024-2026. verified before shipping: 270 tests green (16 net new: naming matrix, collision battery incl. case-folding and cross-run ownership, unicode and empty-title fallbacks, filename-style mapping, preview, and screen-clamp round-trips), real album downloads in both naming modes with tag verification, and the settings dialog visually inspected at natural and squeezed sizes. binaries built with yt-dlp 2026.7.4 on python 3.13.
+
 ## [2.2.1] - 2026-08-06
 
 ### Fixed
@@ -350,7 +362,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.0...v2.1.1

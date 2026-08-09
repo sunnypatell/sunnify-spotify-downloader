@@ -62,6 +62,7 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
                        [--quality 128|192|256|320] [--sample-rate auto|44100|48000]
                        [--track-numbers | --no-track-numbers]
                        [--artist-first | --no-artist-first]
+                       [--title-only | --no-title-only]
                        [--loose-match | --no-loose-match]
                        [--json] [--quiet]
 ```
@@ -88,7 +89,7 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
 `run_summary`:
 
 ```json
-{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "track_numbers": true, "loose_match": false}
+{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false}
 {"event": "track_done", "title": "...", "artists": "...", "file": "/path/file.mp3", "bytes": 4823041}
 {"event": "track_skipped", "title": "...", "file": "/path/file.mp3"}
 {"event": "warning", "message": "..."}
@@ -101,8 +102,10 @@ Errors are typed envelopes; branch on `code`, not on message text:
 {"event": "error", "code": "ffmpeg_missing", "message": "ffmpeg not found", "hint": "..."}
 ```
 
-Current codes: `invalid_url`, `out_dir_unusable`, `ffmpeg_missing`,
-`folder_locked`, `metadata_fetch_failed`, `run_failed`.
+Current codes: `invalid_url`, `conflicting_flags`, `out_dir_unusable`,
+`ffmpeg_missing`, `folder_locked`, `metadata_fetch_failed`, `run_failed`.
+(`conflicting_flags` fires on explicit `--title-only --artist-first`; a
+title-only filename has no order, so pass one or the other.)
 
 `info`, `status`, `config`, and `doctor` print a single JSON document with
 `--json`.

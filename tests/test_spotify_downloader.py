@@ -1538,7 +1538,7 @@ class TestParallelDownloads:
         base_name = "Song - Artist.mp3"
         base_path = os.path.join(str(playlist_folder), base_name)
         with scraper._filename_lock:
-            scraper._in_flight_files.add(base_path)
+            scraper._in_flight_files.add(base_path.casefold())
 
         # Worker B arrives - should get a suffixed filename
         scraper._download_one_track(tracks[1], str(playlist_folder), None)
@@ -2216,7 +2216,7 @@ class TestTrackNumberInFilename:
         self._stub(scraper)
         # Pretend the primary name is already claimed by a sibling worker
         primary = str(tmp_path / "03. Title - Artist.mp3")
-        scraper._in_flight_files.add(primary)
+        scraper._in_flight_files.add(primary.casefold())
         captured = []
         scraper.download_track_audio = lambda _q, d, **_kw: (
             (
@@ -2335,8 +2335,8 @@ class TestArtistFirstInFilename:
             and d
         )
         # pre-claim the primary filename so the second call takes the
-        # collision branch and suffixes the track id
-        scraper._in_flight_files.add(os.path.join(str(tmp_path), "Artist - Title.mp3"))
+        # collision branch and suffixes the track id (claims are casefolded)
+        scraper._in_flight_files.add(os.path.join(str(tmp_path), "Artist - Title.mp3").casefold())
         scraper._download_one_track(self._track(tid="xyz"), str(tmp_path), "", track_num=1)
         assert os.path.basename(captured[0]) == "Artist - Title [xyz].mp3"
 
@@ -2434,6 +2434,166 @@ class TestSampleRateOption:
         assert MusicScraper(sample_rate=None).sample_rate == "auto"
 
 
+class TestTitleOnlyFilename:
+    """Tests for the title_only filename option (#91): title-alone stems,
+    interplay with the other naming settings, and the collision guards that
+    keep same-title tracks safe (in-flight claims, sequential same-run
+    collisions, cross-run collisions via manifest ownership, and
+    case-folding filesystems)."""
+
+    def _track(self, tid="t1", title="Title", artists="Artist"):
+        from spotifydown_api import TrackInfo
+
+        return TrackInfo(
+            id=tid,
+            title=title,
+            artists=artists,
+            album="Album",
+            release_date="2024-01-01",
+            cover_url=None,
+            duration_ms=None,
+            preview_url=None,
+            raw={},
+        )
+
+    def _stub(self, scraper):
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(scraper, sig, MagicMock())
+
+    def _run(self, scraper, tmp_path, track=None, track_num=3):
+        self._stub(scraper)
+        captured = []
+        scraper.download_track_audio = lambda _q, d, **_kw: (
+            (
+                captured.append(d),
+                open(d, "wb").close(),
+            )
+            and d
+        )
+        scraper._download_one_track(track or self._track(), str(tmp_path), "", track_num=track_num)
+        return captured
+
+    def test_title_alone(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        captured = self._run(MusicScraper(title_only=True), tmp_path)
+        assert os.path.basename(captured[0]) == "Title.mp3"
+
+    def test_composes_with_track_number(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        captured = self._run(MusicScraper(title_only=True, include_track_number=True), tmp_path)
+        assert os.path.basename(captured[0]) == "03. Title.mp3"
+
+    def test_overrides_artist_first(self, tmp_path):
+        """Both on: title_only wins (the GUI greys artist_first out, but the
+        config file can still hold both)."""
+        from Spotify_Downloader import MusicScraper
+
+        captured = self._run(MusicScraper(title_only=True, artist_first=True), tmp_path)
+        assert os.path.basename(captured[0]) == "Title.mp3"
+
+    def test_single_track_shape(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(title_only=True)
+        assert scraper._compose_filename("Title", "Artist") == "Title.mp3"
+
+    def test_empty_title_falls_back(self):
+        """A title that sanitizes to nothing must not yield '.mp3'."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(title_only=True)
+        assert scraper._compose_filename("", "Artist") == "Artist.mp3"
+        assert scraper._compose_filename("", "") == "track.mp3"
+
+    def test_unicode_title_survives(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(title_only=True)
+        assert scraper._compose_filename("Группа крови", "Кино") == "Группа крови.mp3"
+
+    def test_inflight_collision_suffixes(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(title_only=True)
+        scraper._in_flight_files.add(os.path.join(str(tmp_path), "Title.mp3").casefold())
+        captured = self._run(scraper, tmp_path, track=self._track("t2"))
+        assert os.path.basename(captured[0]) == "Title [t2].mp3"
+
+    def test_inflight_collision_is_case_insensitive(self, tmp_path):
+        """'Home' and 'home' are distinct strings but the same file on
+        macOS/Windows filesystems; the claim must fold case."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(title_only=True)
+        scraper._in_flight_files.add(os.path.join(str(tmp_path), "home.mp3").casefold())
+        captured = self._run(scraper, tmp_path, track=self._track("t2", title="Home"))
+        assert os.path.basename(captured[0]) == "Home [t2].mp3"
+
+    def test_sequential_same_run_collision(self, tmp_path):
+        """Track A finishes before same-titled track B starts (sequential, not
+        parallel): B must suffix, not mistake A's file for its own resume hit."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(title_only=True)
+        scraper._load_manifest(str(tmp_path))
+        first = self._run(scraper, tmp_path, track=self._track("tA", "Home", "ArtistA"))
+        assert os.path.basename(first[0]) == "Home.mp3"
+        second = self._run(scraper, tmp_path, track=self._track("tB", "Home", "ArtistB"))
+        assert os.path.basename(second[0]) == "Home [tB].mp3"
+
+    def test_cross_run_collision_via_manifest(self, tmp_path):
+        """A later run downloading a different same-titled track must suffix
+        instead of skipping against the first track's file."""
+        from Spotify_Downloader import MusicScraper
+
+        run1 = MusicScraper(title_only=True)
+        run1._load_manifest(str(tmp_path))
+        self._run(run1, tmp_path, track=self._track("tA", "Home", "ArtistA"))
+
+        run2 = MusicScraper(title_only=True)
+        done = run2._load_manifest(str(tmp_path))
+        assert "tA" in done
+        captured = self._run(run2, tmp_path, track=self._track("tB", "Home", "ArtistB"))
+        assert os.path.basename(captured[0]) == "Home [tB].mp3"
+
+    def test_cross_run_resume_hit_still_skips(self, tmp_path):
+        """The same track re-downloaded is a resume hit, never a collision."""
+        from Spotify_Downloader import MusicScraper
+
+        run1 = MusicScraper(title_only=True)
+        run1._load_manifest(str(tmp_path))
+        self._run(run1, tmp_path, track=self._track("tA", "Home", "ArtistA"))
+
+        run2 = MusicScraper(title_only=True)
+        run2._load_manifest(str(tmp_path))
+        captured = self._run(run2, tmp_path, track=self._track("tA", "Home", "ArtistA"))
+        assert captured == []
+        assert run2.add_song_meta.emit.called
+
+    def test_crash_recovery_unmapped_file_still_skips(self, tmp_path):
+        """File present but manifest lost (hard kill): stays a resume hit so
+        recovery keeps skipping instead of re-downloading."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper(title_only=True)
+        scraper._load_manifest(str(tmp_path))
+        open(os.path.join(str(tmp_path), "Home.mp3"), "wb").close()
+        captured = self._run(scraper, tmp_path, track=self._track("tX", "Home", "ArtistX"))
+        assert captured == []
+
+
 class TestSettingsDialog:
     """Construction tests for the Settings dialog.
 
@@ -2516,6 +2676,61 @@ class TestSettingsDialog:
         assert out["artist_first"] is True
         assert out["sample_rate"] == "44100"
         assert out["download_path"] == "/tmp/sunnify-music"
+
+    def test_filename_style_loads_from_config_booleans(self, qapp):
+        """The pick-one style control derives from the two stored booleans."""
+        from Spotify_Downloader import SettingsDialog
+
+        assert SettingsDialog(None, {})._filename_style_cb.currentText() == "Song - Artist"
+        assert (
+            SettingsDialog(None, {"artist_first": True})._filename_style_cb.currentText()
+            == "Artist - Song"
+        )
+        assert (
+            SettingsDialog(
+                None, {"artist_first": True, "title_only": True}
+            )._filename_style_cb.currentText()
+            == "Song only"
+        )
+
+    def test_filename_style_maps_back_to_config_booleans(self, qapp):
+        from Spotify_Downloader import SettingsDialog
+
+        dlg = SettingsDialog(None, {"artist_first": True, "title_only": False})
+        dlg._filename_style_cb.setCurrentText("Song only")
+        out = dlg.result_config()
+        assert out["title_only"] is True
+        assert out["artist_first"] is True  # order preference remembered
+        dlg._filename_style_cb.setCurrentText("Song - Artist")
+        out = dlg.result_config()
+        assert out["title_only"] is False
+        assert out["artist_first"] is False
+
+    def test_filename_preview_tracks_style_and_number(self, qapp):
+        from Spotify_Downloader import SettingsDialog
+
+        dlg = SettingsDialog(None, {"include_track_number": True})
+        assert dlg._filename_preview.text() == "01. Song - Artist.mp3"
+        dlg._filename_style_cb.setCurrentText("Song only")
+        assert dlg._filename_preview.text() == "01. Song.mp3"
+        dlg._include_track_number_cb.setChecked(False)
+        assert dlg._filename_preview.text() == "Song.mp3"
+        dlg._filename_style_cb.setCurrentText("Artist - Song")
+        assert dlg._filename_preview.text() == "Artist - Song.mp3"
+
+    def test_dialog_clamps_to_screen_and_scrolls_when_small(self, qapp):
+        """Small laptops / dpi scaling: the dialog never opens taller than the
+        screen, and shrinking it scrolls the settings instead of clipping."""
+        from Spotify_Downloader import SettingsDialog
+
+        dlg = SettingsDialog(None, {})
+        dlg.show()
+        screen = dlg.screen()
+        if screen is not None:
+            assert dlg.height() <= int(screen.availableGeometry().height() * 0.9) + 1
+        dlg.resize(dlg.width(), 400)
+        qapp.processEvents()
+        assert dlg._scroll.verticalScrollBar().maximum() > 0
 
     def test_non_transcode_formats_disable_sample_rate_selector(self, qapp):
         """opus and m4a can't honor a pinned rate (48 kHz-only codec /

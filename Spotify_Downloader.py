@@ -1,7 +1,7 @@
 #
 """
 Sunnify (Spotify Downloader)
-Copyright (C) 2024 Sunny Patel <sunnypatel124555@gmail.com>
+Copyright (C) 2024-2026 Sunny Patel <sunnypatel124555@gmail.com>
 
 EDUCATIONAL PROJECT DISCLAIMER:
 This software is a student portfolio project developed for educational purposes only.
@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.2.1"
+__version__ = "2.3.0"
 
 import atexit
 import concurrent.futures
@@ -260,6 +260,14 @@ SETTINGS = (
         scraper_kwarg="artist_first",
         cli_flag="--artist-first",
         help='name files "Artist - Song" instead of "Song - Artist"',
+    ),
+    _Setting(
+        "title_only",
+        False,
+        "bool",
+        scraper_kwarg="title_only",
+        cli_flag="--title-only",
+        help="name files by song title alone; the artist stays in the tags",
     ),
     _Setting(
         "loose_match",
@@ -510,6 +518,7 @@ class MusicScraper(QThread):
         audio_quality: str = "192",
         include_track_number: bool = False,
         artist_first: bool = False,
+        title_only: bool = False,
         sample_rate: str = "auto",
         loose_match: bool = False,
     ):
@@ -525,6 +534,7 @@ class MusicScraper(QThread):
         self.audio_quality = audio_quality if audio_quality in SUPPORTED_QUALITIES else "192"
         self.include_track_number = bool(include_track_number)
         self.artist_first = bool(artist_first)
+        self.title_only = bool(title_only)
         self.sample_rate = sample_rate if sample_rate in SUPPORTED_SAMPLE_RATES else "auto"
         # opt-in: when strict title/artist matching fails, fall back to the
         # duration-closest youtube result (recovers cross-script matches);
@@ -535,6 +545,7 @@ class MusicScraper(QThread):
         self._filename_lock = threading.Lock()
         self._manifest_lock = threading.Lock()
         self._manifest_path: str | None = None
+        self._manifest_owners: dict[str, str] = {}
         self._in_flight_files: set[str] = set()
         # Set to True during parallel playlist downloads so workers can suppress
         # per-track UI noise (label flicker, thumbnail spam, progress bar jitter)
@@ -574,12 +585,22 @@ class MusicScraper(QThread):
         """Sanitize text for filename usage."""
         return sanitize_filename(text, allow_spaces=True)
 
-    def _name_parts(self, sanitized_title, sanitized_artists):
-        """Filename component order per the artist_first setting (#77). Both
-        parts are already sanitized, so the swap can't change path safety."""
-        if self.artist_first:
-            return sanitized_artists, sanitized_title
-        return sanitized_title, sanitized_artists
+    def _compose_filename(self, sanitized_title, sanitized_artists, track_num=None, disambig=None):
+        """Filename from the naming settings (#77, #91). Parts arrive
+        sanitized, so composition can't change path safety. disambig is a
+        track id appended when two tracks resolve to the same name."""
+        if self.title_only:
+            # a title that sanitizes to nothing falls back rather than yield ".mp3"
+            stem = sanitized_title or sanitized_artists or "track"
+        elif self.artist_first:
+            stem = f"{sanitized_artists} - {sanitized_title}"
+        else:
+            stem = f"{sanitized_title} - {sanitized_artists}"
+        if disambig:
+            stem = f"{stem} [{disambig}]"
+        if self.include_track_number and track_num is not None:
+            return f"{track_num:02d}. {stem}.mp3"
+        return f"{stem}.mp3"
 
     def format_playlist_name(self, metadata: PlaylistInfo):
         owner = metadata.owner or "Spotify"
@@ -1044,30 +1065,29 @@ class MusicScraper(QThread):
         artists = track.artists
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
-        first, second = self._name_parts(sanitized_title, sanitized_artists)
 
-        if self.include_track_number:
-            filename = f"{track_num:02d}. {first} - {second}.mp3"
-        else:
-            filename = f"{first} - {second}.mp3"
-
+        filename = self._compose_filename(sanitized_title, sanitized_artists, track_num)
         filepath = os.path.join(playlist_folder_path, cap_filename(filename))
 
-        # Collision guard: distinct tracks can sanitize to the same name, and
-        # parallel workers racing os.path.exists would clobber each other.
-        # Claim under a lock; if taken, suffix the track id.
+        # Collision guard: distinct tracks can resolve to the same name
+        # (always possible, likely under title_only), and parallel workers
+        # racing os.path.exists would clobber each other. Claim under a lock;
+        # if taken in-flight, on a case-folding filesystem, or on disk owned
+        # by a different track per the manifest, suffix the track id.
         with self._filename_lock:
-            if filepath in self._in_flight_files:
-                if self.include_track_number:
-                    filename = f"{track_num:02d}. {first} - {second} [{track.id}].mp3"
-                else:
-                    filename = f"{first} - {second} [{track.id}].mp3"
-
-                filepath = os.path.join(
-                    playlist_folder_path,
-                    cap_filename(filename),
+            claim = filepath.casefold()
+            if claim in self._in_flight_files or self._file_belongs_to_other(filepath, track.id):
+                log.info(
+                    "filename collision: %r already claimed, suffixing track id %s",
+                    os.path.basename(filepath),
+                    track.id,
                 )
-            self._in_flight_files.add(filepath)
+                filename = self._compose_filename(
+                    sanitized_title, sanitized_artists, track_num, disambig=track.id
+                )
+                filepath = os.path.join(playlist_folder_path, cap_filename(filename))
+                claim = filepath.casefold()
+            self._in_flight_files.add(claim)
 
         # Per-track cover enrichment: the playlist embed has no per-track
         # cover urls (the "all 300 songs have the same cover" report), so
@@ -1155,7 +1175,7 @@ class MusicScraper(QThread):
             return None
         finally:
             with self._filename_lock:
-                self._in_flight_files.discard(filepath)
+                self._in_flight_files.discard(filepath.casefold())
 
     def _finish_track_ui(self, ok: bool) -> None:
         """Update counter + progress bar after a track completes or fails."""
@@ -1181,6 +1201,7 @@ class MusicScraper(QThread):
 
         path = os.path.join(folder, MANIFEST_FILENAME)
         self._manifest_path = path
+        self._manifest_owners = {}
         done: set[str] = set()
         if not os.path.exists(path):
             return done
@@ -1198,9 +1219,20 @@ class MusicScraper(QThread):
                     filename = record.get("file")
                     if track_id and filename and os.path.exists(os.path.join(folder, filename)):
                         done.add(track_id)
+                        self._manifest_owners[filename.casefold()] = track_id
         except OSError:
             return set()
         return done
+
+    def _file_belongs_to_other(self, filepath: str, track_id) -> bool:
+        """True when a file already at this path is a different track's per
+        the manifest - a title collision across runs, not a resume hit (#91).
+        An unmapped existing file stays a resume hit so crash recovery
+        (files present, manifest lost) keeps skipping instead of re-downloading."""
+        if not track_id or not os.path.exists(filepath):
+            return False
+        owner = self._manifest_owners.get(os.path.basename(filepath).casefold())
+        return owner is not None and owner != track_id
 
     def _record_in_manifest(self, track_id, filepath: str) -> None:
         """Append a completed track to the manifest (thread-safe).
@@ -1215,6 +1247,9 @@ class MusicScraper(QThread):
 
         record = json.dumps({"id": track_id, "file": os.path.basename(filepath)})
         with self._manifest_lock:
+            # keep the ownership map live so a same-title track later in this
+            # run suffixes instead of mistaking the finished file for its own
+            self._manifest_owners.setdefault(os.path.basename(filepath).casefold(), track_id)
             try:
                 with open(self._manifest_path, "a", encoding="utf-8") as handle:
                     handle.write(record + "\n")
@@ -1296,7 +1331,7 @@ class MusicScraper(QThread):
         self._parallel_mode = worker_count > 1
 
         log.info(
-            "%s scrape: name=%r id=%s tracks=%d (resume-skipped %d) mode=%s workers=%d fmt=%s/%s",
+            "%s scrape: name=%r id=%s tracks=%d (resume-skipped %d) mode=%s workers=%d fmt=%s/%s naming=%s",
             content_type,
             playlist_display_name,
             playlist_id,
@@ -1306,6 +1341,9 @@ class MusicScraper(QThread):
             worker_count,
             self.audio_format,
             self.audio_quality,
+            "title-only"
+            if self.title_only
+            else ("artist-first" if self.artist_first else "default"),
         )
 
         # Canonical playlist position over enumerate order: spclient yields
@@ -1410,8 +1448,7 @@ class MusicScraper(QThread):
         artists = track.artists
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
-        first, second = self._name_parts(sanitized_title, sanitized_artists)
-        filename = f"{first} - {second}.mp3"
+        filename = self._compose_filename(sanitized_title, sanitized_artists)
         filepath = os.path.join(music_folder, cap_filename(filename))
 
         album_name = track.album or ""
@@ -1745,8 +1782,20 @@ class SettingsDialog(QDialog):
         self._include_track_number_cb = QCheckBox()
         self._include_track_number_cb.setChecked(self._config.get("include_track_number", False))
 
-        self._artist_first_cb = QCheckBox()
-        self._artist_first_cb.setChecked(self._config.get("artist_first", False))
+        # the three naming shapes are mutually exclusive, so they present as
+        # one pick-one control; underneath they map to the artist_first and
+        # title_only config booleans the engine and CLI flags already use
+        self._filename_style_cb = QComboBox()
+        self._filename_style_cb.addItems(["Song - Artist", "Artist - Song", "Song only"])
+        if self._config.get("title_only", False):
+            self._filename_style_cb.setCurrentText("Song only")
+        elif self._config.get("artist_first", False):
+            self._filename_style_cb.setCurrentText("Artist - Song")
+
+        self._filename_preview = QLabel()
+        self._filename_preview.setStyleSheet("font-weight: 600;")
+        self._include_track_number_cb.toggled.connect(self._update_filename_preview)
+        self._filename_style_cb.currentTextChanged.connect(self._update_filename_preview)
 
         # display text <-> stored value; stored value is what ffmpeg -ar gets
         self._sample_rate_labels = {
@@ -1767,6 +1816,7 @@ class SettingsDialog(QDialog):
 
         # initial enable/disable sync needs every dependent combo to exist
         self._on_format_change(self._format_cb.currentText())
+        self._update_filename_preview()
 
         # Each setting owns its height as a QFrame+QVBoxLayout block:
         # QFormLayout computes row height from the label column and clips
@@ -1800,10 +1850,18 @@ class SettingsDialog(QDialog):
                 "Files sort in playlist order in your file manager.",
             ),
             (
-                "Artist first in filename:",
-                self._artist_first_cb,
-                'Off → "Song - Artist.mp3".   On → "Artist - Song.mp3".   '
-                "Applies to new downloads; files already on disk keep their names.",
+                "Filename style:",
+                self._filename_style_cb,
+                '"Song only" keeps the artist out of the filename; every tag '
+                "(artist, album, art) is still written, and two different songs "
+                "with the same title get a short id suffix instead of "
+                "overwriting each other. Applies to new downloads; files "
+                "already on disk keep their names.",
+            ),
+            (
+                "Filename preview:",
+                self._filename_preview,
+                "",
             ),
             (
                 "Sample rate:",
@@ -1872,16 +1930,43 @@ class SettingsDialog(QDialog):
         open_logs.setToolTip(log_file_path())
         open_logs.clicked.connect(self._open_logs)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(0)
+        from PyQt6.QtWidgets import QScrollArea, QWidget
+
+        rows_host = QWidget()
+        rows = QVBoxLayout(rows_host)
+        rows.setSpacing(0)
+        rows.setContentsMargins(0, 0, 0, 0)
         for _label, _control, _hint in _settings:
-            layout.addWidget(_setting_block(_label, _control, _hint))
-        layout.addStretch(1)
+            rows.addWidget(_setting_block(_label, _control, _hint))
+        rows.addStretch(1)
+
+        # settings scroll when the screen can't fit them (small laptops,
+        # windows dpi scaling); the ok/cancel row never leaves the screen
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setWidget(rows_host)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self._scroll, 1)
         layout.addWidget(btns)
 
-        # activate() resolves wrap heights before sizing so the tallest hint isn't clipped
+        # activate() first: hint labels word-wrap, so their heights are
+        # height-for-width and only correct after layout activation. Then
+        # open at the content's natural size, clamped to the screen so small
+        # laptops and dpi scaling scroll instead of clipping.
+        rows.activate()
         layout.activate()
-        self.resize(620, self.sizeHint().height())
+        content_w = max(rows_host.sizeHint().width() + 40, 620)
+        content_h = (
+            rows.totalHeightForWidth(rows_host.sizeHint().width()) + btns.sizeHint().height() + 48
+        )
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            content_w = min(content_w, int(avail.width() * 0.9))
+            content_h = min(content_h, int(avail.height() * 0.9))
+        self.resize(content_w, content_h)
 
     def _open_logs(self):
         """Reveal the log folder in the OS file manager."""
@@ -1926,12 +2011,24 @@ class SettingsDialog(QDialog):
         self._quality_cb.setEnabled(is_lossy)
         self._sample_rate_cb.setEnabled(fmt in ("mp3", "flac", "wav"))
 
+    def _update_filename_preview(self) -> None:
+        style = self._filename_style_cb.currentText()
+        stem = "Song" if style == "Song only" else style
+        prefix = "01. " if self._include_track_number_cb.isChecked() else ""
+        self._filename_preview.setText(f"{prefix}{stem}.mp3")
+
     def result_config(self) -> dict:
         self._config["download_path"] = self._folder_label.text()
         self._config["format"] = self._format_cb.currentText()
         self._config["quality"] = self._quality_cb.currentText().split()[0]
         self._config["include_track_number"] = self._include_track_number_cb.isChecked()
-        self._config["artist_first"] = self._artist_first_cb.isChecked()
+        style = self._filename_style_cb.currentText()
+        self._config["title_only"] = style == "Song only"
+        if style == "Song only":
+            # keep the stored order preference so switching back remembers it
+            self._config.setdefault("artist_first", False)
+        else:
+            self._config["artist_first"] = style == "Artist - Song"
         label_to_value = {v: k for k, v in self._sample_rate_labels.items()}
         self._config["sample_rate"] = label_to_value.get(self._sample_rate_cb.currentText(), "auto")
         self._config["loose_match"] = self._loose_match_cb.isChecked()

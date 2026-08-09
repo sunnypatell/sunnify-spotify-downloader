@@ -231,6 +231,17 @@ class TestBinaryDispatch:
         result = self._run("download")  # missing url
         assert result.returncode == cli.EXIT_USAGE
 
+    def test_conflicting_naming_flags_are_rejected(self):
+        result = self._run("download", "spotify:track:x", "--title-only", "--artist-first")
+        assert result.returncode == cli.EXIT_USAGE
+        assert "conflict" in result.stderr
+
+    def test_title_only_with_no_artist_first_is_fine(self):
+        result = self._run("download", "not-a-url", "--title-only", "--no-artist-first")
+        # passes the conflict guard, fails later on the url as usual
+        assert result.returncode == cli.EXIT_FATAL
+        assert "conflict" not in result.stderr
+
     def test_typoed_command_suggests_instead_of_launching_gui(self):
         result = self._run("downlaod", "some-url")
         assert result.returncode == cli.EXIT_USAGE
