@@ -29,8 +29,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # 22 = active LTS (node 20 hit end-of-life april 2026)
-          node-version: "22"
+          # 24 = active LTS; vercel drops node 20 builds sept 2026
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: web-app/sunnify-webclient/package-lock.json
 
@@ -62,7 +62,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: web-app/sunnify-webclient/package-lock.json
 

@@ -26,7 +26,7 @@
     "url": "https://github.com/sunnypatell/sunnify-spotify-downloader/issues"
   },
   "engines": {
-    "node": ">=22",
+    "node": ">=24",
     "npm": ">=10"
   },
   "scripts": {
