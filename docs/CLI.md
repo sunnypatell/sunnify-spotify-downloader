@@ -124,10 +124,6 @@ This CLI is designed to be driven autonomously (per the
   you it's still running).
 - Something failing? `sunnify doctor --json` says which dependency or
   upstream is broken, with hints.
-- Windows note: when launched from an interactive console the windowed exe
-  returns the prompt immediately; pipe the output (`sunnify doctor | Out-Default`)
-  to make the shell wait. Redirected and piped output, which is how agents
-  run tools, behaves normally without any of that.
 
 ## Where things live
 

@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $repo = "sunnypatell/sunnify-spotify-downloader"
 $base = "https://github.com/$repo/releases/latest/download"
-$asset = "Sunnify-Windows.exe"
+$asset = "Sunnify-Windows-CLI.exe"
 $destDir = Join-Path $env:LOCALAPPDATA "Sunnify"
 
 Write-Host "downloading $asset (latest release)..."
@@ -27,7 +27,8 @@ try {
     if ($actual -ne $expected) { throw "SHA256 mismatch for $asset (got $actual, want $expected)" }
     Write-Host "checksum verified"
 
-    # `sunnify.exe` on PATH: same binary as the GUI (no arguments opens the app)
+    # `sunnify.exe` on PATH is the console build (same code as the GUI, console
+    # subsystem): `sunnify <cmd>` prints in a terminal, no args opens the app.
     Move-Item -Force (Join-Path $tmp $asset) (Join-Path $destDir "sunnify.exe")
 }
 finally {
@@ -46,4 +47,4 @@ if (($env:Path -split ";") -notcontains $destDir) {
 
 Write-Host ""
 Write-Host "installed: $destDir\sunnify.exe"
-Write-Host "try: sunnify --help   (tip: pipe output, e.g. `sunnify doctor | Out-Default`, so the shell waits)"
+Write-Host "try: sunnify --help   (or: sunnify download <url>)"

@@ -37,12 +37,19 @@ _LOCK_NAME = ".sunnify-cli.lock"
 
 
 def _ensure_windows_console() -> None:
-    """Attach to the parent console when the windowed exe runs interactively.
+    """Make stdout/stderr usable and utf-8 on Windows, in every launch mode.
 
-    Piped/redirected stdio (how agents and scripts call us) already works in
-    a windowed build; this covers a human typing in cmd/powershell, where a
-    /SUBSYSTEM:WINDOWED exe has no console by default.
-    ref: https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html
+    Two Windows-only failure modes, both fatal to a CLI, neither present on
+    posix (which this leaves untouched):
+    - a /SUBSYSTEM:WINDOWED build has no console when launched bare, so stdio
+      is None; the console-subsystem CLI binary avoids this, but the
+      AttachConsole path stays as a fallback for the windowed exe.
+    - valid streams (a redirected pipe, or the console binary on a western
+      locale) sit on a legacy code page (cp1252) that can't encode the CLI's
+      ✓/»/→ glyphs, raising UnicodeEncodeError; force utf-8 so output degrades
+      to '?' at worst and never crashes.
+    refs: https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html ,
+    https://peps.python.org/pep-0528/
     """
     if sys.platform != "win32":
         return
@@ -50,17 +57,23 @@ def _ensure_windows_console() -> None:
         broken = sys.stdout is None or sys.stdout.fileno() < 0
     except (AttributeError, OSError, ValueError):
         broken = True
-    if not broken:
-        return
-    import ctypes
+    if broken:
+        # windowed exe launched bare: no console at all, so stdio is None
+        import ctypes
 
-    if ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
-        sys.stdout = open("CONOUT$", "w", buffering=1, encoding="utf-8")  # noqa: SIM115
-        sys.stderr = open("CONOUT$", "w", buffering=1, encoding="utf-8")  # noqa: SIM115
-    else:
-        # no console anywhere: keep streams valid so prints never crash
-        sys.stdout = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
-        sys.stderr = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+        if ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
+            sys.stdout = open("CONOUT$", "w", buffering=1, encoding="utf-8", errors="replace")  # noqa: SIM115
+            sys.stderr = open("CONOUT$", "w", buffering=1, encoding="utf-8", errors="replace")  # noqa: SIM115
+        else:
+            # no console anywhere: keep streams valid so prints never crash
+            sys.stdout = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+            sys.stderr = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+        return
+    # valid streams but possibly a legacy code page (cp1252): force utf-8 so the
+    # unicode glyphs the CLI prints can never raise (real consoles use WriteConsoleW)
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 class _Emitter:

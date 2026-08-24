@@ -30,8 +30,8 @@ if is_windows:
     )
     win_version_info = VSVersionInfo(
         ffi=FixedFileInfo(
-            filevers=(2, 3, 0, 0),
-            prodvers=(2, 3, 0, 0),
+            filevers=(2, 4, 0, 0),
+            prodvers=(2, 4, 0, 0),
             mask=0x3F,
             flags=0x0,
             OS=0x40004,       # VOS_NT_WINDOWS32
@@ -43,12 +43,12 @@ if is_windows:
                 StringTable('040904B0', [
                     StringStruct('CompanyName', 'Sunny Jayendra Patel'),
                     StringStruct('FileDescription', 'Sunnify - Spotify Playlist Downloader'),
-                    StringStruct('FileVersion', '2.3.0.0'),
+                    StringStruct('FileVersion', '2.4.0.0'),
                     StringStruct('InternalName', 'Sunnify'),
                     StringStruct('LegalCopyright', 'Copyright (C) 2026 Sunny Jayendra Patel'),
                     StringStruct('OriginalFilename', 'Sunnify.exe'),
                     StringStruct('ProductName', 'Sunnify'),
-                    StringStruct('ProductVersion', '2.3.0.0'),
+                    StringStruct('ProductVersion', '2.4.0.0'),
                 ]),
             ]),
             VarFileInfo([VarStruct('Translation', [0x0409, 0x04B0])]),
@@ -141,8 +141,8 @@ if is_mac:
             'CFBundleDisplayName': 'Sunnify',
             'CFBundleGetInfoString': 'Spotify Playlist Downloader',
             'CFBundleIdentifier': 'com.sunnypatel.sunnify',
-            'CFBundleVersion': '2.3.0',
-            'CFBundleShortVersionString': '2.3.0',
+            'CFBundleVersion': '2.4.0',
+            'CFBundleShortVersionString': '2.4.0',
             'NSHumanReadableCopyright': '© 2026 Sunny Jayendra Patel',
             'NSHighResolutionCapable': True,
         },
@@ -172,3 +172,36 @@ else:
         icon=icon_file if icon_file else None,
         version=win_version_info,
     )
+
+    if is_windows:
+        # Windows-only console sibling for the headless CLI. Same PYZ, same
+        # Analysis, same Spotify_Downloader.py entry - only the PE subsystem
+        # differs: Sunnify.exe is /SUBSYSTEM:WINDOWED (no console when
+        # double-clicked) and sunnify-cli.exe is /SUBSYSTEM:CONSOLE (the shell
+        # waits for it and stdout reaches the terminal). A single PE can't be
+        # both, and console=True + --hide-console is unreliable on Windows 11 /
+        # Windows Terminal, so we ship both from one build - the
+        # python.exe/pythonw.exe model. macOS/Linux need none of this.
+        exe_cli = EXE(
+            pyz,
+            a.scripts,
+            a.binaries,
+            a.zipfiles,
+            a.datas,
+            [],
+            name='sunnify-cli',
+            debug=False,
+            bootloader_ignore_signals=False,
+            strip=False,
+            upx=True,
+            upx_exclude=[],
+            runtime_tmpdir=None,
+            console=True,  # CLI mode: real console, shell waits for exit
+            disable_windowed_traceback=False,
+            argv_emulation=False,
+            target_arch=None,
+            codesign_identity=None,
+            entitlements_file=None,
+            icon=icon_file if icon_file else None,
+            version=win_version_info,
+        )

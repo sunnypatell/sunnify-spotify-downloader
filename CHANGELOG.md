@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-24
+
+### Fixed
+- **the headless CLI now prints on Windows (closes #92).** a single Windows `.exe` is linked for exactly one subsystem - `/SUBSYSTEM:WINDOWED` (no console when the GUI is double-clicked) or `/SUBSYSTEM:CONSOLE` (the shell waits and stdout reaches the terminal), never both - so the windowed binary that ships the GUI printed nothing and exited 0 when run as `sunnify <cmd>` in a terminal. attaching to the parent console can't fix it ([a windowed process doesn't make the shell wait](https://learn.microsoft.com/en-us/windows/console/attachconsole)) and [`console=True` + `--hide-console` is unreliable on Windows 11 / Windows Terminal](https://github.com/pyinstaller/pyinstaller/issues/8022), so every Windows release now also ships `Sunnify-Windows-CLI.exe`: a console-subsystem build from the same spec, same `Analysis`, and same entry code - [pyinstaller's own two-executable answer](https://github.com/pyinstaller/pyinstaller/issues/6244), the `python.exe`/`pythonw.exe` model. the `iwr | iex` installer puts it on PATH as `sunnify`; the double-click GUI download is byte-for-byte unchanged, and macOS/Linux have no subsystem split so they were never affected and don't change.
+- **CLI output no longer crashes on a legacy Windows code page.** the `✓`/`»`/`→` glyphs `doctor` and download progress print raised `UnicodeEncodeError` whenever stdout was a redirected pipe or a cp1252 console; stdout/stderr are now forced to utf-8 with `errors="replace"` ([PEP 528](https://peps.python.org/pep-0528/)), so a glyph degrades to `?` at worst and a run never aborts. guarded to Windows only.
+
+### Notes
+- both fixes were reproduced before fixing (the shipped windowed binary printing nothing when run bare; the exact `UnicodeEncodeError` under a forced cp1252 pipe) and re-verified on the compiled binaries: `Sunnify.exe` stays `/SUBSYSTEM:WINDOWED`, `Sunnify-Windows-CLI.exe` is `/SUBSYSTEM:CONSOLE`, `doctor` renders clean under cp1252, and a real `download --json` lands a track and terminates on `run_summary`. the new binary is built, smoke-tested, and attested inside the reusable release workflow exactly like every other asset, so SLSA Build L3 provenance and the SBOM + checksum coverage are unchanged. full cli suite green. binaries built with yt-dlp 2026.7.4 on python 3.13.
+
 ## [2.3.0] - 2026-08-09
 
 ### Added
@@ -362,7 +371,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.1.1...v2.2.0

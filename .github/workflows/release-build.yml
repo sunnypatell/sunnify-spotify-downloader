@@ -262,24 +262,40 @@ jobs:
           [[ "$OUT" == "sunnify ${STRIPPED}" ]] || { echo "version mismatch (want sunnify ${STRIPPED})"; exit 1; }
           "$BIN" config >/dev/null
           echo "CLI smoke passed"
+          # Windows also ships the console-subsystem CLI sibling; smoke it too.
+          if [ "$PLATFORM" = "windows" ]; then
+            CLI="dist/sunnify-cli.exe"
+            OUT_CLI="$("$CLI" --version)"
+            echo "console cli version output: $OUT_CLI"
+            [[ "$OUT_CLI" == "sunnify ${STRIPPED}" ]] || { echo "console cli version mismatch"; exit 1; }
+            "$CLI" config >/dev/null
+            echo "console CLI smoke passed"
+          fi
 
       - name: Package + sanity-check (Windows)
         if: inputs.platform == 'windows'
         shell: bash
         env:
           ASSET: ${{ inputs.asset }}
+          # Console-subsystem CLI sibling: same build, different PE subsystem,
+          # so `sunnify <cmd>` in a terminal actually prints. Only this asset is
+          # Windows-specific; macOS/Linux have no subsystem split.
+          CLI_ASSET: Sunnify-Windows-CLI.exe
         run: |
           set -euo pipefail
           mkdir -p out
           mv dist/Sunnify.exe "out/${ASSET}"
-          size=$(stat -c %s "out/${ASSET}" 2>/dev/null || stat -f %z "out/${ASSET}")
+          mv dist/sunnify-cli.exe "out/${CLI_ASSET}"
           # A real PyInstaller build with FFmpeg + PyQt6 is >100MB; anything
           # under 50MB is a corrupt build that would just generate user reports.
-          if [ "$size" -lt 52428800 ]; then
-            echo "${ASSET} is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
-            exit 1
-          fi
-          echo "${ASSET} verified: $((size / 1048576)) MB"
+          for a in "${ASSET}" "${CLI_ASSET}"; do
+            size=$(stat -c %s "out/${a}" 2>/dev/null || stat -f %z "out/${a}")
+            if [ "$size" -lt 52428800 ]; then
+              echo "${a} is $((size / 1048576)) MB; expected >50MB. Build is corrupt." >&2
+              exit 1
+            fi
+            echo "${a} verified: $((size / 1048576)) MB"
+          done
 
       - name: Package + sanity-check (Linux)
         if: inputs.platform == 'linux'
@@ -354,6 +370,28 @@ jobs:
           set -euo pipefail
           cp "$BUNDLE_PATH" "out/${ASSET}.sigstore.json"
           printf '%s' "$ATTEST_URL" > "out/${ASSET}.attestation-url.txt"
+          ls -la out/
+
+      - name: Attest build provenance - Windows CLI (SLSA Build L3)
+        id: attest_cli
+        # The console-subsystem CLI sibling gets its own provenance so every
+        # shipped binary is independently verifiable - same as the others.
+        if: inputs.platform == 'windows'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: out/Sunnify-Windows-CLI.exe
+
+      - name: Stage Windows CLI attestation bundle + URL
+        if: inputs.platform == 'windows'
+        shell: bash
+        env:
+          BUNDLE_PATH: ${{ steps.attest_cli.outputs.bundle-path }}
+          ATTEST_URL: ${{ steps.attest_cli.outputs.attestation-url }}
+          CLI_ASSET: Sunnify-Windows-CLI.exe
+        run: |
+          set -euo pipefail
+          cp "$BUNDLE_PATH" "out/${CLI_ASSET}.sigstore.json"
+          printf '%s' "$ATTEST_URL" > "out/${CLI_ASSET}.attestation-url.txt"
           ls -la out/
 
       - name: Upload artifact
