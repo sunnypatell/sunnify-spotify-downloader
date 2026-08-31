@@ -3,14 +3,14 @@
 #
 # This exists because the script it runs sat in the repo for months with
 # nothing invoking it: every upstream change it was written to catch was
-# instead found by a user opening an issue. Daily is enough - these break
-# on upstream's schedule, not ours.
+# instead found by a user opening an issue. Weekly, midweek: monday morning
+# already runs codeql and scorecard, and upstream breaks on its own clock.
 
 name: API Status
 
 on:
   schedule:
-    - cron: "23 6 * * *"
+    - cron: "23 6 * * 4" # weekly on thursday, away from the monday jobs
   workflow_dispatch:
 
 permissions: {}
