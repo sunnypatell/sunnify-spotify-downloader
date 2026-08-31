@@ -37,8 +37,15 @@ jobs:
           python-version: "3.13"
           cache: "pip"
 
-      - name: Install runtime dependencies
-        run: pip install -r req.txt
+      # The hash lock, not req.txt's floating ranges: this probe answers
+      # "is the shipped app broken right now", and shipped binaries are built
+      # from this same lock. Installing newer versions here would let the
+      # probe pass green while users on the released build are broken, which
+      # is a false negative on the one thing it exists to catch. Whether a
+      # future dependency bump breaks us is tests.yml's job, deliberately on
+      # loose ranges (SECURITY.md).
+      - name: Install the same dependencies the release binaries ship
+        run: pip install --require-hashes -r requirements-build.txt
 
       - name: Probe upstream services
         run: python scripts/check_api_status.py
