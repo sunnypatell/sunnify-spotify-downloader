@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.4.0"
+__version__ = "2.4.1"
 
 import atexit
 import concurrent.futures
@@ -64,6 +64,7 @@ from PyQt6.QtWidgets import (
 from yt_dlp import YoutubeDL
 
 from spotifydown_api import (
+    ContentUnavailableError,
     ExtractionError,
     NetworkError,
     PlaylistClient,
@@ -494,6 +495,40 @@ class UpdateCheckThread(QThread):
             self.update_available.emit(result[0], result[1])
 
 
+# Clients for the retry attempt, as a set rather than a preference list:
+# android/ios expose streams the default path may not, and tv/web_safari
+# supply an alternative URL when those return 403. The combination is what
+# recovers a track - measured per client, each alone fails on videos the
+# set handles, and yt-dlp's own defaults 403 on some of them too. Kept
+# deliberately, not by inertia; validated below so a retired client can't
+# rot into a hard failure, and exercised end to end by the youtube_retry
+# check in scripts/check_api_status.py.
+_RETRY_CLIENTS = ("android", "ios", "tv", "web_safari")
+
+
+def _retry_player_clients() -> tuple[str, ...]:
+    """_RETRY_CLIENTS filtered to the clients yt-dlp still ships.
+
+    YouTube retires client names and yt-dlp follows; naming a dead one is a
+    hard extractor error, so unknown names are dropped with a warning that
+    says which. Everything dropping out means the retry falls back to
+    yt-dlp's maintained defaults, which is degraded but never broken.
+    """
+    try:
+        from yt_dlp.extractor.youtube._base import INNERTUBE_CLIENTS
+    except Exception:
+        # table moved: our names are still the best guess we have
+        log.debug("yt-dlp client table not introspectable; using retry clients unvalidated")
+        return _RETRY_CLIENTS
+    live = tuple(name for name in _RETRY_CLIENTS if name in INNERTUBE_CLIENTS)
+    retired = [name for name in _RETRY_CLIENTS if name not in INNERTUBE_CLIENTS]
+    if retired:
+        log.warning("retry clients no longer shipped by yt-dlp, dropped: %s", retired)
+    if not live:
+        log.warning("no retry clients survive; retry now uses yt-dlp's defaults")
+    return live
+
+
 class MusicScraper(QThread):
     PlaylistCompleted = pyqtSignal(str)
     PlaylistID = pyqtSignal(str)
@@ -546,6 +581,9 @@ class MusicScraper(QThread):
         self._manifest_lock = threading.Lock()
         self._manifest_path: str | None = None
         self._manifest_owners: dict[str, str] = {}
+        # youtube blocks per-IP, so it hits every track at once; say it once
+        # rather than 300 times, and say what it actually means
+        self._network_blocked = False
         self._in_flight_files: set[str] = set()
         # Set to True during parallel playlist downloads so workers can suppress
         # per-track UI noise (label flicker, thumbnail spam, progress bar jitter)
@@ -557,14 +595,40 @@ class MusicScraper(QThread):
         """Check if cancellation has been requested."""
         return self._cancel_event.is_set()
 
+    _BLOCK_MARKERS = ("sign in to confirm", "not a bot", "confirm you're not a bot")
+
+    def _note_if_network_blocked(self, reason: str) -> None:
+        """Emit one plain-language notice the first time YouTube gates us.
+
+        The gate is applied to the whole network, so without this every track
+        fails with its own generic message and the real cause never surfaces.
+        """
+        text = (reason or "").lower()
+        if not any(m in text for m in self._BLOCK_MARKERS):
+            return
+        with self._failed_lock:
+            if self._network_blocked:
+                return
+            self._network_blocked = True
+        log.error("youtube is gating this network (bot check); downloads cannot proceed")
+        self.error_signal.emit(
+            "YouTube is asking this network to prove it isn't a bot, so downloads are "
+            "being refused. This is applied to your IP, not to Sunnify: try another "
+            "network or connection, or wait a few hours."
+        )
+
     def _get_user_friendly_error(self, error: Exception, track_title: str = "") -> str:
         """Convert exception to user-friendly error message."""
         if isinstance(error, RateLimitError):
             return "Rate limited by Spotify - waiting..."
         if isinstance(error, NetworkError):
             return "Network error - retrying..."
+        if isinstance(error, ContentUnavailableError):
+            return str(error)
         if isinstance(error, ExtractionError):
             return f"Could not access '{track_title}' - may be unavailable"
+        if any(m in str(error).lower() for m in self._BLOCK_MARKERS):
+            return f"YouTube blocked this network - '{track_title}' skipped"
         if "HTTP Error 429" in str(error):
             return "YouTube rate limit - waiting..."
         error_text = str(error).lower()
@@ -973,15 +1037,13 @@ class MusicScraper(QThread):
         if fallback not in queries:
             queries.append(fallback)
 
-        # Default web client first, then the alternate player clients:
-        # youtube bot-challenges web per-IP while android/ios/tv endpoints
-        # often still serve. Fallback only runs when no file landed.
-        fallback_opts = {
-            **ydl_opts,
-            "extractor_args": {
-                "youtube": {"player_client": ["android", "ios", "tv", "web_safari"]}
-            },
-        }
+        # yt-dlp's maintained defaults first, then a different client family:
+        # youtube bot-challenges per-IP and per-client, so a second family is
+        # worth one retry. Never a pinned list - see _retry_player_clients.
+        fallback_opts = dict(ydl_opts)
+        retry_clients = _retry_player_clients()
+        if retry_clients:
+            fallback_opts["extractor_args"] = {"youtube": {"player_client": list(retry_clients)}}
         attempts = [("default", ydl_opts), ("fallback", fallback_opts)]
 
         for query in queries:
@@ -1007,6 +1069,7 @@ class MusicScraper(QThread):
                         video_url,
                         str(exc)[:300],
                     )
+                    self._note_if_network_blocked(str(exc))
                 else:
                     if not os.path.exists(expected_path):
                         # the silent case: yt-dlp produced no file without
@@ -1018,6 +1081,7 @@ class MusicScraper(QThread):
                             video_url,
                             reason[:300],
                         )
+                        self._note_if_network_blocked(reason)
                 if os.path.exists(expected_path):
                     if label != "default":
                         log.info("recovered via %s player clients", label)
@@ -1483,11 +1547,17 @@ class MusicScraper(QThread):
         except Exception as error_status:
             error_msg = self._get_user_friendly_error(error_status, track_title)
             log.error("single-track download failed: '%s'", track_title, exc_info=True)
+            # record it: the CLI derives its failure count and exit code from
+            # this list, and a silent single-track failure exited 0 with no file
+            with self._failed_lock:
+                self._failed_tracks.append(track_title)
             self.PlaylistCompleted.emit(error_msg)
             return
 
         if not final_path or not os.path.exists(final_path):
             log.warning("single-track produced no audio file: '%s'", track_title)
+            with self._failed_lock:
+                self._failed_tracks.append(track_title)
             self.PlaylistCompleted.emit("Download failed - no audio file produced")
             return
 

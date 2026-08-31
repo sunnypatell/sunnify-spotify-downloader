@@ -2594,6 +2594,237 @@ class TestTitleOnlyFilename:
         assert captured == []
 
 
+class TestRetryPlayerClients:
+    """The retry client set and its staleness guard (v2.4.1).
+
+    The set is deliberate, not incidental: measured per client, each one
+    alone fails on videos the set as a whole recovers, and yt-dlp's own
+    defaults 403 on some of them too. What must never happen is a name
+    YouTube retired silently shrinking the recovery path.
+    """
+
+    def test_every_retry_client_is_one_ytdlp_still_ships(self):
+        from yt_dlp.extractor.youtube._base import INNERTUBE_CLIENTS
+
+        from Spotify_Downloader import _RETRY_CLIENTS, _retry_player_clients
+
+        live = _retry_player_clients()
+        assert live, "retry set must not be empty"
+        assert set(live) == set(_RETRY_CLIENTS), "a retry client has been retired by yt-dlp"
+        for name in live:
+            assert name in INNERTUBE_CLIENTS
+
+    def test_retired_clients_are_dropped_not_passed_through(self, monkeypatch):
+        """Naming a client yt-dlp dropped is a hard extractor error, so a
+        retired name must be filtered out rather than sent to yt-dlp."""
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd, "_RETRY_CLIENTS", ("android", "definitely_retired_client"))
+        live = sd._retry_player_clients()
+        assert live == ("android",)
+
+    def test_unreadable_client_table_keeps_the_known_names(self, monkeypatch):
+        """If yt-dlp moves the table we cannot validate, but the names are
+        still the best guess available - fall through rather than lose the
+        retry path entirely."""
+        import builtins
+
+        import Spotify_Downloader as sd
+
+        real_import = builtins.__import__
+
+        def boom(name, *args, **kwargs):
+            if name == "yt_dlp.extractor.youtube._base":
+                raise ImportError("moved")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", boom)
+        assert sd._retry_player_clients() == sd._RETRY_CLIENTS
+
+    def test_empty_retry_set_falls_back_to_ytdlp_defaults(self, monkeypatch):
+        """Everything retired means no client override at all, so yt-dlp
+        uses its own maintained defaults instead of erroring."""
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd, "_retry_player_clients", lambda: ())
+        scraper = sd.MusicScraper()
+        captured = []
+
+        class FakeYDL:
+            def __init__(self, opts):
+                captured.append(opts)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def extract_info(self, *a, **k):
+                return None
+
+        monkeypatch.setattr(sd, "YoutubeDL", FakeYDL)
+        monkeypatch.setattr(scraper, "_select_youtube_match", lambda *_a, **_k: "https://y/x")
+        monkeypatch.setattr(sd, "get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+        with contextlib.suppress(Exception):
+            scraper.download_track_audio("q", "/tmp/never-written.mp3")
+        assert captured, "expected at least one yt-dlp invocation"
+        assert not any("extractor_args" in o for o in captured)
+
+    def test_retry_attempt_passes_the_client_set_through(self, monkeypatch):
+        import Spotify_Downloader as sd
+
+        scraper = sd.MusicScraper()
+        captured = []
+
+        class FakeYDL:
+            def __init__(self, opts):
+                captured.append(opts)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def extract_info(self, *a, **k):
+                return None
+
+        monkeypatch.setattr(sd, "YoutubeDL", FakeYDL)
+        monkeypatch.setattr(scraper, "_select_youtube_match", lambda *_a, **_k: "https://y/x")
+        monkeypatch.setattr(sd, "get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+        with contextlib.suppress(Exception):
+            scraper.download_track_audio("q", "/tmp/never-written.mp3")
+        retry = [o for o in captured if "extractor_args" in o]
+        assert retry, "expected a retry attempt carrying the client set"
+        assert retry[0]["extractor_args"]["youtube"]["player_client"] == list(
+            sd._retry_player_clients()
+        )
+
+
+class TestSingleTrackFailureAccounting:
+    """A failed single-track download has to count as a failure (v2.4.1).
+
+    scrape_track reported the error to the UI but never recorded it, so the
+    CLI's run_summary said "failed: 0" and exited 0 with no audio on disk -
+    the same class of untrue machine-readable output fixed for playlists in
+    2.2.1, still live on the single-track path.
+    """
+
+    def _scraper(self):
+        from Spotify_Downloader import MusicScraper
+
+        s = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+        ):
+            setattr(s, sig, MagicMock())
+        from spotifydown_api import TrackInfo
+
+        api = MagicMock()
+        api.get_track.return_value = TrackInfo(
+            id="t1",
+            title="T",
+            artists="A",
+            album="Al",
+            release_date="2024-01-01",
+            cover_url=None,
+            duration_ms=1000,
+            preview_url=None,
+            raw={},
+        )
+        s.ensure_spotifydown_api = lambda: api
+        s.spotifydown_api = api
+        return s
+
+    URL = "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC"
+
+    def test_raising_download_is_recorded(self, tmp_path):
+        s = self._scraper()
+
+        def boom(*_a, **_k):
+            raise RuntimeError("no playable audio source found on YouTube for this track")
+
+        s.download_track_audio = boom
+        s.scrape_track(self.URL, str(tmp_path))
+        assert s._failed_tracks == ["T"]
+
+    def test_silent_no_file_is_recorded(self, tmp_path):
+        """yt-dlp can report success and write nothing; that is still a
+        failure, not a success with no file."""
+        s = self._scraper()
+        s.download_track_audio = lambda *_a, **_k: None
+        s.scrape_track(self.URL, str(tmp_path))
+        assert s._failed_tracks == ["T"]
+
+    def test_successful_download_records_nothing(self, tmp_path):
+        s = self._scraper()
+        landed = tmp_path / "T - A.mp3"
+
+        def ok(*_a, **_k):
+            landed.write_bytes(b"audio")
+            return str(landed)
+
+        s.download_track_audio = ok
+        s.scrape_track(self.URL, str(tmp_path))
+        assert s._failed_tracks == []
+
+
+class TestNetworkBlockNotice:
+    """YouTube's bot gate hits every track at once, so it gets said once,
+    in words, instead of N generic per-track failures (v2.4.1)."""
+
+    def _scraper(self):
+        from Spotify_Downloader import MusicScraper
+
+        s = MusicScraper()
+        s.error_signal = MagicMock()
+        return s
+
+    # verbatim from the log attached to issue #95
+    BLOCKED = (
+        "ERROR: [youtube] k-OpYrXrfAY: Sign in to confirm you’re not a bot. "
+        "Use --cookies-from-browser or --cookies for the authentication."
+    )
+
+    def test_notice_fires_once_however_many_tracks_fail(self):
+        s = self._scraper()
+        for _ in range(25):
+            s._note_if_network_blocked(self.BLOCKED)
+        assert s.error_signal.emit.call_count == 1
+        assert "isn't a bot" in s.error_signal.emit.call_args[0][0]
+
+    def test_unrelated_failures_do_not_trip_it(self):
+        s = self._scraper()
+        s._note_if_network_blocked(
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+        )
+        s._note_if_network_blocked("ERROR: Video unavailable")
+        s._note_if_network_blocked("")
+        assert s.error_signal.emit.call_count == 0
+        assert s._network_blocked is False
+
+    def test_per_track_message_names_the_cause(self):
+        s = self._scraper()
+        msg = s._get_user_friendly_error(RuntimeError(self.BLOCKED), "Drugs")
+        assert "YouTube blocked this network" in msg and "Drugs" in msg
+
+    def test_unavailable_content_message_passes_through(self):
+        from spotifydown_api import ContentUnavailableError
+
+        s = self._scraper()
+        msg = s._get_user_friendly_error(ContentUnavailableError("region-locked or removed"), "x")
+        assert msg == "region-locked or removed"
+
+
 class TestSettingsDialog:
     """Construction tests for the Settings dialog.
 

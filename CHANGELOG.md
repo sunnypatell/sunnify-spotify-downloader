@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-08-31
+
+### Fixed
+- **a failed single-track download no longer reports success (#93 triage).** `scrape_track` told the UI about the error but never recorded it, so `run_summary` said `failed: 0` and the CLI exited `0` with nothing on disk. Both failure paths (an exception, and yt-dlp reporting success while writing no file) now record the track, which is the same untrue machine-readable output fixed for playlists in 2.2.1, still live on the single-track path.
+- **region-locked, private, and removed links now say so (closes #94).** Spotify serves its own error page for those, and for every link in countries it has withdrawn from; the parser reported `Could not find entity in embed page. pageProps keys: [...]`, which told the user nothing. Content pages carry `state` and the error page carries `status`, so the two are now told apart and raise `ContentUnavailableError` with the actual reason. The distinction is pinned by a test and probed daily, because it is exactly the kind of shape that changes upstream without warning.
+- **a YouTube network block is now explained once, in words (closes #95).** When YouTube asks a network to prove it is not a bot it applies that to the whole IP, so every track failed separately with a generic message and the real cause never surfaced - a 66-track playlist produced 66 unexplained failures. The first blocked track now emits one message saying YouTube is gating the network, that it is the IP rather than Sunnify, and to try another connection.
+
+### Added
+- **the upstream probe finally runs on a schedule.** `scripts/check_api_status.py` has been in the repo for months with nothing invoking it, so every upstream change it was written to catch was found by a user filing an issue instead. A daily [scheduled workflow](.github/workflows/api-status.yml) now runs it and fails loudly.
+- **three staleness guards in that probe**, each covering a path that degraded silently: a real end-to-end download through `MusicScraper`'s own code (not a copy of the strategy, so the check cannot drift from the app), a check that every YouTube retry client is still one yt-dlp ships, and a check that Spotify's unavailable-page detection still tells itself apart from real content without false-positiving on healthy pages.
+- **the YouTube retry client set is now validated at runtime.** YouTube retires client names and yt-dlp follows; naming a dead one is a hard extractor error, so retired names are dropped with a warning naming them, and the retry falls back to yt-dlp's maintained defaults rather than failing.
+
+### Notes
+- deliberately unchanged: the YouTube matcher. Reports of a wrong take or a lower bitrate than requested (#93) are the source's ceiling and matching imprecision, not a fault - YouTube's best audio for a track measures ~128 kbps, so a 320 kbps file is a transcode of it, and the strict title/artist/duration selector from 2.0.9 plus the opt-in "use closest result if no match" toggle remain the deliberate middle ground. Tightening it further trades away tracks that currently succeed.
+- the retry client set was measured rather than assumed before being kept: each client alone, yt-dlp's defaults, and a capability-derived alternative all fail to download videos the set as a whole recovers, so it stays as-is with a guard rather than being "modernised" into a regression. verified before shipping: 288 tests green (14 new), real single-track and album downloads landing tagged 320 kbps audio with correct exit codes, the unavailable-page path reproduced against live Spotify and the block notice against the verbatim error text from #95's log, and all ten upstream checks green. binaries built with yt-dlp 2026.7.4 on python 3.13.
+
 ## [2.4.0] - 2026-08-24
 
 ### Fixed
@@ -371,7 +387,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.1...HEAD
+[2.4.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.0...v2.2.1

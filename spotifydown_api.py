@@ -51,6 +51,15 @@ class RateLimitError(SpotifyDownAPIError):
     """Rate limited by Spotify - should back off before retrying."""
 
 
+class ContentUnavailableError(SpotifyDownAPIError):
+    """Spotify served its error page instead of content.
+
+    Private, removed, or region-locked items, and every link when Spotify
+    does not operate in the caller's country. Nothing retryable about it,
+    so it carries the reason rather than a parser dump.
+    """
+
+
 def retry_on_network_error(
     max_attempts: int = 3,
     backoff_factor: float = 1.0,
@@ -272,6 +281,15 @@ class SpotifyEmbedAPI:
             return container
 
         page_props = self._resolve_path(data, ("props", "pageProps")) or {}
+        # Spotify's own error page: content pages carry "state", the error
+        # page carries "status"/"title"/"description" instead. Distinguishing
+        # them turns an unactionable parser dump into the actual reason.
+        if isinstance(page_props, dict) and "status" in page_props and "state" not in page_props:
+            raise ContentUnavailableError(
+                "Spotify returned an unavailable page for this link. That happens when the "
+                "item is private, removed, or region-locked - and for every link if Spotify "
+                "does not operate in your country."
+            )
         available_keys = list(page_props.keys())[:10] if isinstance(page_props, dict) else []
         raise ExtractionError(
             f"Could not find entity in embed page. pageProps keys: {available_keys}"
@@ -641,6 +659,8 @@ class SpotifyEmbedAPI:
         try:
             data = self._fetch_embed_data(url)
             entity = self._extract_entity(data)
+        except ContentUnavailableError:
+            raise  # actionable reason; don't flatten it into "could not fetch"
         except SpotifyDownAPIError:
             return None
 

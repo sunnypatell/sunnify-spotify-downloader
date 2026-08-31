@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from spotifydown_api import (
+    ContentUnavailableError,
     ExtractionError,
     PlaylistClient,
     PlaylistInfo,
@@ -504,6 +505,63 @@ class TestSpotifyEmbedAPI:
         assert len(tracks) == 2
         assert all(t.album == "My Album" for t in tracks)
         assert fetched_urls == ["https://open.spotify.com/embed/album/ALBUMID"]
+
+
+class TestUnavailableContentDetection:
+    """Spotify serves its own error page for private, removed, and
+    region-locked links, and for every link in countries it has left.
+
+    Reported as issue #94 from Russia, where the parser dump
+    ("pageProps keys: [...]") was the only thing the user could see.
+    Shapes below are the real ones, captured from live embed pages.
+    """
+
+    ERROR_PAGE = {
+        "props": {
+            "pageProps": {
+                "status": 404,
+                "title": "Page not found",
+                "description": "We can't seem to find the page you're looking for.",
+                "links": [],
+                "rtl": False,
+                "_sentryTraceData": "x",
+                "_sentryBaggage": "y",
+            }
+        }
+    }
+    CONTENT_PAGE_KEYS = ("config", "state", "_sentryTraceData", "_sentryBaggage")
+
+    def test_error_page_raises_the_actionable_error(self):
+        api = SpotifyEmbedAPI()
+        with pytest.raises(ContentUnavailableError) as exc:
+            api._extract_entity(self.ERROR_PAGE)
+        message = str(exc.value).lower()
+        assert "unavailable" in message
+        assert "region-locked" in message and "country" in message
+
+    def test_it_is_still_a_spotifydown_error(self):
+        """Callers that catch the base class must keep catching this."""
+        from spotifydown_api import SpotifyDownAPIError
+
+        assert issubclass(ContentUnavailableError, SpotifyDownAPIError)
+
+    def test_unparseable_content_page_still_raises_the_parser_error(self):
+        """A real content page that we simply cannot parse is a different
+        bug and must not be mislabelled as region-locked."""
+        api = SpotifyEmbedAPI()
+        weird = {"props": {"pageProps": {k: {} for k in self.CONTENT_PAGE_KEYS}}}
+        with pytest.raises(ExtractionError) as exc:
+            api._extract_entity(weird)
+        assert not isinstance(exc.value, ContentUnavailableError)
+
+    def test_status_key_alone_does_not_trigger_on_content(self):
+        """Guard against a false positive if Spotify ever adds a status
+        field to real content pages: state present means it is content."""
+        api = SpotifyEmbedAPI()
+        page = {"props": {"pageProps": {"status": 200, "state": {"data": {}}}}}
+        with pytest.raises(ExtractionError) as exc:
+            api._extract_entity(page)
+        assert not isinstance(exc.value, ContentUnavailableError)
 
 
 class TestParseOgDescriptionAlbum:

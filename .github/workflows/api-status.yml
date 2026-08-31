@@ -1,0 +1,52 @@
+# Upstream health for the services Sunnify depends on (Spotify embed pages,
+# yt-dlp/YouTube) plus the staleness guards in scripts/check_api_status.py.
+#
+# This exists because the script it runs sat in the repo for months with
+# nothing invoking it: every upstream change it was written to catch was
+# instead found by a user opening an issue. Daily is enough - these break
+# on upstream's schedule, not ours.
+
+name: API Status
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    name: Probe upstream services
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Harden runner (egress audit)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install runtime dependencies
+        run: pip install -r req.txt
+
+      - name: Probe upstream services
+        run: python scripts/check_api_status.py
+
+      - name: Explain a failure
+        if: failure()
+        run: |
+          echo "::error::Upstream probe failed. A critical check regressed:"
+          echo "  spotify_embed_api / spotify_unavailable_detection -> Spotify changed its embed pages"
+          echo "  youtube_search / youtube_audio_formats / youtube_retry_clients -> yt-dlp or YouTube moved"
+          echo "Re-run locally with: python scripts/check_api_status.py"

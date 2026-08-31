@@ -8,12 +8,20 @@ Tests:
 5. YouTube raw reachability via yt-dlp (ytsearch1)
 6. YouTube real download selector (ytsearch5 + MusicScraper._select_youtube_match,
    i.e. the actual title/artist/duration matching the app uses since v2.0.9)
+7. A real end-to-end download through MusicScraper's own code path (v2.4.1)
+8. The retry client set still names clients yt-dlp ships (v2.4.1)
+9. Spotify's unavailable-page shape still tells itself apart from content,
+   so the region/private error message keeps firing correctly (v2.4.1)
+
+Checks 7-9 exist because each of them broke silently once: they fail loudly
+here instead of turning into a user's bug report.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,8 +35,9 @@ if str(ROOT) not in sys.path:
 # Import the real download selector so the YouTube check exercises the same
 # path the app does (ytsearch5 + title/artist/duration filter), not a stale
 # ytsearch1 top-hit. Bare instance avoids spinning up the QThread/Qt stack.
-from Spotify_Downloader import MusicScraper  # noqa: E402
+from Spotify_Downloader import MusicScraper, _retry_player_clients  # noqa: E402
 from spotifydown_api import (  # noqa: E402
+    ContentUnavailableError,
     PlaylistClient,
     SpotifyDownAPIError,
     SpotifyEmbedAPI,
@@ -313,6 +322,126 @@ def check_oembed_validation(client: PlaylistClient, playlist_id: str) -> Endpoin
         )
 
 
+def check_real_download(scraper: MusicScraper, query: str, expected_title: str) -> EndpointResult:
+    """Download a track through the app's own code, end to end.
+
+    Deliberately calls MusicScraper.download_track_audio rather than
+    reimplementing the strategy: the checker cannot drift from the app if
+    it runs the app. That covers search, the title/artist/duration
+    selector, the default client attempt, the retry client set, and the
+    FFmpeg postprocessing in one result.
+
+    Individual attempts failing is normal and is the whole reason a retry
+    exists - YouTube 403s the default path on some videos from some IPs.
+    Only "no audio at all" is a real alarm, so only that fails this check.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        destination = str(Path(tmp) / "probe.mp3")
+        try:
+            landed = scraper.download_track_audio(query, destination, expected_title=expected_title)
+        except Exception as exc:
+            return EndpointResult(
+                "youtube_real_download",
+                query,
+                "MusicScraper",
+                False,
+                None,
+                f"App download path failed: {type(exc).__name__}: {str(exc)[:140]}",
+            )
+        if not landed or not Path(landed).exists():
+            return EndpointResult(
+                "youtube_real_download",
+                query,
+                "MusicScraper",
+                False,
+                None,
+                "App download path reported success but produced no audio file",
+            )
+        size = Path(landed).stat().st_size
+        ok = size > 100_000  # a truncated or silent stub is not a download
+        return EndpointResult(
+            "youtube_real_download",
+            query,
+            "MusicScraper",
+            ok,
+            None,
+            f"{Path(landed).name}, {size} bytes"
+            if ok
+            else f"Suspiciously small file: {size} bytes",
+        )
+
+
+def check_retry_clients_are_live() -> EndpointResult:
+    """Every retry client must still be one yt-dlp ships.
+
+    Cheap and offline: names YouTube retires get dropped silently at
+    runtime, which quietly shrinks the recovery path until it is empty.
+    """
+    from Spotify_Downloader import _RETRY_CLIENTS
+
+    live = _retry_player_clients()
+    retired = [name for name in _RETRY_CLIENTS if name not in live]
+    return EndpointResult(
+        "youtube_retry_clients",
+        ",".join(_RETRY_CLIENTS),
+        "introspection",
+        not retired,
+        None,
+        f"all {len(live)} retry clients still shipped by yt-dlp"
+        if not retired
+        else f"RETIRED by yt-dlp, recovery path shrinking: {retired} (live: {list(live)})",
+    )
+
+
+def check_unavailable_detection(api: SpotifyEmbedAPI, good_track_id: str) -> EndpointResult:
+    """Spotify's error page must stay distinguishable from real content.
+
+    Drives the region/private/removed message. If Spotify reshapes either
+    page this stops discriminating, and users get a parser dump again.
+    """
+    url = "https://open.spotify.com/embed/track/0000000000000000000000"
+    try:
+        api.get_track("0000000000000000000000")
+        return EndpointResult(
+            "spotify_unavailable_detection",
+            url,
+            "GET",
+            False,
+            None,
+            "Unavailable content did not raise ContentUnavailableError",
+        )
+    except ContentUnavailableError:
+        pass
+    except Exception as exc:
+        return EndpointResult(
+            "spotify_unavailable_detection",
+            url,
+            "GET",
+            False,
+            None,
+            f"Unavailable content raised {type(exc).__name__} instead of ContentUnavailableError",
+        )
+    try:
+        api.get_track(good_track_id)
+    except Exception as exc:
+        return EndpointResult(
+            "spotify_unavailable_detection",
+            url,
+            "GET",
+            False,
+            None,
+            f"FALSE POSITIVE: healthy track now raises {type(exc).__name__}: {exc}",
+        )
+    return EndpointResult(
+        "spotify_unavailable_detection",
+        url,
+        "GET",
+        True,
+        None,
+        "Error page raises ContentUnavailableError; healthy content unaffected",
+    )
+
+
 def main() -> int:
     playlist_id = "37i9dQZF1DXcBWIGoYBM5M"  # Spotify's "Today's Top Hits"
     large_playlist_id = "37i9dQZF1DX5Ejj0EkURtP"  # "All Out 2010s" - 150 tracks
@@ -348,6 +477,18 @@ def main() -> int:
     if first_track is not None:
         results.append(check_youtube_match(first_track))
 
+    # Staleness guards: these caught nothing when they didn't exist, which
+    # is the point - each covers a path that degraded silently in the past.
+    results.append(check_retry_clients_are_live())
+    results.append(
+        check_real_download(
+            MusicScraper(),
+            f"ytsearch1:{query} audio",  # same shape _download_one_track builds
+            "Never Gonna Give You Up",
+        )
+    )
+    results.append(check_unavailable_detection(embed_api, album_probe_track_id))
+
     # Print summary
     print("\n" + "=" * 60)
     print("API STATUS SUMMARY")
@@ -365,7 +506,13 @@ def main() -> int:
     sys.stdout.write("\n")
 
     # Return non-zero if any critical checks failed
-    critical_checks = ["spotify_embed_api", "youtube_search"]
+    critical_checks = [
+        "spotify_embed_api",
+        "youtube_search",
+        "youtube_real_download",
+        "youtube_retry_clients",
+        "spotify_unavailable_detection",
+    ]
     failed_critical = [r for r in results if r.name in critical_checks and not r.ok]
     return 1 if failed_critical else 0
 
