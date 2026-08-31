@@ -31,6 +31,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # qt6 hard-requires libEGL at import time (qt5 didn't), and the probe
+      # imports the app itself; ffmpeg is what the real-download check
+      # postprocesses with. Same list tests.yml and release-build.yml use.
+      - name: Install qt6 runtime libs + ffmpeg
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libegl1 libgl1 libxcb-cursor0 libxkbcommon-x11-0 ffmpeg
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -48,6 +56,8 @@ jobs:
         run: pip install --require-hashes -r requirements-build.txt
 
       - name: Probe upstream services
+        env:
+          QT_QPA_PLATFORM: offscreen  # no display on the runner; the probe never opens a window
         run: python scripts/check_api_status.py
 
       - name: Explain a failure
