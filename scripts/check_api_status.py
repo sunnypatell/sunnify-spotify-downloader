@@ -8,7 +8,9 @@ Tests:
 5. YouTube raw reachability via yt-dlp (ytsearch1)
 6. YouTube real download selector (ytsearch5 + MusicScraper._select_youtube_match,
    i.e. the actual title/artist/duration matching the app uses since v2.0.9)
-7. A real end-to-end download through MusicScraper's own code path (v2.4.1)
+7. A real end-to-end download through MusicScraper's own code path, which
+   reports itself skipped when YouTube bot-gates the IP (CI runners are
+   datacenter addresses and are gated; run locally for real coverage) (v2.4.1)
 8. The retry client set still names clients yt-dlp ships (v2.4.1)
 9. Spotify's unavailable-page shape still tells itself apart from content,
    so the region/private error message keeps firing correctly (v2.4.1)
@@ -340,6 +342,23 @@ def check_real_download(scraper: MusicScraper, query: str, expected_title: str) 
         try:
             landed = scraper.download_track_audio(query, destination, expected_title=expected_title)
         except Exception as exc:
+            # YouTube gates datacenter IPs, which is what CI runners are, so
+            # this check is usually blocked there. That is the environment
+            # refusing us, not Sunnify breaking, and failing on it daily
+            # would train everyone to ignore this job. Any other cause is a
+            # real alarm and still fails.
+            if scraper._network_blocked:
+                return EndpointResult(
+                    "youtube_real_download",
+                    query,
+                    "MusicScraper",
+                    True,
+                    None,
+                    "SKIPPED: YouTube is bot-gating this IP, so a real download "
+                    "cannot be attempted from here. The other YouTube checks still "
+                    "cover extraction and matching; run this locally to test the "
+                    "download path itself.",
+                )
             return EndpointResult(
                 "youtube_real_download",
                 query,

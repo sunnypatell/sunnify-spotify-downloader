@@ -31,9 +31,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # qt6 hard-requires libEGL at import time (qt5 didn't), and the probe
-      # imports the app itself; ffmpeg is what the real-download check
-      # postprocesses with. Same list tests.yml and release-build.yml use.
+      # qt6 hard-requires libEGL at import time; the probe imports the app
       - name: Install qt6 runtime libs + ffmpeg
         run: |
           sudo apt-get update -q
@@ -44,14 +42,10 @@ jobs:
         with:
           python-version: "3.13"
           cache: "pip"
+          cache-dependency-path: requirements-build.txt
 
-      # The hash lock, not req.txt's floating ranges: this probe answers
-      # "is the shipped app broken right now", and shipped binaries are built
-      # from this same lock. Installing newer versions here would let the
-      # probe pass green while users on the released build are broken, which
-      # is a false negative on the one thing it exists to catch. Whether a
-      # future dependency bump breaks us is tests.yml's job, deliberately on
-      # loose ranges (SECURITY.md).
+      # the lock, not req.txt's ranges: shipped binaries are built from this,
+      # so anything newer here passes green while released users are broken
       - name: Install the same dependencies the release binaries ship
         run: pip install --require-hashes -r requirements-build.txt
 
