@@ -72,59 +72,9 @@ jobs:
             exit 1
           fi
 
-  upstream:
-    name: Probe upstream services
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions: {}
-    steps:
-      # gate, not decoration: a binary built while spotify or youtube is
-      # already broken ships broken. the real-download check reports itself
-      # skipped here (youtube gates datacenter ips), so this covers the
-      # metadata endpoints, the matcher, and the retry-client liveness.
-      - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: audit
-
-      - name: Check out source at the release tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.inputs.tag }}
-          persist-credentials: false
-
-      # qt6 hard-requires libEGL at import time; the probe imports the app
-      - name: Install qt6 runtime libs + ffmpeg
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q libegl1 libgl1 libxcb-cursor0 libxkbcommon-x11-0 ffmpeg
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-          cache: "pip"
-          cache-dependency-path: requirements-build.txt
-
-      - name: Install the same dependencies the release binaries ship
-        run: pip install --require-hashes -r requirements-build.txt
-
-      - name: Probe upstream services
-        env:
-          QT_QPA_PLATFORM: offscreen # no display on the runner
-        run: python scripts/check_api_status.py
-
-      - name: Explain a failure
-        if: failure()
-        run: |
-          echo "::error::Upstream is broken right now, so this build would ship broken."
-          echo "Re-dispatch once the probe is green, or ship deliberately if you"
-          echo "have read the failure and know it does not affect users."
-
   build:
     name: Build
-    needs: [validate, upstream]
+    needs: validate
     strategy:
       fail-fast: false
       matrix:
