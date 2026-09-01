@@ -93,7 +93,7 @@ jobs:
     steps:
       - name: Harden runner (egress audit)
         # Audit, not block, on purpose - see SECURITY.md.
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
 
@@ -354,7 +354,7 @@ jobs:
       - name: Attest build provenance (SLSA Build L3)
         id: attest
         # Must run inside this reusable workflow - that placement is the L3.
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: out/${{ inputs.asset }}
 
@@ -377,7 +377,7 @@ jobs:
         # The console-subsystem CLI sibling gets its own provenance so every
         # shipped binary is independently verifiable - same as the others.
         if: inputs.platform == 'windows'
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: out/Sunnify-Windows-CLI.exe
 
