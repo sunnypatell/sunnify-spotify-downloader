@@ -3502,6 +3502,7 @@ class TestFixesAndReporting:
     def test_update_counter_with_failures(self, qapp):
         """update_counter should show accurate ok_count and failed count."""
         from unittest.mock import MagicMock
+
         from Spotify_Downloader import MainWindow
 
         win = MainWindow()
@@ -3516,6 +3517,7 @@ class TestFixesAndReporting:
     def test_star_prompt_skipped_when_all_tracks_failed(self, qapp, monkeypatch):
         """Star prompt must not show when no songs have landed successfully."""
         from unittest.mock import MagicMock
+
         from Spotify_Downloader import MainWindow
 
         win = MainWindow()
@@ -3525,7 +3527,6 @@ class TestFixesAndReporting:
         mock_thread.scraper._failed_tracks = ["Song1"]
         win.scraper_thread = mock_thread
 
-        shown = []
         monkeypatch.setattr(win, "_config", {"star_prompt_shown": False})
         # If count=1 but 1 failed, ok_count=0 -> prompt should not show
         win._maybe_show_star_prompt(1)
@@ -3543,7 +3544,7 @@ class TestFixesAndReporting:
         warned = []
         monkeypatch.setattr(
             "Spotify_Downloader.QMessageBox.critical",
-            lambda *args, **kwargs: warned.append(args),
+            lambda *args, **_kwargs: warned.append(args),
         )
 
         win.on_returnButton()
@@ -3558,17 +3559,17 @@ class TestFixesAndReporting:
         # Subtitle / movement inside title
         assert MusicScraper._title_plausibly_matches(
             "12 Études, Op. 25: No. 11 in A Minor 'Winter Wind'",
-            "Chopin: 12 Études, Op. 25: No. 11 in A Minor \"Winter Wind\"",
+            'Chopin: 12 Études, Op. 25: No. 11 in A Minor "Winter Wind"',
         )
         # Quoted nickname matching
         assert MusicScraper._title_plausibly_matches(
             "Moonlight Sonata (First Movement from Piano Sonata No. 14, Op. 27 No. 2)",
-            "I. Adagio Sostenuto - Piano Sonata No. 14 in C-Sharp Minor, Op. 27 No. 2 \"Moonlight\" [Remastered]",
+            'I. Adagio Sostenuto - Piano Sonata No. 14 in C-Sharp Minor, Op. 27 No. 2 "Moonlight" [Remastered]',
         )
         # Token overlap for long concerto titles
         assert MusicScraper._title_plausibly_matches(
-            "Antonio Vivaldi - Concerto No.4 in F minor, Op.8, RV 297, \" L'inverno \", Allegro Non Molto",
-            "The Four Seasons: Concerto No. 4 in F Minor, RV 297 \"L'inverno\" (winter): I. Allegro non molto",
+            'Antonio Vivaldi - Concerto No.4 in F minor, Op.8, RV 297, " L\'inverno ", Allegro Non Molto',
+            'The Four Seasons: Concerto No. 4 in F Minor, RV 297 "L\'inverno" (winter): I. Allegro non molto',
         )
 
     def test_artist_matching_in_channel_and_surname(self, monkeypatch):
@@ -3578,7 +3579,12 @@ class TestFixesAndReporting:
         scraper = MusicScraper()
         # Mock youtube search returning candidate with artist in uploader
         cand = [
-            {"id": "vid1", "title": "Once Upon A December (Piano)", "uploader": "Invadable Harmony", "duration": 180}
+            {
+                "id": "vid1",
+                "title": "Once Upon A December (Piano)",
+                "uploader": "Invadable Harmony",
+                "duration": 180,
+            }
         ]
         monkeypatch.setattr(
             scraper,
@@ -3588,9 +3594,10 @@ class TestFixesAndReporting:
 
         with monkeypatch.context() as m:
             from unittest.mock import MagicMock
+
             mock_ydl = MagicMock()
             mock_ydl.__enter__.return_value.extract_info.return_value = {"entries": cand}
-            m.setattr("Spotify_Downloader.YoutubeDL", lambda *a, **k: mock_ydl)
+            m.setattr("Spotify_Downloader.YoutubeDL", lambda *_a, **_k: mock_ydl)
 
             url = scraper._select_youtube_match(
                 "ytsearch5:Once Upon a December",
@@ -3602,7 +3609,12 @@ class TestFixesAndReporting:
 
             # Classical composer surname match
             cand_mozart = [
-                {"id": "vid2", "title": "Mozart: Requiem in D Minor, K. 626 - Lacrimosa", "uploader": "Classical Choirs", "duration": 200}
+                {
+                    "id": "vid2",
+                    "title": "Mozart: Requiem in D Minor, K. 626 - Lacrimosa",
+                    "uploader": "Classical Choirs",
+                    "duration": 200,
+                }
             ]
             mock_ydl.__enter__.return_value.extract_info.return_value = {"entries": cand_mozart}
             url_mozart = scraper._select_youtube_match(
@@ -3612,5 +3624,3 @@ class TestFixesAndReporting:
                 expected_artists="Wolfgang Amadeus Mozart, Choir of King's College",
             )
             assert url_mozart == "https://www.youtube.com/watch?v=vid2"
-
-

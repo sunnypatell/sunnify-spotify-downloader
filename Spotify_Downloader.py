@@ -162,12 +162,14 @@ def get_ffmpeg_path():
         "/usr/bin",  # Linux system
     ]
     if sys.platform == "win32":
-        common_paths.extend([
-            r"C:\ProgramData\chocolatey\bin",
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
-            os.path.expandvars(r"%USERPROFILE%\scoop\shims"),
-            r"C:\ffmpeg\bin",
-        ])
+        common_paths.extend(
+            [
+                r"C:\ProgramData\chocolatey\bin",
+                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
+                os.path.expandvars(r"%USERPROFILE%\scoop\shims"),
+                r"C:\ffmpeg\bin",
+            ]
+        )
 
     for path in common_paths:
         ffmpeg = os.path.join(path, ffmpeg_name)
@@ -820,7 +822,11 @@ class MusicScraper(QThread):
         if cleaned != s:
             return cleaned
         parts = s.split(" - ", 1)
-        if len(parts) == 2 and len(parts[0].strip()) > 3 and not re.match(r"^[IVXLCDM\d]+\.\s+", parts[0].strip(), re.IGNORECASE):
+        if (
+            len(parts) == 2
+            and len(parts[0].strip()) > 3
+            and not re.match(r"^[IVXLCDM\d]+\.\s+", parts[0].strip(), re.IGNORECASE)
+        ):
             return parts[0]
         return s
 
@@ -866,8 +872,14 @@ class MusicScraper(QThread):
                 return True
 
         # 2. Token overlap for longer / multi-word titles
-        target_words = set(w for w in cls._normalize_title(expected_title).split() if len(w) >= 3 and w not in {"the", "and", "for", "from", "with"})
-        yt_words = set(w for w in yt.split() if len(w) >= 3 and w not in {"the", "and", "for", "from", "with"})
+        target_words = {
+            w
+            for w in cls._normalize_title(expected_title).split()
+            if len(w) >= 3 and w not in {"the", "and", "for", "from", "with"}
+        }
+        yt_words = {
+            w for w in yt.split() if len(w) >= 3 and w not in {"the", "and", "for", "from", "with"}
+        }
         if len(target_words) >= 3 and len(yt_words) >= 2:
             overlap = target_words & yt_words
             if len(overlap) >= 2 and (len(overlap) / min(len(target_words), len(yt_words)) >= 0.5):
@@ -969,12 +981,21 @@ class MusicScraper(QThread):
                 artist_tokens = [self._normalize_title(t) for t in raw_tokens]
                 artist_tokens = [t for t in artist_tokens if t]
                 if artist_tokens:
+
                     def _normalize_artist_text(s: str | None) -> str:
                         if not s:
                             return ""
                         import unicodedata
-                        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)).lower()
-                        s = "".join(ch if (ch.isspace() or unicodedata.category(ch)[0] in "LNM") else " " for ch in s)
+
+                        s = "".join(
+                            c
+                            for c in unicodedata.normalize("NFKD", s)
+                            if not unicodedata.combining(c)
+                        ).lower()
+                        s = "".join(
+                            ch if (ch.isspace() or unicodedata.category(ch)[0] in "LNM") else " "
+                            for ch in s
+                        )
                         return re.sub(r"\s+", " ", s).strip()
 
                     def _entry_matches_artist(e):
@@ -990,7 +1011,12 @@ class MusicScraper(QThread):
                         for tok in artist_tokens:
                             if tok in cand_norm:
                                 return True
-                            words = [w for w in tok.split() if len(w) >= 4 and w not in {"the", "and", "brothers", "orchestra", "choir"}]
+                            words = [
+                                w
+                                for w in tok.split()
+                                if len(w) >= 4
+                                and w not in {"the", "and", "brothers", "orchestra", "choir"}
+                            ]
                             for w in words:
                                 if w in cand_words or w in cand_norm:
                                     return True
@@ -2798,7 +2824,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         ok_count = max(0, count - failed_count)
         if total > 0:
             if failed_count > 0:
-                self.CounterLabel.setText(f"Songs downloaded {ok_count} of {total} ({failed_count} failed)")
+                self.CounterLabel.setText(
+                    f"Songs downloaded {ok_count} of {total} ({failed_count} failed)"
+                )
             else:
                 self.CounterLabel.setText(f"Songs downloaded {ok_count} of {total}")
         else:
