@@ -3479,3 +3479,75 @@ class TestStarPrompt:
         QTest.keyClick(dlg, Qt.Key.Key_Escape)
         assert dlg.result() == QDialog.DialogCode.Rejected
         assert not dlg.isVisible()
+
+
+class TestFixesAndReporting:
+    """Tests for download bug fixes and accurate status reporting."""
+
+    @pytest.fixture(autouse=True)
+    def _no_update_thread(self, monkeypatch):
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
+
+    def test_compose_filename_respects_audio_format(self):
+        """_compose_filename must use the configured format's extension."""
+        from Spotify_Downloader import MusicScraper
+
+        for fmt in ("flac", "m4a", "opus", "wav", "mp3"):
+            scraper = MusicScraper(audio_format=fmt)
+            name = scraper._compose_filename("Song", "Artist")
+            assert name.endswith(f".{fmt}")
+
+    def test_update_counter_with_failures(self, qapp):
+        """update_counter should show accurate ok_count and failed count."""
+        from unittest.mock import MagicMock
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        mock_thread = MagicMock()
+        mock_thread.scraper._total_tracks = 10
+        mock_thread.scraper._failed_tracks = ["Song1", "Song2"]
+        win.scraper_thread = mock_thread
+
+        win.update_counter(5)
+        assert win.CounterLabel.text() == "Songs downloaded 3 of 10 (2 failed)"
+
+    def test_star_prompt_skipped_when_all_tracks_failed(self, qapp, monkeypatch):
+        """Star prompt must not show when no songs have landed successfully."""
+        from unittest.mock import MagicMock
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        win._config["star_prompt_shown"] = False
+        mock_thread = MagicMock()
+        mock_thread.scraper._total_tracks = 5
+        mock_thread.scraper._failed_tracks = ["Song1"]
+        win.scraper_thread = mock_thread
+
+        shown = []
+        monkeypatch.setattr(win, "_config", {"star_prompt_shown": False})
+        # If count=1 but 1 failed, ok_count=0 -> prompt should not show
+        win._maybe_show_star_prompt(1)
+        assert not win._config.get("star_prompt_shown")
+
+    def test_on_return_button_blocks_when_no_ffmpeg(self, qapp, monkeypatch):
+        """on_returnButton must stop and warn if FFmpeg is missing."""
+        from Spotify_Downloader import MainWindow
+
+        win = MainWindow()
+        win.PlaylistLink.setText("https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC")
+        win._download_path_set = True
+
+        monkeypatch.setattr("Spotify_Downloader.get_ffmpeg_path", lambda: None)
+        warned = []
+        monkeypatch.setattr(
+            "Spotify_Downloader.QMessageBox.critical",
+            lambda *args, **kwargs: warned.append(args),
+        )
+
+        win.on_returnButton()
+        assert win.statusMsg.text() == "FFmpeg not found"
+        assert len(warned) == 1
+        assert not win._is_downloading
+
