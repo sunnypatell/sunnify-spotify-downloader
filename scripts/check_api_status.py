@@ -22,11 +22,20 @@ here instead of turning into a user's bug report.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+if sys.platform == "win32":
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
 
 from yt_dlp import YoutubeDL
 

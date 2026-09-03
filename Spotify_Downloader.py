@@ -161,6 +161,13 @@ def get_ffmpeg_path():
         "/usr/local/bin",  # macOS Intel homebrew / Linux
         "/usr/bin",  # Linux system
     ]
+    if sys.platform == "win32":
+        common_paths.extend([
+            r"C:\ProgramData\chocolatey\bin",
+            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
+            os.path.expandvars(r"%USERPROFILE%\scoop\shims"),
+            r"C:\ffmpeg\bin",
+        ])
 
     for path in common_paths:
         ffmpeg = os.path.join(path, ffmpeg_name)
@@ -173,6 +180,29 @@ def get_ffmpeg_path():
     ffmpeg_in_path = shutil.which("ffmpeg")
     if ffmpeg_in_path:
         return os.path.dirname(ffmpeg_in_path)
+
+    # On Windows, check user/machine environment in case PATH was modified recently
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            for hkey in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                sub = (
+                    r"Environment"
+                    if hkey == winreg.HKEY_CURRENT_USER
+                    else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+                )
+                try:
+                    with winreg.OpenKey(hkey, sub) as key:
+                        val, _ = winreg.QueryValueEx(key, "PATH")
+                        for p in val.split(os.pathsep):
+                            expanded = os.path.expandvars(p.strip())
+                            if expanded and os.path.exists(os.path.join(expanded, "ffmpeg.exe")):
+                                return expanded
+                except OSError:
+                    pass
+        except Exception:
+            pass
 
     return None
 
@@ -662,9 +692,11 @@ class MusicScraper(QThread):
             stem = f"{sanitized_title} - {sanitized_artists}"
         if disambig:
             stem = f"{stem} [{disambig}]"
+        fmt = self.audio_format if self.audio_format in SUPPORTED_FORMATS else "mp3"
+        ext = SUPPORTED_FORMATS[fmt]["ext"]
         if self.include_track_number and track_num is not None:
-            return f"{track_num:02d}. {stem}.mp3"
-        return f"{stem}.mp3"
+            return f"{track_num:02d}. {stem}.{ext}"
+        return f"{stem}.{ext}"
 
     def format_playlist_name(self, metadata: PlaylistInfo):
         owner = metadata.owner or "Spotify"
@@ -992,10 +1024,13 @@ class MusicScraper(QThread):
         # Check for FFmpeg first
         ffmpeg_path = get_ffmpeg_path()
         if not ffmpeg_path:
-            raise RuntimeError(
-                "FFmpeg not found! Install via: brew install ffmpeg (macOS) "
-                "or apt install ffmpeg (Linux)"
-            )
+            if sys.platform == "win32":
+                instructions = "Install via: winget install Gyan.FFmpeg or choco install ffmpeg"
+            elif sys.platform == "darwin":
+                instructions = "Install via: brew install ffmpeg (macOS)"
+            else:
+                instructions = "Install via: apt install ffmpeg (Linux)"
+            raise RuntimeError(f"FFmpeg not found! {instructions}")
 
         fmt = self.audio_format if self.audio_format in SUPPORTED_FORMATS else "mp3"
         ext = SUPPORTED_FORMATS[fmt]["ext"]
@@ -1605,7 +1640,6 @@ class ScraperThread(QThread):
                 self.scraper.scrape_track(self.spotify_link, self.music_folder)
             else:
                 self.scraper.scrape_playlist(self.spotify_link, self.music_folder)
-            self.progress_update.emit("Scraping completed.")
         except Exception as e:
             log.exception("scrape failed for %s", self.spotify_link)
             self.progress_update.emit(f"{e}")
@@ -2423,7 +2457,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         nagging). Deferred cases (update toast on screen) retry naturally
         when the next song lands - the flag only persists once the dialog
         actually shows, so the one shot is never burned silently."""
-        if count < 1 or self._config.get("star_prompt_shown"):
+        if self._config.get("star_prompt_shown"):
+            return
+        failed_count = 0
+        try:
+            thread = getattr(self, "scraper_thread", None)
+            if thread is not None and hasattr(thread, "scraper"):
+                failed_count = len(getattr(thread.scraper, "_failed_tracks", []))
+        except (AttributeError, RuntimeError):
+            failed_count = 0
+        ok_count = max(0, count - failed_count)
+        if ok_count < 1:
             return
         if self._cancel_event.is_set():
             return
@@ -2520,6 +2564,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         spotify_url = self.PlaylistLink.text().strip()
         if not spotify_url:
             self.statusMsg.setText("Please enter a Spotify URL")
+            return
+
+        if not get_ffmpeg_path():
+            if sys.platform == "win32":
+                instructions = (
+                    "Install FFmpeg on Windows using:\n"
+                    "  winget install Gyan.FFmpeg\n"
+                    "or\n"
+                    "  choco install ffmpeg\n\n"
+                    "Then restart Sunnify."
+                )
+            elif sys.platform == "darwin":
+                instructions = "Install FFmpeg on macOS using:\n  brew install ffmpeg"
+            else:
+                instructions = "Install FFmpeg on Linux using:\n  sudo apt install ffmpeg"
+            self.statusMsg.setText("FFmpeg not found")
+            QMessageBox.critical(
+                self,
+                "FFmpeg Required",
+                f"FFmpeg is required for audio downloads and conversion but was not found on your system.\n\n{instructions}",
+            )
             return
 
         # ALWAYS prompt for download location on first download
@@ -2649,15 +2714,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     @pyqtSlot(int)
     def update_counter(self, count):
         total = 0
-        if hasattr(self, "scraper_thread") and self.scraper_thread is not None:
-            try:
-                total = self.scraper_thread.scraper._total_tracks or 0
-            except AttributeError:
-                total = 0
+        failed_count = 0
+        try:
+            thread = getattr(self, "scraper_thread", None)
+            if thread is not None and hasattr(thread, "scraper"):
+                total = getattr(thread.scraper, "_total_tracks", 0) or 0
+                failed_count = len(getattr(thread.scraper, "_failed_tracks", []))
+        except (AttributeError, RuntimeError):
+            pass
+        ok_count = max(0, count - failed_count)
         if total > 0:
-            self.CounterLabel.setText(f"Songs downloaded {count} of {total}")
+            if failed_count > 0:
+                self.CounterLabel.setText(f"Songs downloaded {ok_count} of {total} ({failed_count} failed)")
+            else:
+                self.CounterLabel.setText(f"Songs downloaded {ok_count} of {total}")
         else:
-            self.CounterLabel.setText("Songs downloaded " + str(count))
+            if failed_count > 0:
+                self.CounterLabel.setText(f"Songs downloaded {ok_count} ({failed_count} failed)")
+            else:
+                self.CounterLabel.setText(f"Songs downloaded {ok_count}")
 
     @pyqtSlot(int)
     def update_song_progress(self, progress):
