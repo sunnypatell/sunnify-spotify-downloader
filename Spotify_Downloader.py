@@ -969,6 +969,14 @@ class MusicScraper(QThread):
                 artist_tokens = [self._normalize_title(t) for t in raw_tokens]
                 artist_tokens = [t for t in artist_tokens if t]
                 if artist_tokens:
+                    def _normalize_artist_text(s: str | None) -> str:
+                        if not s:
+                            return ""
+                        import unicodedata
+                        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)).lower()
+                        s = "".join(ch if (ch.isspace() or unicodedata.category(ch)[0] in "LNM") else " " for ch in s)
+                        return re.sub(r"\s+", " ", s).strip()
+
                     def _entry_matches_artist(e):
                         cand_fields = [
                             e.get("title") or "",
@@ -977,7 +985,7 @@ class MusicScraper(QThread):
                             e.get("creator") or "",
                             e.get("artist") or "",
                         ]
-                        cand_norm = self._normalize_title(" ".join(cand_fields))
+                        cand_norm = _normalize_artist_text(" ".join(cand_fields))
                         cand_words = set(cand_norm.split())
                         for tok in artist_tokens:
                             if tok in cand_norm:
@@ -1116,15 +1124,22 @@ class MusicScraper(QThread):
         clean_query = search_query.replace("\xa0", " ")
         queries = [self._widen_search(clean_query)]
 
-        # If multiple artists, generate a query with just the primary artist to avoid overloading YouTube search
-        if expected_artists and expected_title:
-            clean_artists = expected_artists.replace("\xa0", " ")
-            raw_artists = re.split(r"[,&;/]+|\s+(?:feat\.?|ft\.?)\s+", clean_artists, flags=re.IGNORECASE)
-            primary_artist = raw_artists[0].strip() if raw_artists else ""
+        # Add query variants without "audio" and with artist-first / primary artist
+        if expected_title and expected_artists:
+            clean_t = expected_title.replace("\xa0", " ").strip()
+            clean_a = expected_artists.replace("\xa0", " ").strip()
+            raw_artists = re.split(r"[,&;/]+|\s+(?:feat\.?|ft\.?)\s+", clean_a, flags=re.IGNORECASE)
+            primary_artist = raw_artists[0].strip() if raw_artists else clean_a
+            q_no_audio = f"ytsearch5:{clean_t} {clean_a}"
+            if q_no_audio not in queries:
+                queries.append(q_no_audio)
+            q_artist_first = f"ytsearch5:{clean_a} {clean_t}"
+            if q_artist_first not in queries:
+                queries.append(q_artist_first)
             if primary_artist and len(raw_artists) > 1:
-                primary_q = f"ytsearch5:{expected_title} {primary_artist} audio"
-                if primary_q not in queries:
-                    queries.append(primary_q)
+                q_primary = f"ytsearch5:{clean_t} {primary_artist} audio"
+                if q_primary not in queries:
+                    queries.append(q_primary)
 
         fallback = self._simplify_search(clean_query)
         if fallback not in queries:
