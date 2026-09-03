@@ -3551,3 +3551,66 @@ class TestFixesAndReporting:
         assert len(warned) == 1
         assert not win._is_downloading
 
+    def test_classical_title_matching(self):
+        """Classical titles with movements or colons must match YouTube titles."""
+        from Spotify_Downloader import MusicScraper
+
+        # Subtitle / movement inside title
+        assert MusicScraper._title_plausibly_matches(
+            "12 Études, Op. 25: No. 11 in A Minor 'Winter Wind'",
+            "Chopin: 12 Études, Op. 25: No. 11 in A Minor \"Winter Wind\"",
+        )
+        # Quoted nickname matching
+        assert MusicScraper._title_plausibly_matches(
+            "Moonlight Sonata (First Movement from Piano Sonata No. 14, Op. 27 No. 2)",
+            "I. Adagio Sostenuto - Piano Sonata No. 14 in C-Sharp Minor, Op. 27 No. 2 \"Moonlight\" [Remastered]",
+        )
+        # Token overlap for long concerto titles
+        assert MusicScraper._title_plausibly_matches(
+            "Antonio Vivaldi - Concerto No.4 in F minor, Op.8, RV 297, \" L'inverno \", Allegro Non Molto",
+            "The Four Seasons: Concerto No. 4 in F Minor, RV 297 \"L'inverno\" (winter): I. Allegro non molto",
+        )
+
+    def test_artist_matching_in_channel_and_surname(self, monkeypatch):
+        """Artist matching should accept surname or uploader/channel metadata."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        # Mock youtube search returning candidate with artist in uploader
+        cand = [
+            {"id": "vid1", "title": "Once Upon A December (Piano)", "uploader": "Invadable Harmony", "duration": 180}
+        ]
+        monkeypatch.setattr(
+            scraper,
+            "_select_youtube_match",
+            MusicScraper._select_youtube_match.__get__(scraper, MusicScraper),
+        )
+
+        with monkeypatch.context() as m:
+            from unittest.mock import MagicMock
+            mock_ydl = MagicMock()
+            mock_ydl.__enter__.return_value.extract_info.return_value = {"entries": cand}
+            m.setattr("Spotify_Downloader.YoutubeDL", lambda *a, **k: mock_ydl)
+
+            url = scraper._select_youtube_match(
+                "ytsearch5:Once Upon a December",
+                expected_duration_s=180,
+                expected_title="Once Upon a December",
+                expected_artists="Invadable Harmony",
+            )
+            assert url == "https://www.youtube.com/watch?v=vid1"
+
+            # Classical composer surname match
+            cand_mozart = [
+                {"id": "vid2", "title": "Mozart: Requiem in D Minor, K. 626 - Lacrimosa", "uploader": "Classical Choirs", "duration": 200}
+            ]
+            mock_ydl.__enter__.return_value.extract_info.return_value = {"entries": cand_mozart}
+            url_mozart = scraper._select_youtube_match(
+                "ytsearch5:Requiem Lacrimosa",
+                expected_duration_s=200,
+                expected_title="Requiem, K. 626: Lacrimosa",
+                expected_artists="Wolfgang Amadeus Mozart, Choir of King's College",
+            )
+            assert url_mozart == "https://www.youtube.com/watch?v=vid2"
+
+

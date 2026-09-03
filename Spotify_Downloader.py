@@ -800,7 +800,7 @@ class MusicScraper(QThread):
 
     @staticmethod
     def _spotify_title_core(s: str | None) -> str:
-        """Drop the ` - Variant` suffix Spotify adds to differentiate releases.
+        """Drop the release-descriptor suffix Spotify adds to differentiate releases.
 
         Examples:
             "Bohemian Rhapsody - Remastered 2011" -> "Bohemian Rhapsody"
@@ -808,32 +808,72 @@ class MusicScraper(QThread):
             "Sweet Disposition - Remix Edit"      -> "Sweet Disposition"
             "Take-Off"                            -> "Take-Off" (literal hyphen, no spaces)
             "Mi Gente"                            -> "Mi Gente"
-
-        Only applied to the Spotify-side title before fuzzy comparison so
-        a YouTube upload titled just "Bohemian Rhapsody" still matches.
-        Don't apply this to YouTube titles - they use ` - ` for
-        `Artist - Song` and the strip would lose the song name.
         """
         if not s:
             return ""
-        return s.split(" - ", 1)[0]
+        cleaned = re.sub(
+            r"\s+-\s+(?:remaster(?:ed)?(?:\s+\d{4})?|live(?:\s+at\s+.*)?|radio edit|single version|mono|bonus track|from\s+[\"'].*?[\"']).*$",
+            "",
+            s,
+            flags=re.IGNORECASE,
+        )
+        if cleaned != s:
+            return cleaned
+        parts = s.split(" - ", 1)
+        if len(parts) == 2 and len(parts[0].strip()) > 3 and not re.match(r"^[IVXLCDM\d]+\.\s+", parts[0].strip(), re.IGNORECASE):
+            return parts[0]
+        return s
+
+    @classmethod
+    def _extract_title_segments(cls, title: str | None) -> list[str]:
+        """Extract candidate segments from complex, multi-part, or classical titles."""
+        if not title:
+            return []
+        segments = [title]
+        core = cls._spotify_title_core(title)
+        if core and core != title:
+            segments.append(core)
+        # Quoted nicknames e.g. "Moonlight", "Winter Wind", "L'inverno"
+        for q in re.findall(r'["\']([^"\']+)["\']', title):
+            if len(q.strip()) >= 3:
+                segments.append(q.strip())
+        # Subtitles / movements / works separated by ':', '-', '–', ';'
+        for part in re.split(r"[:\-–—;]+", title):
+            part_clean = part.strip()
+            if len(part_clean) >= 4:
+                segments.append(part_clean)
+        return segments
 
     @classmethod
     def _title_plausibly_matches(cls, yt_title: str | None, expected_title: str | None) -> bool:
         """True when the YouTube candidate's title could reasonably be the
-        Spotify track. The Spotify side gets its variant suffix dropped
-        first so "Hello - Live" matches a plain "Hello" upload; the YouTube
-        side is normalized as-is (its ` - ` is usually `Artist - Song`).
-        Substring match for titles >= 4 chars, word-boundary match for
-        shorter ones (so a single-letter song name like "i" doesn't match
-        every YouTube video)."""
-        yt = cls._normalize_title(yt_title)
-        target = cls._normalize_title(cls._spotify_title_core(expected_title))
-        if not target or not yt:
+        Spotify track."""
+        if not yt_title or not expected_title:
             return False
-        if len(target) >= 4:
-            return target in yt
-        return target in yt.split()
+        yt = cls._normalize_title(yt_title)
+        if not yt:
+            return False
+
+        # 1. Check all candidate segments from expected title
+        for seg in cls._extract_title_segments(expected_title):
+            target = cls._normalize_title(seg)
+            if not target:
+                continue
+            if len(target) >= 4:
+                if target in yt or (len(yt) >= 6 and yt in target):
+                    return True
+            elif target in yt.split():
+                return True
+
+        # 2. Token overlap for longer / multi-word titles
+        target_words = set(w for w in cls._normalize_title(expected_title).split() if len(w) >= 3 and w not in {"the", "and", "for", "from", "with"})
+        yt_words = set(w for w in yt.split() if len(w) >= 3 and w not in {"the", "and", "for", "from", "with"})
+        if len(target_words) >= 3 and len(yt_words) >= 2:
+            overlap = target_words & yt_words
+            if len(overlap) >= 2 and (len(overlap) / min(len(target_words), len(yt_words)) >= 0.5):
+                return True
+
+        return False
 
     def _select_youtube_match(
         self, search_query, expected_duration_s, expected_title=None, expected_artists=None
@@ -850,9 +890,8 @@ class MusicScraper(QThread):
              prior pure-duration matcher would happily pick it and write
              Mi Gente metadata onto Mi Chico audio.
           2. Prefer the subset that ALSO has an artist plausibly appearing
-             in the YouTube title. Falls back to the title-only pool if no
-             candidate matches both - artist isn't always in the YouTube
-             title for legitimate uploads.
+             in the YouTube title or channel metadata. Falls back to the
+             title-only pool if no candidate matches both.
           3. Among the resulting pool, pick the duration-closest if duration
              is known, but reject the whole result if even the best
              candidate's duration is >30s off the Spotify track - that means
@@ -918,30 +957,38 @@ class MusicScraper(QThread):
                     return self._loose_pick(entries, expected_duration_s)
                 return None
 
-            # Require an artist in the YouTube title alongside the song name:
-            # rejects right-title-wrong-uploader remixes. Prefer not-found
-            # over wrong audio (#52). Title-only when no artists are known.
+            # Require an artist in the YouTube title or channel/uploader metadata
             pool = title_ok
             if expected_artists:
-                # Split on collaboration separators BEFORE normalizing -
-                # normalization eats commas, which would collapse the
-                # multi-artist string into one unmatchable token.
+                clean_artists = expected_artists.replace("\xa0", " ")
                 raw_tokens = re.split(
-                    r"[,&]+|\s+(?:feat\.?|ft\.?)\s+",
-                    expected_artists,
+                    r"[,&;/]+|\s+(?:feat\.?|ft\.?)\s+",
+                    clean_artists,
                     flags=re.IGNORECASE,
                 )
                 artist_tokens = [self._normalize_title(t) for t in raw_tokens]
                 artist_tokens = [t for t in artist_tokens if t]
                 if artist_tokens:
-                    pool = [
-                        e
-                        for e in title_ok
-                        if any(
-                            artist in self._normalize_title(e.get("title") or "")
-                            for artist in artist_tokens
-                        )
-                    ]
+                    def _entry_matches_artist(e):
+                        cand_fields = [
+                            e.get("title") or "",
+                            e.get("uploader") or "",
+                            e.get("channel") or "",
+                            e.get("creator") or "",
+                            e.get("artist") or "",
+                        ]
+                        cand_norm = self._normalize_title(" ".join(cand_fields))
+                        cand_words = set(cand_norm.split())
+                        for tok in artist_tokens:
+                            if tok in cand_norm:
+                                return True
+                            words = [w for w in tok.split() if len(w) >= 4 and w not in {"the", "and", "brothers", "orchestra", "choir"}]
+                            for w in words:
+                                if w in cand_words or w in cand_norm:
+                                    return True
+                        return False
+
+                    pool = [e for e in title_ok if _entry_matches_artist(e)]
                     if not pool and not any(re.search(r"[a-z0-9]", t) for t in artist_tokens):
                         # Native-script artists usually appear romanized on
                         # YouTube, so an all-non-latin token set would reject
@@ -1065,10 +1112,21 @@ class MusicScraper(QThread):
 
         expected_path = base + "." + ext
 
-        # Widened query then a simplified fallback; success = an audio file
-        # actually on disk, so an empty search fails loudly.
-        queries = [self._widen_search(search_query)]
-        fallback = self._simplify_search(search_query)
+        # Clean search query of non-breaking spaces
+        clean_query = search_query.replace("\xa0", " ")
+        queries = [self._widen_search(clean_query)]
+
+        # If multiple artists, generate a query with just the primary artist to avoid overloading YouTube search
+        if expected_artists and expected_title:
+            clean_artists = expected_artists.replace("\xa0", " ")
+            raw_artists = re.split(r"[,&;/]+|\s+(?:feat\.?|ft\.?)\s+", clean_artists, flags=re.IGNORECASE)
+            primary_artist = raw_artists[0].strip() if raw_artists else ""
+            if primary_artist and len(raw_artists) > 1:
+                primary_q = f"ytsearch5:{expected_title} {primary_artist} audio"
+                if primary_q not in queries:
+                    queries.append(primary_q)
+
+        fallback = self._simplify_search(clean_query)
         if fallback not in queries:
             queries.append(fallback)
 
@@ -1160,8 +1218,8 @@ class MusicScraper(QThread):
         if self.is_cancelled():
             return None
 
-        track_title = track.title
-        artists = track.artists
+        track_title = (track.title or "").replace("\xa0", " ").strip()
+        artists = (track.artists or "").replace("\xa0", " ").strip()
         sanitized_title = self.sanitize_text(track_title)
         sanitized_artists = self.sanitize_text(artists)
 

@@ -76,6 +76,9 @@ def _ensure_windows_console() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
+_ensure_windows_console()
+
+
 class _Emitter:
     """Thread-safe progress output: human lines or NDJSON events."""
 
@@ -86,35 +89,44 @@ class _Emitter:
 
     def event(self, name: str, **fields) -> None:
         with self._lock:
-            if self.as_json:
-                print(json.dumps({"event": name, **fields}, ensure_ascii=False), flush=True)
-            elif not self.quiet:
-                self._human(name, fields)
+            try:
+                if self.as_json:
+                    print(json.dumps({"event": name, **fields}, ensure_ascii=False), flush=True)
+                elif not self.quiet:
+                    self._human(name, fields)
+            except Exception:
+                pass
 
     def error(self, message: str, code: str = "error", hint: str | None = None) -> None:
         """Typed error envelope: agents branch on `code`, humans read the hint."""
-        if self.as_json:
-            self.event("error", code=code, message=message, hint=hint)
-        else:
-            print(f"error: {message}", file=sys.stderr, flush=True)
-            if hint:
-                print(f"  hint: {hint}", file=sys.stderr, flush=True)
+        try:
+            if self.as_json:
+                self.event("error", code=code, message=message, hint=hint)
+            else:
+                print(f"error: {message}", file=sys.stderr, flush=True)
+                if hint:
+                    print(f"  hint: {hint}", file=sys.stderr, flush=True)
+        except Exception:
+            pass
 
     def _human(self, name: str, f: dict) -> None:
-        if name == "run_started":
-            print(f"» {f['url']}  ->  {f['folder']}  [{f['format']}]", flush=True)
-        elif name == "track_done":
-            print(f"  ✓ {os.path.basename(f['file'])}", flush=True)
-        elif name == "track_skipped":
-            print(f"  = {os.path.basename(f['file'])} (already on disk)", flush=True)
-        elif name == "warning":
-            print(f"  ! {f['message']}", flush=True)
-        elif name == "run_summary":
-            print(
-                f"done: {f['landed']} landed, {f['skipped']} already present, "
-                f"{f['failed']} failed in {f['elapsed_s']}s -> {f['folder']}",
-                flush=True,
-            )
+        try:
+            if name == "run_started":
+                print(f"» {f['url']}  ->  {f['folder']}  [{f['format']}]", flush=True)
+            elif name == "track_done":
+                print(f"  ✓ {os.path.basename(f['file'])}", flush=True)
+            elif name == "track_skipped":
+                print(f"  = {os.path.basename(f['file'])} (already on disk)", flush=True)
+            elif name == "warning":
+                print(f"  ! {f['message']}", flush=True)
+            elif name == "run_summary":
+                print(
+                    f"done: {f['landed']} landed, {f['skipped']} already present, "
+                    f"{f['failed']} failed in {f['elapsed_s']}s -> {f['folder']}",
+                    flush=True,
+                )
+        except Exception:
+            pass
 
 
 def _resolve_out_dir(out_arg: str | None, cfg: dict) -> str:
