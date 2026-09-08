@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-09-08
+
+### Fixed
+- **a run that saved nothing no longer looks like a run that worked (#100).** the counter ticks once per finished track whether it passed or failed, so a fully failed playlist read `Songs downloaded 66 of 66`, the one-time star prompt fired off that count, and `ScraperThread` then overwrote the scraper's honest `Done! N track(s) failed` with a generic `Scraping completed.` on the same label. the counter now subtracts failures and names them, the star prompt only fires when something actually landed, and the terminal status is left alone.
+- **non-mp3 formats silently overwrote same-titled tracks (#100).** `_compose_filename` hardcoded `.mp3` while the file landed with its real extension, so the exists-check and the resume manifest's ownership map both looked for a path that never exists on flac, m4a, opus, or wav. that quietly disabled the same-title collision guard added in 2.3.0 for every format except mp3: two different songs called "Home" resolved to one file and the second overwrote the first. it also made crash recovery re-download a whole folder. verified across mp3/flac/m4a/opus, with real downloads and tag checks.
+- **FFmpeg is now checked before a run starts, not discovered through a failed download.** the GUI blocks with the install command for the platform it is actually running on, and detection additionally looks where the windows package managers put their shims, read from each tool's own env var so a relocated install still resolves. the shipped binaries bundle FFmpeg and never reach any of this; it is the run-from-source path that was failing confusingly.
+
+### Notes
+- found and diagnosed by [@urgorri](https://github.com/urgorri) in [#100](https://github.com/sunnypatell/sunnify-spotify-downloader/pull/100), whose commit is preserved in this release. the youtube matcher is deliberately untouched: it is byte-identical to 2.4.1 and its selector behaviour was diffed against the previous release before shipping.
+- verified before shipping: 308 tests green (20 new covering the data-loss case per format, crash recovery, counter accuracy including the reported `66 of 66`, star-prompt suppression, and the ffmpeg preflight); real single-track downloads in mp3, flac, and m4a landing tagged audio with correct extensions and working resume; the GUI exercised offscreen for every counter state; 10/10 upstream checks. binaries built with yt-dlp 2026.7.4 on python 3.13.
+
 ## [2.4.1] - 2026-08-31
 
 ### Fixed
@@ -387,7 +398,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.1...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.2...HEAD
+[2.4.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.2.1...v2.3.0

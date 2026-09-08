@@ -21,21 +21,19 @@ here instead of turning into a user's bug report.
 
 from __future__ import annotations
 
+import contextlib
 import json
-import os
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# this script prints ✓/✗; a legacy windows code page can't encode them
 if sys.platform == "win32":
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            try:
-                stream.reconfigure(encoding="utf-8", errors="replace")
-            except Exception:
-                pass
+        with contextlib.suppress(Exception):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 from yt_dlp import YoutubeDL
 

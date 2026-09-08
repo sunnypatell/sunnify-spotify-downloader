@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.4.1"
+__version__ = "2.4.2"
 
 import atexit
 import concurrent.futures
@@ -162,12 +162,17 @@ def get_ffmpeg_path():
         "/usr/bin",  # Linux system
     ]
     if sys.platform == "win32":
-        common_paths.extend([
-            r"C:\ProgramData\chocolatey\bin",
+        # package managers put these on PATH, so shutil.which below usually
+        # wins first; these cover the install-then-same-shell case, and are
+        # read from each tool's own env var so a relocated install still hits
+        choco = os.environ.get("CHOCOLATEYINSTALL") or r"C:\ProgramData\chocolatey"
+        scoop = os.environ.get("SCOOP") or os.path.join(os.path.expanduser("~"), "scoop")
+        common_paths += [
+            os.path.join(choco, "bin"),
             os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
-            os.path.expandvars(r"%USERPROFILE%\scoop\shims"),
-            r"C:\ffmpeg\bin",
-        ])
+            os.path.join(scoop, "shims"),
+            r"C:\ffmpeg\bin",  # the unzip convention, the one that never lands on PATH
+        ]
 
     for path in common_paths:
         ffmpeg = os.path.join(path, ffmpeg_name)
@@ -2459,15 +2464,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         actually shows, so the one shot is never burned silently."""
         if self._config.get("star_prompt_shown"):
             return
-        failed_count = 0
-        try:
-            thread = getattr(self, "scraper_thread", None)
-            if thread is not None and hasattr(thread, "scraper"):
-                failed_count = len(getattr(thread.scraper, "_failed_tracks", []))
-        except (AttributeError, RuntimeError):
-            failed_count = 0
-        ok_count = max(0, count - failed_count)
-        if ok_count < 1:
+        # count ticks per finished track either way, so a fully failed run
+        # would otherwise beg for a star having saved nothing
+        if count - self._failed_track_count() < 1:
             return
         if self._cancel_event.is_set():
             return
@@ -2711,28 +2710,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def update_AlbumName(self, AlbumName):
         self.AlbumName.setText("Playlist Name : " + AlbumName)
 
+    def _live_scraper(self):
+        """The running scraper, or None once the thread is gone (qt raises
+        RuntimeError on a deleted object, which outlives the python ref)."""
+        try:
+            return getattr(getattr(self, "scraper_thread", None), "scraper", None)
+        except RuntimeError:
+            return None
+
+    def _failed_track_count(self) -> int:
+        return len(getattr(self._live_scraper(), "_failed_tracks", []) or [])
+
     @pyqtSlot(int)
     def update_counter(self, count):
-        total = 0
-        failed_count = 0
-        try:
-            thread = getattr(self, "scraper_thread", None)
-            if thread is not None and hasattr(thread, "scraper"):
-                total = getattr(thread.scraper, "_total_tracks", 0) or 0
-                failed_count = len(getattr(thread.scraper, "_failed_tracks", []))
-        except (AttributeError, RuntimeError):
-            pass
-        ok_count = max(0, count - failed_count)
-        if total > 0:
-            if failed_count > 0:
-                self.CounterLabel.setText(f"Songs downloaded {ok_count} of {total} ({failed_count} failed)")
-            else:
-                self.CounterLabel.setText(f"Songs downloaded {ok_count} of {total}")
-        else:
-            if failed_count > 0:
-                self.CounterLabel.setText(f"Songs downloaded {ok_count} ({failed_count} failed)")
-            else:
-                self.CounterLabel.setText(f"Songs downloaded {ok_count}")
+        scraper = self._live_scraper()
+        total = getattr(scraper, "_total_tracks", 0) or 0
+        failed = self._failed_track_count()
+        # count is "tracks finished", not "tracks saved": a failure ticks it too
+        text = f"Songs downloaded {max(0, count - failed)}"
+        if total:
+            text += f" of {total}"
+        if failed:
+            text += f" ({failed} failed)"
+        self.CounterLabel.setText(text)
 
     @pyqtSlot(int)
     def update_song_progress(self, progress):

@@ -14,7 +14,7 @@ Don't trust a fixed file list - grep for the current version first, because a
 location has been missed before:
 
 ```bash
-grep -rnE "2\.4\.1|2, 4, 1" --include="*.py" --include="*.toml" \
+grep -rnE "2\.4\.2|2, 4, 2" --include="*.py" --include="*.toml" \
   --include="*.spec" --include="*.txt" --include="*.md" .
 ```
 
