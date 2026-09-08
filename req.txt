@@ -6,6 +6,6 @@ yt-dlp>=2024.8.6
 
 # transitive (auto-installed but listed for reference)
 certifi>=2026.7.22
-charset-normalizer>=3.4.9
-idna>=3.4
+charset-normalizer>=3.5.1
+idna>=3.19
 urllib3>=2.0.4
