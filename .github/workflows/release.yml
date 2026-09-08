@@ -120,7 +120,7 @@ jobs:
       attestations: write   # write SBOM + source attestations
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
 
@@ -194,7 +194,7 @@ jobs:
         # shallow, but it is bound by digest to the binaries via the
         # attest-sbom step below, so a tampered or unrelated SBOM cannot pass
         # `gh attestation verify`.
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: "./artifacts"
           format: cyclonedx-json
@@ -210,7 +210,7 @@ jobs:
         # The action subpath is required because the repo root action.yml
         # is metadata-only; the runnable Docker action lives in the subdir.
         # ref: https://google.github.io/osv-scanner/
-        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
         with:
           scan-args: |-
             scan
@@ -227,7 +227,7 @@ jobs:
         # come from?".
         # Using actions/attest directly with a CycloneDX predicate-type
         # because actions/attest-sbom is now a deprecated wrapper.
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ./artifacts/windows-build/Sunnify-Windows.exe
@@ -255,7 +255,7 @@ jobs:
 
       - name: Attest source tarball
         id: attest-source
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ./sunnify-${{ github.event.inputs.tag }}-source.tar.gz
 
@@ -319,7 +319,7 @@ jobs:
           done
 
       - name: Upload assets to release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.event.inputs.tag }}
           # If dry_run, keep the release as a draft so it isn't user-visible.
@@ -441,7 +441,7 @@ jobs:
       contents: write
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           egress-policy: audit
 
