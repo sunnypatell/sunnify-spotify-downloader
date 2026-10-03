@@ -59,8 +59,11 @@ def scrape_playlist():
         {"event": "complete", "data": {"playlistName": "...", "tracks": [...]}}
     """
     try:
-        data = request.get_json()
-        spotify_url = data.get("playlistUrl", "").strip()
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"event": "error", "data": {"message": "Invalid request body"}}), 400
+
+        spotify_url = str(data.get("playlistUrl", "")).strip()
 
         if not spotify_url:
             return jsonify({"event": "error", "data": {"message": "No URL provided"}}), 400
