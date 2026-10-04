@@ -20,6 +20,7 @@ from __future__ import annotations
 __version__ = "2.4.2"
 
 import atexit
+import base64
 import concurrent.futures
 import contextlib
 import faulthandler
@@ -28,6 +29,7 @@ import os
 import platform
 import re
 import signal
+import subprocess
 import sys
 import threading
 import webbrowser
@@ -40,6 +42,7 @@ from PyQt6.QtCore import (
     QEasingCurve,
     QPropertyAnimation,
     QSize,
+    QStandardPaths,
     Qt,
     QThread,
     QTimer,
@@ -2038,6 +2041,11 @@ class SettingsDialog(QDialog):
         open_logs = btns.addButton("Open logs folder", QDialogButtonBox.ButtonRole.ActionRole)
         open_logs.setToolTip(log_file_path())
         open_logs.clicked.connect(self._open_logs)
+        if sys.platform == "win32":
+            desktop_shortcut = btns.addButton(
+                "Create desktop shortcut", QDialogButtonBox.ButtonRole.ActionRole
+            )
+            desktop_shortcut.clicked.connect(self._create_desktop_shortcut)
 
         from PyQt6.QtWidgets import QScrollArea, QWidget
 
@@ -2086,6 +2094,23 @@ class SettingsDialog(QDialog):
         with contextlib.suppress(OSError):
             os.makedirs(log_dir, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(log_dir))
+
+    def _create_desktop_shortcut(self):
+        try:
+            shortcut_path = _create_windows_desktop_shortcut()
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            log.exception("could not create desktop shortcut")
+            QMessageBox.critical(
+                self,
+                "Shortcut not created",
+                f"Windows could not create the Sunnify desktop shortcut.\n\n{exc}",
+            )
+            return
+        QMessageBox.information(
+            self,
+            "Shortcut created",
+            f"A Sunnify shortcut was created on your desktop:\n{shortcut_path}",
+        )
 
     def _choose_folder(self):
         start = (
@@ -2142,6 +2167,64 @@ class SettingsDialog(QDialog):
         self._config["sample_rate"] = label_to_value.get(self._sample_rate_cb.currentText(), "auto")
         self._config["loose_match"] = self._loose_match_cb.isChecked()
         return self._config
+
+
+def _create_windows_desktop_shortcut() -> str:
+    """Create or replace a Windows desktop shortcut for this app."""
+    if sys.platform != "win32":
+        raise RuntimeError("Desktop shortcuts are only supported on Windows.")
+
+    desktop = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation)
+    if not desktop:
+        raise OSError("Windows did not provide a desktop folder.")
+    os.makedirs(desktop, exist_ok=True)
+
+    if getattr(sys, "frozen", False):
+        target = sys.executable
+        arguments = ""
+        icon = target
+        working_directory = os.path.dirname(target)
+    else:
+        target = sys.executable
+        arguments = subprocess.list2cmdline([os.path.abspath(__file__)])
+        icon = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.ico")
+        working_directory = os.path.dirname(os.path.abspath(__file__))
+
+    shortcut_path = os.path.join(desktop, "Sunnify.lnk")
+
+    def ps_literal(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    script = "\n".join(
+        (
+            "$ErrorActionPreference = 'Stop'",
+            "$shell = New-Object -ComObject WScript.Shell",
+            f"$shortcut = $shell.CreateShortcut({ps_literal(shortcut_path)})",
+            f"$shortcut.TargetPath = {ps_literal(target)}",
+            f"$shortcut.Arguments = {ps_literal(arguments)}",
+            f"$shortcut.WorkingDirectory = {ps_literal(working_directory)}",
+            f"$shortcut.IconLocation = {ps_literal(icon + ',0')}",
+            "$shortcut.Save()",
+        )
+    )
+    encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            encoded_script,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode:
+        detail = (result.stderr or result.stdout or "PowerShell returned an error").strip()
+        raise RuntimeError(detail)
+    return shortcut_path
 
 
 class UpdateNotifier(QDialog):

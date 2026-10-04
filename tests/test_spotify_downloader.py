@@ -2850,6 +2850,66 @@ class TestSettingsDialog:
         # (QHBoxLayout passed to addWidget) cannot fire.
         assert dlg.sizeHint().width() > 0
 
+    def test_windows_settings_action_creates_desktop_shortcut(self, qapp, monkeypatch):
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd.sys, "platform", "win32")
+        created = []
+        monkeypatch.setattr(
+            sd, "_create_windows_desktop_shortcut", lambda: r"C:\Desktop\Sunnify.lnk"
+        )
+        monkeypatch.setattr(sd.QMessageBox, "information", lambda *args: created.append(args))
+
+        dlg = sd.SettingsDialog(None, {})
+        action = next(
+            button
+            for button in dlg.findChildren(sd.QPushButton)
+            if button.text() == "Create desktop shortcut"
+        )
+        action.click()
+
+        assert len(created) == 1
+        assert "Sunnify.lnk" in created[0][2]
+
+    def test_desktop_shortcut_is_only_offered_on_windows(self, qapp, monkeypatch):
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd.sys, "platform", "linux")
+        dlg = sd.SettingsDialog(None, {})
+        assert not any(
+            button.text() == "Create desktop shortcut"
+            for button in dlg.findChildren(sd.QPushButton)
+        )
+
+    def test_windows_shortcut_targets_frozen_executable(self, tmp_path, monkeypatch):
+        import base64
+
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd.sys, "platform", "win32")
+        monkeypatch.setattr(sd.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(sd.sys, "executable", r"C:\Program Files\Sunnify\Sunnify.exe")
+        monkeypatch.setattr(
+            sd.QStandardPaths,
+            "writableLocation",
+            lambda _location: str(tmp_path),
+        )
+        command = []
+
+        def fake_run(args, **_kwargs):
+            command.extend(args)
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(sd.subprocess, "run", fake_run)
+
+        shortcut = sd._create_windows_desktop_shortcut()
+
+        assert shortcut == os.path.join(str(tmp_path), "Sunnify.lnk")
+        script = base64.b64decode(command[-1]).decode("utf-16le")
+        assert "$shortcut.TargetPath = 'C:\\Program Files\\Sunnify\\Sunnify.exe'" in script
+        assert "$shortcut.Arguments = ''" in script
+        assert "$shortcut.WorkingDirectory = 'C:\\Program Files\\Sunnify'" in script
+
     def test_opens_with_track_number_on_and_lossless_format(self, qapp):
         """Cover the cells the default-config test doesn't hit: every combo
         of the on/off track-number toggle x lossy/lossless format gets a
