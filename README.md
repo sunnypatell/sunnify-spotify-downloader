@@ -43,7 +43,7 @@ It is a desktop GUI built with Python and PyQt6, and every binary doubles as a h
 | :--- | :--- | :--- |
 | **macOS (Apple Silicon)** | [`Sunnify-macOS.zip`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) or Homebrew (below) | M-series Macs, macOS 13+ |
 | **macOS (Intel)** | [`Sunnify-macOS-Intel.zip`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) or Homebrew (below) | Intel Macs, macOS 13+ |
-| **Windows** | [`Sunnify-Windows.exe`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Run directly, no install |
+| **Windows** | [`Sunnify-Windows.exe`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | Run directly, no install; create a desktop shortcut from Settings |
 | **Linux** | [`Sunnify-Linux`](https://github.com/sunnypatell/sunnify-spotify-downloader/releases/latest) | `chmod +x Sunnify-Linux` then run |
 | **CLI (all platforms)** | Ships inside every binary above ([CLI reference](docs/CLI.md)) | [One-liners below](#command-line-headless) put `sunnify` on your PATH |
 
