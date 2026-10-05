@@ -1824,10 +1824,12 @@ class TestCoverEnrichment:
         assert captured[0]["releaseDate"] == "2024-06-01"
         mock_api.get_track.assert_called_once_with("id1")
 
-    def test_existing_cover_skips_enrichment(self, tmp_path):
-        """Track that already has cover_url (e.g. spclient fallback path) does
-        not trigger a second network call."""
+    def test_complete_track_skips_enrichment(self, tmp_path):
+        """A track that already carries everything the tags need does not
+        trigger a second network call. Cover alone is no longer enough: the
+        playlist feeds also omit album, which is what #104 was."""
         from Spotify_Downloader import MusicScraper
+        from spotifydown_api import TrackInfo
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
@@ -1836,12 +1838,43 @@ class TestCoverEnrichment:
         mock_api = MagicMock()
         scraper.spotifydown_api = mock_api
 
-        scraper._download_one_track(
-            self._track(cover="https://already/present.jpg"),
-            str(tmp_path),
-            "fallback",
+        complete = TrackInfo(
+            id="id1",
+            title="Song",
+            artists="Artist",
+            album="Album",
+            release_date="2024-06-01",
+            cover_url="https://already/present.jpg",
+            duration_ms=None,
+            preview_url=None,
+            raw={},
         )
+        scraper._download_one_track(complete, str(tmp_path), "fallback")
         mock_api.get_track.assert_not_called()
+
+    def test_missing_album_triggers_enrichment(self, tmp_path):
+        """#104: playlist feeds return album=None for every track, so a cover
+        on its own must not short-circuit the fetch that carries the album."""
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        self._stub_scraper_signals(scraper)
+        scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
+
+        mock_api = MagicMock()
+        enriched = self._track(cover="https://real/cover.jpg", release_date="2024-06-01")
+        enriched.album = "Real Album"
+        mock_api.get_track.return_value = enriched
+        scraper.spotifydown_api = mock_api
+
+        captured = []
+        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+
+        scraper._download_one_track(
+            self._track(cover="https://already/present.jpg"), str(tmp_path), "fallback"
+        )
+        mock_api.get_track.assert_called_once_with("id1")
+        assert captured[0]["album"] == "Real Album"
 
     def test_enrichment_failure_falls_back_to_playlist_cover(self, tmp_path):
         """If get_track raises, the worker silently falls back to default_cover_url."""

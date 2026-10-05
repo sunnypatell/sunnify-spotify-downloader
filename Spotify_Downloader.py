@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.4.2"
+__version__ = "2.4.3"
 
 import atexit
 import concurrent.futures
@@ -1193,14 +1193,16 @@ class MusicScraper(QThread):
                 claim = filepath.casefold()
             self._in_flight_files.add(claim)
 
-        # Per-track cover enrichment: the playlist embed has no per-track
-        # cover urls (the "all 300 songs have the same cover" report), so
-        # fetch /embed/track/{id} when missing. ~100-300ms per track,
-        # overlapped by other workers in parallel mode.
+        # Per-track enrichment: the playlist embed carries no per-track cover
+        # url (the "all 300 songs have the same cover" report) and no album
+        # at all (#104), so fetch /embed/track/{id} when any of them is
+        # missing. ~100-300ms per track, overlapped by other workers in
+        # parallel mode.
         cover_url = track.cover_url
+        album_name = track.album or ""
         release_date = track.release_date or ""
         if (
-            not cover_url
+            (not cover_url or not album_name or not release_date)
             and track.id
             and self.spotifydown_api is not None
             and not self.is_cancelled()
@@ -1210,13 +1212,14 @@ class MusicScraper(QThread):
                 if enriched:
                     if enriched.cover_url:
                         cover_url = enriched.cover_url
+                    if not album_name and enriched.album:
+                        album_name = enriched.album
                     if not release_date and enriched.release_date:
                         release_date = enriched.release_date
             except SpotifyDownAPIError as exc:
-                log.debug("cover enrichment failed for '%s': %s", track_title, exc)
+                log.debug("track enrichment failed for '%s': %s", track_title, exc)
 
         cover_url = cover_url or default_cover_url
-        album_name = track.album or ""
 
         song_meta = {
             "title": track_title,

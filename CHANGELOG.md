@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.3] - 2026-10-05
+
+### Fixed
+- **playlist downloads now get the album tag (closes #104).** Spotify's playlist feed returns no album for any track, while the single-track endpoint returns it, which is why the same song tagged correctly on its own and came down album-less inside a playlist. the per-track enrichment fetch that already existed for cover art now also carries album and release date, and runs whenever any of the three is missing rather than only when the cover is. no extra network cost in practice: the playlist and spclient feeds supply none of the three, so that fetch was already firing for every track.
+- **the Homebrew cask no longer warns on every install (closes #106).** `postflight` is deprecated and rejected in official taps, so `brew install`/`upgrade` printed a deprecation notice pointing at the tap. migrated to [`postflight_steps`](https://docs.brew.sh/Cask-Cookbook) with the quarantine strip expressed as a structured `run` step, keeping `must_succeed: false` so a failed `xattr` can never abort an install.
+
+### Notes
+- reported by [@datre9](https://github.com/datre9) (#104) and [@vv371](https://github.com/vv371) (#106).
+- verified before shipping: 309 tests green; the album gap reproduced against live Spotify (playlist feed returns `album=None`, single-track returns the real name) and the fix confirmed end to end with real downloads carrying album and year; the cask parsed by the installed Homebrew in the real tap with the deprecation warning gone, then the tap restored. the YouTube matcher is untouched. binaries built with yt-dlp 2026.8.19 on python 3.13.
+
 ## [2.4.2] - 2026-09-08
 
 ### Fixed
@@ -398,7 +408,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.2...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.3...HEAD
+[2.4.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.3.0...v2.4.0
