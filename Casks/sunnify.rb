@@ -4,7 +4,7 @@
 #   brew install --cask sunnify
 
 cask "sunnify" do
-  arch arm: "", intel: "-Intel"
+  arch intel: "-Intel"
 
   version "2.4.3"
   # both shas are recomputed and rewritten by the release workflow
@@ -15,6 +15,8 @@ cask "sunnify" do
   name "Sunnify"
   desc "Download Spotify playlists to local MP3s with artwork and tags"
   homepage "https://github.com/sunnypatell/sunnify-spotify-downloader"
+
+  depends_on :macos
 
   app "Sunnify.app"
   # headless CLI: the app binary dispatches on argv, so one symlink gives
@@ -35,8 +37,8 @@ cask "sunnify" do
 
   zap trash: [
     "~/Library/Application Support/Sunnify",
-    "~/Library/Preferences/com.sunnypatel.sunnify.plist",
     "~/Library/Caches/com.sunnypatel.sunnify",
+    "~/Library/Preferences/com.sunnypatel.sunnify.plist",
   ]
 
   caveats <<~EOS
