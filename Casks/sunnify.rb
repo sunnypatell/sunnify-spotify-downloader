@@ -23,12 +23,11 @@ cask "sunnify" do
 
   # App is ad-hoc signed (no paid Apple cert); brew already SHA256-verified
   # the archive, so strip quarantine to make first launch just work.
-  # postflight_steps, not postflight: the ruby flight blocks are deprecated
-  # and rejected in official taps (#106).
+  # {{appdir}} is expanded by brew at install time (step args are literal
+  # otherwise), so this follows a custom --appdir instead of assuming /Applications.
   postflight_steps do
     run "/usr/bin/xattr",
-        args:         ["-r", "-d", "com.apple.quarantine", "Sunnify.app"],
-        base:         :appdir,
+        args:         ["-r", "-d", "com.apple.quarantine", "{{appdir}}/Sunnify.app"],
         must_succeed: false
   end
 
