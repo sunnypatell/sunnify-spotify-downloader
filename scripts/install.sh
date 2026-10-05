@@ -7,7 +7,7 @@
 #     release's checksums.txt before anything is installed)
 #   - idempotent: re-running replaces the previous install
 #
-# macOS note: prefer `brew install --cask sunnify` (tap in the README); this
+# macOS note: prefer the Homebrew cask (commands in the README); this
 # script is the no-Homebrew fallback and does the same quarantine clearing.
 set -eu
 

@@ -16,7 +16,7 @@ The CLI ships inside the app you already have. Getting `sunnify` on PATH:
 
 | Platform | Command |
 | :--- | :--- |
-| **macOS (Homebrew)** | `brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader && brew install --cask sunnify` |
+| **macOS (Homebrew)** | `brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader && brew install --cask sunnypatell/sunnify/sunnify` |
 | **macOS / Linux (script)** | `curl -fsSL https://raw.githubusercontent.com/sunnypatell/sunnify-spotify-downloader/main/scripts/install.sh \| sh` |
 | **Windows (PowerShell)** | `iwr -useb https://raw.githubusercontent.com/sunnypatell/sunnify-spotify-downloader/main/scripts/install.ps1 \| iex` |
 | **Any OS (pipx/uv, from source)** | `pipx install git+https://github.com/sunnypatell/sunnify-spotify-downloader` |
@@ -37,9 +37,10 @@ Install notes, by design:
 The GUI shows a banner when a newer release exists. Headless runs never
 phone home, so the CLI reports it only when asked: `sunnify doctor` includes
 a `version` check with the release page URL when you are behind. To update,
-run `brew upgrade --cask sunnify` if Homebrew owns the install, or re-run
-the install one-liner above; both are prompt-free, so agents can run them
-too.
+run `brew upgrade --cask sunnypatell/sunnify/sunnify` if Homebrew owns the
+install (the full name works even where Homebrew has not been told to trust
+the tap yet), or re-run the install one-liner above; both are prompt-free,
+so agents can run them too.
 
 ## Commands
 

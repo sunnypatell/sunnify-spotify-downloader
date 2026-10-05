@@ -55,10 +55,12 @@ FFmpeg is bundled inside every prebuilt app, so there is nothing else to install
 
 ```bash
 brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader
-brew install --cask sunnify
+brew install --cask sunnypatell/sunnify/sunnify
 ```
 
 The cask verifies the download's checksum and clears macOS quarantine for you, so the app opens normally on first launch. It also puts the `sunnify` command on your PATH.
+
+Use the full `sunnypatell/sunnify/sunnify` name as written. Homebrew only loads casks from third-party taps that you name explicitly, and naming it once is what lets a plain `brew upgrade` keep Sunnify current afterwards.
 
 ### Command line (headless)
 

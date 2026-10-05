@@ -438,7 +438,9 @@ export default function SunnifyApp() {
                   brew tap sunnypatell/sunnify
                   https://github.com/sunnypatell/sunnify-spotify-downloader
                 </code>
-                <code className="block text-xs text-green-400">brew install --cask sunnify</code>
+                <code className="block text-xs text-green-400">
+                  brew install --cask sunnypatell/sunnify/sunnify
+                </code>
               </div>
             </div>
           </div>

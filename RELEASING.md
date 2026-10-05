@@ -56,6 +56,15 @@ standing "verifying this release" + "install via homebrew (macos)" footers,
 Write with `--notes-file`, never inline heredoc (shell-escaped backticks
 leak).
 
+The Homebrew footer is exactly this. The full cask name is required:
+Homebrew refuses a third-party cask installed by its short name until the
+tap has been trusted, and naming it in full is what trusts it.
+
+```bash
+brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader
+brew install --cask sunnypatell/sunnify/sunnify
+```
+
 ## 4. Build + publish
 
 ```bash

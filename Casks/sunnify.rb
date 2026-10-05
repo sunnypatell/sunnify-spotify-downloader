@@ -1,7 +1,7 @@
 # Homebrew Cask for Sunnify
 # Install:
 #   brew tap sunnypatell/sunnify https://github.com/sunnypatell/sunnify-spotify-downloader
-#   brew install --cask sunnify
+#   brew install --cask sunnypatell/sunnify/sunnify
 
 cask "sunnify" do
   arch intel: "-Intel"
