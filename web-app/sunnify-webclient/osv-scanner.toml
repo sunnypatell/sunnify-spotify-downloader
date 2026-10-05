@@ -1,0 +1,7 @@
+# scoped, expiring ignores for advisories that cannot reach the app.
+# an entry past its ignoreUntil is reported again, so nothing here goes stale.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2026-12-05
+reason = "braces has no patched release (latest is 3.0.3). It is only reached through tailwind's watcher and lint-staged, which expand repo-authored globs at build time; request data never becomes a pattern."
