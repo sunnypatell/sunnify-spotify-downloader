@@ -123,6 +123,12 @@ class TestScrapePlaylistEndpoint:
         assert response.status_code == 400
         assert response.get_json()["data"]["message"] == "Invalid request body"
 
+    @pytest.mark.parametrize("value", [123, None, ["https://open.spotify.com/playlist/abc123"]])
+    def test_non_string_url_returns_400(self, client, value):
+        response = client.post("/api/scrape-playlist", json={"playlistUrl": value})
+        assert response.status_code == 400
+        assert "No URL" in response.get_json()["data"]["message"]
+
     @patch("app.get_playlist_client")
     def test_valid_playlist_url(self, mock_get_client, client):
         """Valid playlist URL should return track data."""
