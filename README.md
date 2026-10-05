@@ -62,6 +62,8 @@ The cask verifies the download's checksum and clears macOS quarantine for you, s
 
 Use the full `sunnypatell/sunnify/sunnify` name as written. Homebrew only loads casks from third-party taps that you name explicitly, and naming it once is what lets a plain `brew upgrade` keep Sunnify current afterwards.
 
+If `brew upgrade` ever stops finding new versions, remove and re-add it: `brew uninstall --cask sunnify && brew untap sunnypatell/sunnify`, then run the two commands above again. Your settings and downloaded music are untouched.
+
 ### Command line (headless)
 
 Every Sunnify binary doubles as a headless CLI: same engine, same settings, no window.
