@@ -17,18 +17,21 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.4.3"
+__version__ = "2.5.0"
 
 import atexit
 import concurrent.futures
 import contextlib
 import faulthandler
+import io
 import logging
 import os
 import platform
 import re
+import shutil
 import signal
 import sys
+import tempfile
 import threading
 import webbrowser
 from logging.handlers import RotatingFileHandler
@@ -212,6 +215,68 @@ def get_ffmpeg_path():
     return None
 
 
+def find_deno() -> str | None:
+    """deno for yt-dlp's youtube challenge solver, which a logged-in session needs.
+
+    Also checks the usual install spots, since a Finder-launched app gets a bare PATH."""
+    found = shutil.which("deno")
+    if found:
+        return found
+    name = "deno.exe" if sys.platform == "win32" else "deno"
+    home = os.path.expanduser("~")
+    candidates = [os.path.join(home, ".deno", "bin", name)]
+    if sys.platform == "win32":
+        scoop = os.environ.get("SCOOP") or os.path.join(home, "scoop")
+        choco = os.environ.get("CHOCOLATEYINSTALL") or r"C:\ProgramData\chocolatey"
+        candidates += [
+            os.path.expandvars(rf"%LOCALAPPDATA%\Microsoft\WinGet\Links\{name}"),
+            os.path.join(scoop, "shims", name),
+            os.path.join(choco, "bin", name),
+        ]
+    else:
+        candidates += ["/opt/homebrew/bin/deno", "/usr/local/bin/deno"]
+    return next((c for c in candidates if os.path.isfile(c)), None)
+
+
+def _read_cookie_jar(path: str):
+    """Load a cookies.txt without yt-dlp echoing malformed lines (cookie values) to stderr."""
+    from yt_dlp.cookies import YoutubeDLCookieJar
+
+    jar = YoutubeDLCookieJar(path)
+    with contextlib.redirect_stderr(io.StringIO()):
+        jar.load()
+    return jar
+
+
+def _cookies_text(path: str) -> str:
+    """The file's valid cookies, re-serialized for yt-dlp's private copies."""
+    jar = _read_cookie_jar(path)
+    fd, tmp = tempfile.mkstemp(prefix="sunnify-cookies-", suffix=".txt")
+    os.close(fd)
+    try:
+        jar.save(tmp)
+        with open(tmp, encoding="utf-8") as f:
+            return f.read()
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+
+
+def cookies_problem(path: str) -> tuple[str, str] | None:
+    """(error code, message) when a youtube cookies file can't be used, else None."""
+    if not os.path.isfile(path):
+        return "cookies_unusable", f"cookies file not found: {path}"
+    try:
+        jar = _read_cookie_jar(path)
+    except Exception:
+        return "cookies_unusable", f"not a netscape cookies.txt file: {path}"
+    if not any(c.domain.lstrip(".").endswith("youtube.com") for c in jar):
+        return "cookies_unusable", f"no youtube.com cookies in {path}"
+    if find_deno() is None:
+        return "deno_missing", "deno not found, and youtube needs it once cookies are in use"
+    return None
+
+
 # Supported output formats. "lossy" means quality/bitrate applies; "lossless"
 # means the ffmpeg postprocessor ignores preferredquality.
 SUPPORTED_FORMATS = {
@@ -312,6 +377,14 @@ SETTINGS = (
         scraper_kwarg="loose_match",
         cli_flag="--loose-match",
         help="fall back to the closest result when strict matching finds nothing",
+    ),
+    _Setting(
+        "cookies_file",
+        None,
+        "path",
+        scraper_kwarg="cookies_file",
+        cli_flag="--cookies",
+        help="youtube cookies.txt for networks youtube gates (needs deno)",
     ),
 )
 
@@ -591,6 +664,7 @@ class MusicScraper(QThread):
         title_only: bool = False,
         sample_rate: str = "auto",
         loose_match: bool = False,
+        cookies_file: str | None = None,
     ):
         super().__init__()
         self.counter = 0  # Initialize counter to zero
@@ -610,6 +684,16 @@ class MusicScraper(QThread):
         # duration-closest youtube result (recovers cross-script matches);
         # off by default so the wrong-audio safeguard (#52) stays the default.
         self.loose_match = bool(loose_match)
+        self.cookies_file = os.path.expanduser(cookies_file) if cookies_file else None
+        self._cookies_text = None
+        if self.cookies_file:
+            # read once here, on the caller's thread: loading redirects stderr
+            try:
+                self._cookies_text = _cookies_text(self.cookies_file)
+                log.info("youtube cookies: on")
+            except Exception as exc:
+                log.error("youtube cookies unreadable, running without them: %s", exc)
+                self.cookies_file = None
         self._counter_lock = threading.Lock()
         self._failed_lock = threading.Lock()
         self._filename_lock = threading.Lock()
@@ -630,6 +714,28 @@ class MusicScraper(QThread):
         """Check if cancellation has been requested."""
         return self._cancel_event.is_set()
 
+    @contextlib.contextmanager
+    def _youtube(self, opts: dict):
+        """YoutubeDL for one request, with the user's cookies when set."""
+        if not self.cookies_file:
+            # no js runtime: anonymous requests keep yt-dlp's js-less client set
+            with YoutubeDL({**opts, "js_runtimes": {}}) as ydl:
+                yield ydl
+            return
+        # yt-dlp rewrites its cookie file on close and workers run in parallel,
+        # so each request gets a private copy and the user's file is only read
+        fd, copy = tempfile.mkstemp(prefix="sunnify-cookies-", suffix=".txt")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(self._cookies_text)
+            deno = find_deno()
+            runtimes = {"deno": {"path": deno}} if deno else {"deno": {}}
+            with YoutubeDL({**opts, "cookiefile": copy, "js_runtimes": runtimes}) as ydl:
+                yield ydl
+        finally:
+            with contextlib.suppress(OSError):
+                os.remove(copy)
+
     _BLOCK_MARKERS = ("sign in to confirm", "not a bot", "confirm you're not a bot")
 
     def _note_if_network_blocked(self, reason: str) -> None:
@@ -645,11 +751,18 @@ class MusicScraper(QThread):
             if self._network_blocked:
                 return
             self._network_blocked = True
+        if self.cookies_file:
+            log.error("youtube is gating this network even with cookies; they are likely stale")
+            self.error_signal.emit(
+                "YouTube is still asking this network to prove it isn't a bot with your "
+                "cookies loaded, which usually means they have expired. Export them again."
+            )
+            return
         log.error("youtube is gating this network (bot check); downloads cannot proceed")
         self.error_signal.emit(
             "YouTube is asking this network to prove it isn't a bot, so downloads are "
             "being refused. This is applied to your IP, not to Sunnify: try another "
-            "network or connection, or wait a few hours."
+            "network or connection, wait a few hours, or use YouTube cookies (see the docs)."
         )
 
     def _get_user_friendly_error(self, error: Exception, track_title: str = "") -> str:
@@ -890,7 +1003,7 @@ class MusicScraper(QThread):
             expected_duration_s,
         )
         try:
-            with YoutubeDL(select_opts) as ydl:
+            with self._youtube(select_opts) as ydl:
                 info = ydl.extract_info(search_query, download=False)
         except Exception as exc:
             # The single most useful log line for triage: a real exception here
@@ -1100,7 +1213,7 @@ class MusicScraper(QThread):
                 # ignoreerrors swallows it (no exception, no file)
                 ytlog = _YtdlpLog()
                 try:
-                    with YoutubeDL({**opts, "logger": ytlog}) as ydl:
+                    with self._youtube({**opts, "logger": ytlog}) as ydl:
                         ydl.extract_info(video_url, download=True)
                 except Exception as exc:
                     log.warning(
@@ -2586,6 +2699,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self,
                 "FFmpeg Required",
                 f"FFmpeg is required for audio downloads and conversion but was not found on your system.\n\n{instructions}",
+            )
+            return
+
+        cookies = self._config.get("cookies_file")
+        problem = cookies_problem(os.path.expanduser(cookies)) if cookies else None
+        if problem:
+            self.statusMsg.setText("YouTube cookies can't be used")
+            QMessageBox.warning(
+                self,
+                "YouTube Cookies",
+                f"{problem[1]}.\n\nFix it, or turn cookies off with:\n"
+                "  sunnify config --set cookies_file=",
             )
             return
 

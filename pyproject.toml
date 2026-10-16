@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sunnify-spotify-downloader"
-version = "2.4.3"
+version = "2.5.0"
 description = "Spotify playlist downloader with PyQt6 GUI, headless CLI, Flask backend, and Next.js web client"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,6 +17,7 @@ dependencies = [
     "PyQt6>=6.11",
     "requests>=2.32.2",
     "yt-dlp>=2024.8.6",
+    "yt-dlp-ejs>=0.8.0",
 ]
 
 # `pipx install git+https://github.com/sunnypatell/sunnify-spotify-downloader`

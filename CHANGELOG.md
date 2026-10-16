@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-15
+
+### Added
+- **YouTube cookies for networks YouTube gates (closes #112).** when YouTube asks a whole network to prove it isn't a bot it refuses every download from it, and until now the only way out was another network. `--cookies FILE` (or `cookies_file` in `config.json`, which the desktop app reads too) hands yt-dlp the cookies of your own logged-in YouTube session. a logged-in session only gets player variants that need a JavaScript challenge solved, so the builds now bundle yt-dlp's challenge solver (`yt-dlp-ejs`), which yt-dlp runs in Deno's sandbox; Deno is found on `PATH` or in its default install spots, so a Finder-launched app finds it too. the file is only ever read: yt-dlp rewrites its cookie file and downloads run in parallel, so every request gets a private copy of the valid cookies that is deleted afterwards, and malformed lines are dropped without being echoed. a missing or malformed file stops the run as `cookies_unusable`, a missing Deno as `deno_missing`, and `sunnify doctor` checks both. setup in [docs/CLI.md](docs/CLI.md#youtube-cookies).
+
+### Fixed
+- **(web) malformed request bodies get a 400, not a 500 (#111).** the metadata API answered 500 to malformed JSON, JSON arrays and non-string URLs; it now answers 400, and a URL wrapped in a list is no longer coerced into a valid-looking one.
+- **(web) webclient dependencies patched.** next 15.5.27, sharp 0.35.5, source-map-js 1.2.2 and postcss-selector-parser 7.1.6 clear five advisories, two of them high; tailwind's built CSS is byte-identical before and after.
+
+### Notes
+- deliberately unchanged: without cookies, nothing about how sunnify talks to YouTube changes. no JavaScript runtime is enabled on that path even when Deno is installed, so the client set is exactly 2.4.3's, and the matcher and the retry client set are untouched.
+- reported by [@Ryukomat44](https://github.com/Ryukomat44) (#112), who also confirmed with stock yt-dlp that a logged-in session plus Deno downloads on the gated network; the request-body fix is [@coreyschafer02](https://github.com/coreyschafer02)'s (#111).
+- verified before shipping: 329 tests green (15 new; the private copy, the untouched anonymous path, the silent load and the desktop preflight each fail their test when removed); real downloads through the source tree with and without cookies, where Deno on `PATH` is never spawned without cookies and, with them, the solver runs for the exact client set a logged-in session gets, the cookie file stays byte-identical and no temporary copy is left behind; a locally built macOS app with the solver bundled, finding Deno under a bare `PATH` and running the sandboxed solve. the weekly upstream probe gained a guard that fails when the bundled solver drifts from the version yt-dlp expects. binaries built with yt-dlp 2026.8.19 and yt-dlp-ejs 0.8.0 on python 3.13.
+
 ## [2.4.3] - 2026-10-05
 
 ### Fixed
@@ -408,7 +422,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.3...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.0...v2.4.1

@@ -34,6 +34,7 @@ EXIT_USAGE = 2  # argparse's own code for bad usage
 EXIT_FATAL = 3
 
 _LOCK_NAME = ".sunnify-cli.lock"
+_COOKIES_DOC = "https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/docs/CLI.md#youtube-cookies"
 
 
 def _ensure_windows_console() -> None:
@@ -296,6 +297,21 @@ def cmd_download(args) -> int:
             ),
         )
         return EXIT_FATAL
+    cookies = _resolve_settings(args, cfg).get("cookies_file")
+    problem = app.cookies_problem(os.path.expanduser(cookies)) if cookies else None
+    if problem:
+        code, message = problem
+        emitter.error(
+            message,
+            code=code,
+            hint=(
+                "install deno: https://docs.deno.com/runtime/getting_started/installation/"
+                if code == "deno_missing"
+                else f"export youtube cookies as a netscape cookies.txt ({_COOKIES_DOC}), "
+                "or pass --cookies '' to run without them"
+            ),
+        )
+        return EXIT_FATAL
 
     lock = _FolderLock(out_dir)
     lock_err = lock.acquire()
@@ -343,6 +359,7 @@ def cmd_download(args) -> int:
         title_only=scraper.title_only,
         track_numbers=scraper.include_track_number,
         loose_match=scraper.loose_match,
+        cookies=bool(scraper.cookies_file),
     )
     t0 = time.monotonic()
     try:
@@ -555,6 +572,25 @@ def cmd_doctor(args) -> int:
     except Exception as exc:
         checks.append({"check": "yt_dlp", "ok": False, "detail": str(exc)})
 
+    cookies = app.load_config().get("cookies_file")
+    if cookies:
+        problem = app.cookies_problem(os.path.expanduser(cookies))
+        checks.append(
+            {
+                "check": "youtube_cookies",
+                "ok": problem is None,
+                "detail": problem[1] if problem else f"on, deno at {app.find_deno()}",
+            }
+        )
+    else:
+        checks.append(
+            {
+                "check": "youtube_cookies",
+                "ok": True,
+                "detail": f"off (only needed on networks youtube gates: {_COOKIES_DOC})",
+            }
+        )
+
     # ok stays True either way: being behind is a nudge, not an unhealthy env
     try:
         r = app.requests.get(
@@ -636,6 +672,13 @@ def build_parser() -> argparse.ArgumentParser:
                 action=argparse.BooleanOptionalAction,
                 default=None,
                 help=f"{s.help} (default: {cfg[s.key]})",
+            )
+        elif s.kind == "path":
+            dl.add_argument(
+                *names,
+                metavar="FILE",
+                default=None,
+                help=f"{s.help} (default: {cfg[s.key] or 'off'}, from saved settings)",
             )
         else:
             dl.add_argument(

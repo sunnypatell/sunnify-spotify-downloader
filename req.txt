@@ -3,6 +3,7 @@ mutagen>=1.46.0
 PyQt6>=6.11
 requests>=2.32.2
 yt-dlp>=2024.8.6
+yt-dlp-ejs>=0.8.0
 
 # transitive (auto-installed but listed for reference)
 certifi>=2026.7.22

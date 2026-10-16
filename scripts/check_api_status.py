@@ -419,6 +419,32 @@ def check_retry_clients_are_live() -> EndpointResult:
     )
 
 
+def check_cookie_solver() -> EndpointResult:
+    """The bundled challenge solver must match the one yt-dlp vendors.
+
+    yt-dlp rejects a solver whose major.minor differs, which silently breaks
+    youtube cookies (the only path that runs it) while everything else passes.
+    """
+    try:
+        import yt_dlp_ejs
+        from yt_dlp.extractor.youtube.jsc._builtin.vendor import VERSION
+    except Exception as exc:
+        return EndpointResult(
+            "youtube_cookie_solver", "yt-dlp-ejs", "introspection", False, None, str(exc)
+        )
+    ok = yt_dlp_ejs.version.split(".")[:2] == VERSION.split(".")[:2]
+    return EndpointResult(
+        "youtube_cookie_solver",
+        "yt-dlp-ejs",
+        "introspection",
+        ok,
+        None,
+        f"yt-dlp-ejs {yt_dlp_ejs.version} matches the {VERSION} yt-dlp expects"
+        if ok
+        else f"yt-dlp-ejs {yt_dlp_ejs.version} but yt-dlp expects {VERSION}: relock both together",
+    )
+
+
 def check_unavailable_detection(api: SpotifyEmbedAPI, good_track_id: str) -> EndpointResult:
     """Spotify's error page must stay distinguishable from real content.
 
@@ -506,6 +532,7 @@ def main() -> int:
     # Staleness guards: these caught nothing when they didn't exist, which
     # is the point - each covers a path that degraded silently in the past.
     results.append(check_retry_clients_are_live())
+    results.append(check_cookie_solver())
     results.append(
         check_real_download(
             MusicScraper(),
@@ -537,6 +564,7 @@ def main() -> int:
         "youtube_search",
         "youtube_real_download",
         "youtube_retry_clients",
+        "youtube_cookie_solver",
         "spotify_unavailable_detection",
     ]
     failed_critical = [r for r in results if r.name in critical_checks and not r.ok]

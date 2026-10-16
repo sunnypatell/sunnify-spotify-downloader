@@ -1671,6 +1671,23 @@ class TestMainWindowInteractions:
 
         monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
 
+    def test_unusable_cookies_block_the_download(self, qapp, tmp_path):
+        """A saved cookies_file that can't be used stops the run before it starts."""
+        import Spotify_Downloader as sd
+
+        win = sd.MainWindow()
+        win._config["cookies_file"] = str(tmp_path / "missing.txt")
+        win.PlaylistLink.setText("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT")
+        with (
+            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
+            patch.object(sd.QMessageBox, "warning") as warning,
+        ):
+            win.on_returnButton()
+        assert warning.call_count == 1
+        assert "not found" in warning.call_args[0][2]
+        assert not win._is_downloading
+        assert not hasattr(win, "scraper_thread")
+
     def test_preview_open_close_animation(self, qapp):
         """OpenSongInformation drives a QPropertyAnimation with an easing curve;
         this is the exact path the qt6 QEasingCurve enum-scoping bug crashed on."""
@@ -2856,6 +2873,128 @@ class TestNetworkBlockNotice:
         s = self._scraper()
         msg = s._get_user_friendly_error(ContentUnavailableError("region-locked or removed"), "x")
         assert msg == "region-locked or removed"
+
+
+GOOD_COOKIES = (
+    "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t2147483647\tPREF\ttz=UTC\n"
+)
+
+
+class TestYoutubeCookies:
+    """Opt-in youtube cookies (#112): the user's file is only ever read, and
+    the anonymous path stays exactly as it was."""
+
+    def _capture_ydl(self, scraper, opts=None):
+        seen = {}
+
+        class FakeYDL:
+            def __init__(self, params):
+                seen["params"] = dict(params)
+                path = params.get("cookiefile")
+                if path:
+                    with open(path, encoding="utf-8") as f:
+                        seen["copy_text"] = f.read()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        with (
+            patch("Spotify_Downloader.YoutubeDL", FakeYDL),
+            scraper._youtube(opts or {"quiet": True}),
+        ):
+            pass
+        return seen
+
+    def test_without_cookies_no_js_runtime_is_enabled(self):
+        from Spotify_Downloader import MusicScraper
+
+        seen = self._capture_ydl(MusicScraper())
+        assert seen["params"]["js_runtimes"] == {}
+        assert "cookiefile" not in seen["params"]
+
+    def test_cookies_go_through_a_private_copy_that_is_removed(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        user_file = tmp_path / "cookies.txt"
+        user_file.write_text(GOOD_COOKIES, encoding="utf-8")
+        before = user_file.read_bytes()
+        deno = str(tmp_path / "deno")
+        with patch("Spotify_Downloader.find_deno", return_value=deno):
+            seen = self._capture_ydl(MusicScraper(cookies_file=str(user_file)))
+        copy = seen["params"]["cookiefile"]
+        assert os.path.abspath(copy) != os.path.abspath(str(user_file))
+        assert "PREF" in seen["copy_text"]
+        assert seen["params"]["js_runtimes"] == {"deno": {"path": deno}}
+        assert not os.path.exists(copy)
+        assert user_file.read_bytes() == before
+
+    def test_malformed_lines_are_dropped_and_never_echoed(self, tmp_path, capfd):
+        from Spotify_Downloader import MusicScraper, cookies_problem
+
+        user_file = tmp_path / "cookies.txt"
+        user_file.write_text(GOOD_COOKIES + "broken line SECRET\n", encoding="utf-8")
+        with patch("Spotify_Downloader.find_deno", return_value="deno"):
+            assert cookies_problem(str(user_file)) is None
+            scraper = MusicScraper(cookies_file=str(user_file))
+        assert "SECRET" not in scraper._cookies_text
+        assert "SECRET" not in capfd.readouterr().err
+
+    def test_unreadable_file_turns_cookies_off(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        bad = tmp_path / "cookies.txt"
+        bad.write_text("not a cookie file\n", encoding="utf-8")
+        assert MusicScraper(cookies_file=str(bad)).cookies_file is None
+
+    @pytest.mark.parametrize(
+        ("content", "deno", "expected"),
+        [
+            (None, "deno", "cookies_unusable"),
+            ("not a cookie file\n", "deno", "cookies_unusable"),
+            (
+                "# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tTRUE\t2147483647\tx\ty\n",
+                "deno",
+                "cookies_unusable",
+            ),
+            (GOOD_COOKIES, None, "deno_missing"),
+            (GOOD_COOKIES, "deno", None),
+        ],
+    )
+    def test_cookies_problem(self, tmp_path, content, deno, expected):
+        from Spotify_Downloader import cookies_problem
+
+        path = tmp_path / "cookies.txt"
+        if content is not None:
+            path.write_text(content, encoding="utf-8")
+        with patch("Spotify_Downloader.find_deno", return_value=deno):
+            problem = cookies_problem(str(path))
+        assert (problem[0] if problem else None) == expected
+
+    def test_find_deno_falls_back_to_the_default_install_spot(self, tmp_path):
+        import Spotify_Downloader as sd
+
+        name = "deno.exe" if sys.platform == "win32" else "deno"
+        target = tmp_path / ".deno" / "bin" / name
+        target.parent.mkdir(parents=True)
+        target.write_text("", encoding="utf-8")
+        with (
+            patch("Spotify_Downloader.shutil.which", return_value=None),
+            patch("Spotify_Downloader.os.path.expanduser", return_value=str(tmp_path)),
+        ):
+            assert sd.find_deno() == str(target)
+
+    def test_gate_notice_with_cookies_points_at_stale_cookies(self, tmp_path):
+        from Spotify_Downloader import MusicScraper
+
+        user_file = tmp_path / "cookies.txt"
+        user_file.write_text(GOOD_COOKIES, encoding="utf-8")
+        s = MusicScraper(cookies_file=str(user_file))
+        s.error_signal = MagicMock()
+        s._note_if_network_blocked("Sign in to confirm you're not a bot")
+        assert "expired" in s.error_signal.emit.call_args[0][0]
 
 
 class TestSettingsDialog:

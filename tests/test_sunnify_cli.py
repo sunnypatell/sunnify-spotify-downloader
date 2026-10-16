@@ -145,6 +145,45 @@ class TestDownloadGuards:
         assert rc == cli.EXIT_FATAL
         assert json.loads(capsys.readouterr().out)["code"] == "folder_locked"
 
+    def test_unusable_cookies_file_is_fatal_with_code(self, tmp_path, capsys):
+        with patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)):
+            rc = cli.cmd_download(
+                _args(
+                    url="https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
+                    out=str(tmp_path),
+                    json=True,
+                    cookies=str(tmp_path / "missing.txt"),
+                )
+            )
+        assert rc == cli.EXIT_FATAL
+        assert json.loads(capsys.readouterr().out)["code"] == "cookies_unusable"
+
+    def test_cookies_without_deno_is_fatal_with_code(self, tmp_path, capsys):
+        cookies = tmp_path / "cookies.txt"
+        cookies.write_text(
+            "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t2147483647\tPREF\tx\n",
+            encoding="utf-8",
+        )
+        with (
+            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
+            patch.object(sd, "find_deno", return_value=None),
+        ):
+            rc = cli.cmd_download(
+                _args(
+                    url="https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
+                    out=str(tmp_path),
+                    json=True,
+                    cookies=str(cookies),
+                )
+            )
+        assert rc == cli.EXIT_FATAL
+        assert json.loads(capsys.readouterr().out)["code"] == "deno_missing"
+
+    def test_empty_cookies_flag_turns_saved_cookies_off(self):
+        cfg = {s.key: s.default for s in sd.SETTINGS}
+        cfg["cookies_file"] = "/saved/cookies.txt"
+        assert not cli._resolve_settings(_args(cookies=""), cfg)["cookies_file"]
+
 
 class TestFolderLock:
     def test_stale_lock_is_claimed(self, tmp_path):

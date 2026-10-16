@@ -50,7 +50,7 @@ so agents can run them too.
 | `sunnify info <url>` | Fetch metadata only (no downloads, no FFmpeg needed) |
 | `sunnify status [folder]` | Audio files present, manifest state, active download pid |
 | `sunnify config [--set k=v]` | Show or persist settings (the same `config.json` the GUI uses) |
-| `sunnify doctor` | Self-check: FFmpeg, config, Spotify reachability, yt-dlp, and whether a newer release exists |
+| `sunnify doctor` | Self-check: FFmpeg, config, Spotify reachability, yt-dlp, YouTube cookies, and whether a newer release exists |
 | `sunnify --version` / `--help` | You know these (`sunnify help [command]` works too) |
 
 A mistyped command errors with a suggestion (`did you mean 'download'?`)
@@ -65,6 +65,7 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
                        [--artist-first | --no-artist-first]
                        [--title-only | --no-title-only]
                        [--loose-match | --no-loose-match]
+                       [--cookies FILE]
                        [--json] [--quiet]
 ```
 
@@ -74,6 +75,8 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
 - A per-folder pid lock stops two runs from racing the same destination.
 - First `Ctrl+C` finishes in-flight tracks and exits cleanly; a second one
   force-quits.
+- `--cookies FILE` is only for networks YouTube gates; see
+  [YouTube cookies](#youtube-cookies).
 
 ### Exit codes
 
@@ -90,7 +93,7 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
 `run_summary`:
 
 ```json
-{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false}
+{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false, "cookies": false}
 {"event": "track_done", "title": "...", "artists": "...", "file": "/path/file.mp3", "bytes": 4823041}
 {"event": "track_skipped", "title": "...", "file": "/path/file.mp3"}
 {"event": "warning", "message": "..."}
@@ -104,12 +107,47 @@ Errors are typed envelopes; branch on `code`, not on message text:
 ```
 
 Current codes: `invalid_url`, `conflicting_flags`, `out_dir_unusable`,
-`ffmpeg_missing`, `folder_locked`, `metadata_fetch_failed`, `run_failed`.
+`ffmpeg_missing`, `cookies_unusable`, `deno_missing`, `folder_locked`,
+`metadata_fetch_failed`, `run_failed`.
 (`conflicting_flags` fires on explicit `--title-only --artist-first`; a
 title-only filename has no order, so pass one or the other.)
 
 `info`, `status`, `config`, and `doctor` print a single JSON document with
 `--json`.
+
+## YouTube cookies
+
+YouTube sometimes asks a whole network to prove it isn't a bot, and then
+refuses every download from it. Sunnify says so once, in plain words, instead
+of failing each track separately. Switching networks usually clears it. Where
+that isn't an option, you can give Sunnify the cookies of your own logged-in
+YouTube session. Without this setting, nothing about how Sunnify talks to
+YouTube changes.
+
+You need two things:
+
+1. **A Netscape-format `cookies.txt`** with your youtube.com cookies. The
+   [yt-dlp wiki](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)
+   shows how to export one. Use a dedicated browser profile or a private
+   window, ideally with a secondary account. YouTube can flag an account used
+   this way, and the file should be treated like a password.
+2. **[Deno](https://docs.deno.com/runtime/getting_started/installation/)**, a
+   JavaScript runtime. A logged-in session only gets YouTube player variants
+   that require solving a JavaScript challenge, and yt-dlp runs the solver
+   (bundled with Sunnify) in Deno's sandbox. Sunnify finds Deno on your `PATH`
+   or in its default install location.
+
+Turn it on for one run with `--cookies ~/youtube-cookies.txt`, or for every run
+(desktop app included) with `sunnify config --set cookies_file=~/youtube-cookies.txt`.
+`--cookies ''` skips a saved file for one run, and
+`sunnify config --set cookies_file=` turns it off.
+
+Sunnify only ever reads the file: each request gets a private temporary copy
+of its valid cookies that is deleted afterwards, so your file is never
+modified, and its contents never reach the logs or the terminal. A missing or
+malformed file stops the run with `cookies_unusable`, and a missing Deno with
+`deno_missing`; `sunnify doctor` checks both. If YouTube still refuses the
+network with cookies loaded, they have usually expired; export them again.
 
 ## For AI agents
 

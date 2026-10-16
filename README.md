@@ -115,6 +115,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 - **Unicode-safe filenames.** Accented, CJK, and Cyrillic titles are preserved; only characters your filesystem actually rejects are stripped.
 - **Accurate audio matching.** Sunnify matches on title, artist, and duration rather than grabbing the first search hit, so you get the real recording, not a remix or a sped-up edit.
 - **Bundled FFmpeg, no account.** Everything needed ships inside the app, and nothing asks you to log in.
+- **A way through YouTube's bot check.** If YouTube refuses your network, Sunnify says so plainly, and you can opt in to using cookies from your own YouTube session. Sunnify only reads the file, never changes it. See [YouTube cookies](docs/CLI.md#youtube-cookies).
 - **Headless CLI built in.** `sunnify download <url>` scripts every feature of the app: machine-readable output, meaningful exit codes, resume, and a `doctor` self-check. Made for terminals, cron jobs, and AI agents. See [docs/CLI.md](docs/CLI.md).
 
 <div align="center">
