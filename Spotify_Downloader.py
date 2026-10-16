@@ -969,10 +969,9 @@ class MusicScraper(QThread):
              Mi Chico" at the top, only ~2s off the real Mi Gente, and the
              prior pure-duration matcher would happily pick it and write
              Mi Gente metadata onto Mi Chico audio.
-          2. Prefer the subset that ALSO has an artist plausibly appearing
-             in the YouTube title. Falls back to the title-only pool if no
-             candidate matches both - artist isn't always in the YouTube
-             title for legitimate uploads.
+          2. Require an artist plausibly appearing in the YouTube title too,
+             and return None if none does. Artists written only in non-latin
+             script skip this gate, since YouTube usually romanizes them.
           3. Among the resulting pool, pick the duration-closest if duration
              is known, but reject the whole result if even the best
              candidate's duration is >30s off the Spotify track - that means
@@ -981,7 +980,8 @@ class MusicScraper(QThread):
              track's metadata still corrupts the library.
           4. If no candidate's title passes, return None. The caller treats
              that as "not found on YouTube" - strictly better than shipping
-             the wrong audio under the right cover.
+             the wrong audio under the right cover. With loose_match on, the
+             None of steps 2 and 4 becomes _loose_pick's duration-closest result.
 
         `expected_title` + `expected_artists` are optional so legacy callers
         that haven't been updated still work via the older trust-the-top-
