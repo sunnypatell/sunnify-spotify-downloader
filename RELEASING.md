@@ -110,7 +110,15 @@ Delete the draft + tag afterwards.
 ## Fixing a botched release
 
 If the release is still a DRAFT: re-dispatch the workflow on the same tag;
-the upload job is idempotent (delete-then-upload).
+the upload job is idempotent (delete-then-upload). `gh run rerun <id> --failed`
+retries only the failed jobs at the original commit.
+
+Dispatch only while `main` is still at the tag commit: the provenance records
+the dispatching commit as the source. If a fix has to land on main first (a
+workflow change, say), move the unpublished tag to it:
+`gh release delete vX.Y.Z --yes --cleanup-tag` (removes the draft and the tag,
+locally too), tag main again, recreate the draft, dispatch. Homebrew fetches
+taps with `--tags --force`, so moving an unpublished tag strands nobody.
 
 If the release is PUBLISHED: ship a patch release (vX.Y.Z+1). Don't replace
 binaries under a published tag - users and the cask have already seen the
