@@ -1,5 +1,7 @@
 # Inputs for the hash-locked release-build install (req.txt stays the loose
 # manifest for the test matrix). Regenerate after editing this or req.txt:
 #   uv pip compile requirements-build.in --universal --generate-hashes -o requirements-build.txt
+# Dependabot only moves the direct pins; transitive ones (the Qt runtime among
+# them) move when the monthly sweep runs the same command with --upgrade.
 -r req.txt
 pyinstaller>=6.22.3
