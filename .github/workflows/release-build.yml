@@ -126,6 +126,8 @@ jobs:
           path: ffmpeg-cache
           # Cache is invalidated automatically the moment any env var
           # in the key changes - so a version bump auto-busts the cache.
+          # Unused caches are evicted after 7 days, so releases usually
+          # download fresh; the curl retries ride out host rate limits (429).
           key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
 
       - name: Download and verify FFmpeg (Windows)
@@ -145,7 +147,7 @@ jobs:
             echo "Using cached download"
           else
             echo "Downloading ${URL}"
-            curl -fL -o ffmpeg-cache/ffmpeg.zip "$URL"
+            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffmpeg.zip "$URL"
           fi
           # Verify EVERY run, cache hit or miss - cache cannot bypass the SHA gate.
           echo "${EXPECTED}  ffmpeg-cache/ffmpeg.zip" | sha256sum -c -
@@ -185,7 +187,7 @@ jobs:
             echo "Using cached download"
           else
             echo "Downloading ${URL}"
-            curl -fL -o ffmpeg-cache/ffmpeg.tar.xz "$URL"
+            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffmpeg.tar.xz "$URL"
           fi
           echo "${EXPECTED}  ffmpeg-cache/ffmpeg.tar.xz" | sha256sum -c -
           tar -xf ffmpeg-cache/ffmpeg.tar.xz
@@ -205,10 +207,10 @@ jobs:
           EXP_FP="${FFMPEG_MAC_FFPROBE_SHA256}"
           mkdir -p ffmpeg-cache
           if [ ! -f "ffmpeg-cache/ffmpeg.zip" ]; then
-            curl -fL -o ffmpeg-cache/ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
+            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
           fi
           if [ ! -f "ffmpeg-cache/ffprobe.zip" ]; then
-            curl -fL -o ffmpeg-cache/ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
+            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
           fi
           shasum -a 256 -c <(echo "${EXP_FF}  ffmpeg-cache/ffmpeg.zip")
           shasum -a 256 -c <(echo "${EXP_FP}  ffmpeg-cache/ffprobe.zip")
