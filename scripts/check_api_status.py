@@ -204,9 +204,8 @@ def check_youtube_match(track: TrackInfo) -> EndpointResult:
     rejects everything (or vice versa).
     """
     search = f"ytsearch5:{track.title} {track.artists} audio"
-    # Bare instance: skip QThread.__init__ (no Qt), the selector only needs the
-    # class's static/class methods + duration constants.
-    matcher = MusicScraper.__new__(MusicScraper)
+    # the real object, built the way the app builds it, so the probe can't drift from it
+    matcher = MusicScraper()
     duration_s = (track.duration_ms / 1000) if track.duration_ms else None
     try:
         url = matcher._select_youtube_match(
