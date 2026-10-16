@@ -2959,6 +2959,11 @@ class TestYoutubeCookies:
                 "deno",
                 "cookies_unusable",
             ),
+            (
+                "# Netscape HTTP Cookie File\n.notyoutube.com\tTRUE\t/\tTRUE\t2147483647\tx\ty\n",
+                "deno",
+                "cookies_unusable",
+            ),
             (GOOD_COOKIES, None, "deno_missing"),
             (GOOD_COOKIES, "deno", None),
         ],

@@ -270,7 +270,9 @@ def cookies_problem(path: str) -> tuple[str, str] | None:
         jar = _read_cookie_jar(path)
     except Exception:
         return "cookies_unusable", f"not a netscape cookies.txt file: {path}"
-    if not any(c.domain.lstrip(".").endswith("youtube.com") for c in jar):
+    if not any(
+        c.domain.lstrip(".") == "youtube.com" or c.domain.endswith(".youtube.com") for c in jar
+    ):
         return "cookies_unusable", f"no youtube.com cookies in {path}"
     if find_deno() is None:
         return "deno_missing", "deno not found, and youtube needs it once cookies are in use"
