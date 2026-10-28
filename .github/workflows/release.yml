@@ -83,10 +83,12 @@ jobs:
             runner: windows-latest
             asset: Sunnify-Windows.exe
           - platform: linux
-            runner: ubuntu-latest
+            # pinned, not -latest: the binary needs at least the build host's
+            # glibc, so a newer image would drop every distro older than it
+            runner: ubuntu-24.04
             asset: Sunnify-Linux
           - platform: macos
-            runner: macos-14
+            runner: macos-15
             asset: Sunnify-macOS.zip
           # Intel Macs cannot run arm64 binaries (Rosetta translates one way,
           # x86_64 -> arm64), so Intel gets its own native build (#79).
