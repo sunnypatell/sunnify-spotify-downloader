@@ -106,7 +106,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 ## Features
 
 - **Playlists, albums, and single tracks.** Paste a normal link, an `intl-xx` locale link, or a `spotify:` URI copied from the desktop app. Each playlist or album downloads into its own folder.
-- **Five audio formats.** MP3, M4A, Opus (lossy at 128 / 192 / 256 / 320 kbps) and FLAC / WAV (lossless). Your choice is remembered between sessions.
+- **Five audio formats.** MP3, M4A, Opus (lossy at 128 / 192 / 256 / 320 kbps) and FLAC / WAV (lossless conversion of the source, see [Audio quality](#audio-quality)). Your choice is remembered between sessions.
 - **Real metadata, written correctly.** Title, artist(s), album, year, and track number are embedded for every format, with the front cover art baked in. MP3 tags are written for maximum player compatibility, so artwork and tags show up everywhere, including older car head-units, stock Android, and Windows Media Player.
 - **Per-track cover art.** Each song gets its own artwork, not one shared playlist cover.
 - **Parallel downloads.** Multiple songs download at once, so a playlist finishes much faster, with a cooperative Stop that takes effect immediately.
@@ -174,6 +174,40 @@ Full details and the threat model are in [SECURITY.md](SECURITY.md#release-integ
 ## How it works
 
 Sunnify reads track metadata from Spotify's public embed pages (no authentication), finds the matching audio via a YouTube search through [yt-dlp](https://github.com/yt-dlp/yt-dlp), transcodes it to your chosen format with the bundled FFmpeg, and writes the tags and cover art with [Mutagen](https://mutagen.readthedocs.io/). It is a pure-Python core wrapped in a PyQt6 interface, packaged per-platform with PyInstaller.
+
+---
+
+## Troubleshooting
+
+These come up again and again. Each one links the issue where it was investigated in full.
+
+### Audio quality
+
+Every format is encoded from YouTube's best audio stream for the track: about 128 kbps AAC or Opus, with an encoder cutoff near 20 kHz. Your format and bitrate pick the conversion, not the source. A 320 kbps MP3 keeps as much of that stream as MP3 can, and FLAC or WAV keep all of it with nothing further lost, but no setting adds detail the stream never had. So a spectrogram (Spek) showing nothing above roughly 20 kHz, or Fakin' the Funk calling the file a transcode, is reading the source correctly. Sample rate is a separate setting: YouTube serves 48 kHz, and Settings can convert to 44.1 kHz. See [#93](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/93), [#116](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/116).
+
+### A different song was downloaded
+
+A YouTube result is only accepted when its title matches the Spotify track, the artist appears in it, and its length is within 30 seconds; otherwise the track is skipped rather than guessed. **Use closest result if no match** in Settings trades that for coverage by falling back to the closest length, which is where covers and remixes get in. A re-upload of the same recording with a voice tag over it can't be told apart by its metadata. If a song still comes down wrong with that setting off, open an issue with its Spotify link. See [#45](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/45), [#52](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/52), [#93](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/93).
+
+### Some tracks failed
+
+The counter shows how many failed, and `sunnify.log` (Settings, **Open logs folder**) names each one with the reason. Paste the same link into the same folder to retry: tracks already on disk are skipped. See [#113](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/113).
+
+### YouTube is refusing this network
+
+YouTube sometimes asks a whole network to prove it isn't a bot and then refuses every download from it. Another network usually clears it; otherwise use [YouTube cookies](docs/CLI.md#youtube-cookies). See [#95](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/95), [#112](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/112).
+
+### Antivirus flags the Windows download
+
+A few engines flag executables built with PyInstaller by how they are packaged rather than what they do, and every release is a new file to them. Compare the file's SHA256 with `checksums.txt` on the release page and check its provenance (see [Verify your download](#verify-your-download)). See [#102](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/102), [#103](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/103).
+
+### A link says it's unavailable
+
+Spotify serves an error page for private, removed, and region-locked items, and for every link in countries where it doesn't operate. Sunnify reports that instead of failing with a parser error. See [#94](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/94).
+
+### Artist or discography links
+
+Not supported: Spotify's public pages only list an artist's top 10 tracks. Paste each album link, or add the albums to a public playlist and paste that. See [#90](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/90), [#114](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/114).
 
 ---
 
