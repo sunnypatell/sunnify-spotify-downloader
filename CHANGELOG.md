@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-10-27
+
+### Fixed
+- **the Apple Silicon app no longer depends on Rosetta to convert audio.** its bundled FFmpeg was an Intel (x86_64) build, so every conversion on an M-series Mac ran through Rosetta: downloads failed outright on one that never installed it, and Apple has said [macOS 27 is the last release where Intel-only code runs on Apple silicon](https://developer.apple.com/news/?id=w5ngl9k2). the arm64 app now bundles a native arm64 FFmpeg 9.0.2 (static, Developer ID signed, SHA-256 pinned like every other FFmpeg the builds use), and the release build refuses to ship an FFmpeg that doesn't match the architecture it is building. the Intel app keeps its native x86_64 FFmpeg.
+- **the certificate store the app ships no longer trusts a compromised authority.** certifi 2026.10.19 removes emSign ECC Root CA - G3, whose intermediate keys were compromised ([PYSEC-2026-4320](https://osv.dev/PYSEC-2026-4320)). every HTTPS request the app makes is checked against that bundle.
+- **YouTube cookies must belong to youtube.com itself.** the cookies preflight accepted any domain ending in `youtube.com`, so a file holding only lookalike cookies passed as usable.
+- **the format and quality hints in Settings say what the source allows (#116).** "flac and wav are lossless" read as a promise of studio audio; the hints now say FLAC and WAV keep YouTube's stream with nothing further lost, and that higher bitrates lose less of it rather than add to it. the readme's new [troubleshooting section](README.md#audio-quality) explains the rest.
+
+### Changed
+- **YouTube cookies work with Node.js 22+ as well as Deno.** Deno's runtime only gets fixes for about another year now that its team has joined Cloudflare, and the cookies path accepted nothing else. Sunnify now tries Deno, then Node, in yt-dlp's own order, and asks yt-dlp whether each version is supported, so an old Node is skipped up front instead of failing mid-run. `sunnify doctor` names the runtime in use, and the `deno_missing` error code is unchanged for scripts. [setup guide](docs/CLI.md#youtube-cookies).
+- **Qt runtime 6.11.2** (with pyqt6-sip 13.13.0), which the hash lock had been holding back.
+
+### Notes
+- (web) already live, nothing to update: Next.js 15.5.28 for a critical unauthenticated RCE in the image optimizer ([GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw)) and a server-actions DoS, and the optimizer endpoint, which the web client never used, is now off entirely.
+- builds: the Apple Silicon app is built on `macos-15`, since GitHub retires `macos-14` on Nov 2. the Linux build is pinned to `ubuntu-24.04` as `ubuntu-latest` moves to 26.04, because the binary needs at least its build machine's glibc, so the Linux requirement is unchanged.
+- the readme has a [troubleshooting section](README.md#troubleshooting) covering the questions that keep coming back as new issues.
+- verified before shipping: 335 tests green; real downloads in all five formats (FLAC converted to 44.1 kHz) through the app's own engine using the new arm64 FFmpeg, with tags written; a locally built Apple Silicon app passing the release workflow's macOS step as written and downloading through its bundled FFmpeg under a bare `PATH`, while the new architecture check rejects 2.5.0's x86_64 FFmpeg; TLS to Spotify, YouTube, GitHub and the FFmpeg hosts on the new certificate store; with cookies on, Node 24 picked when Deno is absent and Node 20 skipped as unsupported. binaries built with yt-dlp 2026.8.19 and yt-dlp-ejs 0.8.0 on python 3.13.
+
 ## [2.5.0] - 2026-10-15
 
 ### Added
@@ -422,7 +440,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.1...v2.4.2
