@@ -8,22 +8,9 @@ const nextConfig = {
   // Pin the file-tracing root to this app so Next 15 doesn't infer the
   // monorepo root (multiple lockfiles upstream) and warn on every build.
   outputFileTracingRoot: projectRoot,
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "i.scdn.co",
-      },
-      {
-        protocol: "https",
-        hostname: "**.scdn.co",
-      },
-      {
-        protocol: "https",
-        hostname: "**.spotifycdn.com",
-      },
-    ],
-  },
+  // covers come straight from spotify's cdn, already sized; the optimizer
+  // endpoint would only be quota and attack surface nobody uses
+  images: { unoptimized: true },
 }
 
 export default nextConfig
