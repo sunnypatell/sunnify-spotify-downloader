@@ -6,10 +6,10 @@
 cask "sunnify" do
   arch intel: "-Intel"
 
-  version "2.5.0"
+  version "2.5.1"
   # both shas are recomputed and rewritten by the release workflow
-  sha256 arm:   "557de8604023d7debcb55ea0471a8c4554dbc03ac395964600ec1f8ff672295b",
-         intel: "350ab0b244b41768fce3b1cbb31607cd7b0da9cfa3ddea691b42cdb9710ceaa7"
+  sha256 arm:   "6965788e6b313ae5bd909864942dfa6cb3c4802fecfd1e9028774dd423f05695",
+         intel: "70a339610152d3b7a2ae3c978af100830f4c4f5f0bd60cd1ed5a1e03d83e383f"
 
   url "https://github.com/sunnypatell/sunnify-spotify-downloader/releases/download/v#{version}/Sunnify-macOS#{arch}.zip"
   name "Sunnify"
