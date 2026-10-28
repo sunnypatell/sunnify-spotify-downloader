@@ -305,7 +305,8 @@ def cmd_download(args) -> int:
             message,
             code=code,
             hint=(
-                "install deno: https://docs.deno.com/runtime/getting_started/installation/"
+                "install deno (https://docs.deno.com/runtime/getting_started/installation/) "
+                "or node 22+ (https://nodejs.org/)"
                 if code == "deno_missing"
                 else f"export youtube cookies as a netscape cookies.txt ({_COOKIES_DOC}), "
                 "or pass --cookies '' to run without them"
@@ -575,11 +576,12 @@ def cmd_doctor(args) -> int:
     cookies = app.load_config().get("cookies_file")
     if cookies:
         problem = app.cookies_problem(os.path.expanduser(cookies))
+        runtime = None if problem else app.find_js_runtime()
         checks.append(
             {
                 "check": "youtube_cookies",
                 "ok": problem is None,
-                "detail": problem[1] if problem else f"on, deno at {app.find_deno()}",
+                "detail": problem[1] if problem else f"on, {runtime[0]} at {runtime[1]}",
             }
         )
     else:

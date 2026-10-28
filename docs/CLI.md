@@ -131,11 +131,14 @@ You need two things:
    shows how to export one. Use a dedicated browser profile or a private
    window, ideally with a secondary account. YouTube can flag an account used
    this way, and the file should be treated like a password.
-2. **[Deno](https://docs.deno.com/runtime/getting_started/installation/)**, a
-   JavaScript runtime. A logged-in session only gets YouTube player variants
-   that require solving a JavaScript challenge, and yt-dlp runs the solver
-   (bundled with Sunnify) in Deno's sandbox. Sunnify finds Deno on your `PATH`
-   or in its default install location.
+2. **A JavaScript runtime:**
+   [Deno](https://docs.deno.com/runtime/getting_started/installation/), or
+   [Node.js](https://nodejs.org/) 22 or later. A logged-in session only gets
+   YouTube player variants that require solving a JavaScript challenge, and
+   yt-dlp runs the solver (bundled with Sunnify) in that runtime's sandbox.
+   Sunnify looks on your `PATH` and in the usual install locations, uses Deno
+   when both are present (yt-dlp's own order), and skips any version yt-dlp
+   doesn't support.
 
 Turn it on for one run with `--cookies ~/youtube-cookies.txt`, or for every run
 (desktop app included) with `sunnify config --set cookies_file=~/youtube-cookies.txt`.
@@ -145,9 +148,10 @@ Turn it on for one run with `--cookies ~/youtube-cookies.txt`, or for every run
 Sunnify only ever reads the file: each request gets a private temporary copy
 of its valid cookies that is deleted afterwards, so your file is never
 modified, and its contents never reach the logs or the terminal. A missing or
-malformed file stops the run with `cookies_unusable`, and a missing Deno with
-`deno_missing`; `sunnify doctor` checks both. If YouTube still refuses the
-network with cookies loaded, they have usually expired; export them again.
+malformed file stops the run with `cookies_unusable`, and no supported runtime
+with `deno_missing`; `sunnify doctor` checks both and names the runtime in use.
+If YouTube still refuses the network with cookies loaded, they have usually
+expired; export them again.
 
 ## For AI agents
 

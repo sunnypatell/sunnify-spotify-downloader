@@ -166,7 +166,7 @@ class TestDownloadGuards:
         )
         with (
             patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
-            patch.object(sd, "find_deno", return_value=None),
+            patch.object(sd, "find_js_runtime", return_value=None),
         ):
             rc = cli.cmd_download(
                 _args(

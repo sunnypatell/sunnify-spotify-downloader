@@ -215,27 +215,44 @@ def get_ffmpeg_path():
     return None
 
 
-def find_deno() -> str | None:
-    """deno for yt-dlp's youtube challenge solver, which a logged-in session needs.
+# yt-dlp's own preference order; deno's runtime only gets fixes until about october 2027
+_JS_RUNTIMES = ("deno", "node")
 
-    Also checks the usual install spots, since a Finder-launched app gets a bare PATH."""
-    found = shutil.which("deno")
-    if found:
-        return found
-    name = "deno.exe" if sys.platform == "win32" else "deno"
+
+def _js_runtime_candidates(name: str) -> list[str]:
+    """PATH first, then the usual install spots, since a Finder-launched app gets a bare PATH."""
+    exe = f"{name}.exe" if sys.platform == "win32" else name
     home = os.path.expanduser("~")
-    candidates = [os.path.join(home, ".deno", "bin", name)]
+    candidates = [shutil.which(name)]
+    if name == "deno":
+        candidates.append(os.path.join(home, ".deno", "bin", exe))
     if sys.platform == "win32":
         scoop = os.environ.get("SCOOP") or os.path.join(home, "scoop")
         choco = os.environ.get("CHOCOLATEYINSTALL") or r"C:\ProgramData\chocolatey"
         candidates += [
-            os.path.expandvars(rf"%LOCALAPPDATA%\Microsoft\WinGet\Links\{name}"),
-            os.path.join(scoop, "shims", name),
-            os.path.join(choco, "bin", name),
+            os.path.expandvars(rf"%LOCALAPPDATA%\Microsoft\WinGet\Links\{exe}"),
+            os.path.join(scoop, "shims", exe),
+            os.path.join(choco, "bin", exe),
+            os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "nodejs", exe),
         ]
     else:
-        candidates += ["/opt/homebrew/bin/deno", "/usr/local/bin/deno"]
-    return next((c for c in candidates if os.path.isfile(c)), None)
+        candidates += [f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}"]
+    return [c for c in dict.fromkeys(candidates) if c and os.path.isfile(c)]
+
+
+def find_js_runtime() -> tuple[str, str] | None:
+    """(name, path) of a javascript runtime yt-dlp supports, which a logged-in youtube
+    session needs for its challenge solver. yt-dlp judges the version, so this never
+    accepts a runtime yt-dlp would then refuse."""
+    from yt_dlp.globals import supported_js_runtimes
+
+    for name in _JS_RUNTIMES:
+        runtime = supported_js_runtimes.value.get(name)
+        for path in _js_runtime_candidates(name) if runtime else ():
+            info = runtime(path=path).info
+            if info and info.supported:
+                return name, path
+    return None
 
 
 def _read_cookie_jar(path: str):
@@ -274,8 +291,11 @@ def cookies_problem(path: str) -> tuple[str, str] | None:
         c.domain.lstrip(".") == "youtube.com" or c.domain.endswith(".youtube.com") for c in jar
     ):
         return "cookies_unusable", f"no youtube.com cookies in {path}"
-    if find_deno() is None:
-        return "deno_missing", "deno not found, and youtube needs it once cookies are in use"
+    if find_js_runtime() is None:
+        return (
+            "deno_missing",
+            "no supported javascript runtime (deno, or node 22+); youtube needs one with cookies",
+        )
     return None
 
 
@@ -386,7 +406,7 @@ SETTINGS = (
         "path",
         scraper_kwarg="cookies_file",
         cli_flag="--cookies",
-        help="youtube cookies.txt for networks youtube gates (needs deno)",
+        help="youtube cookies.txt for networks youtube gates (needs deno or node 22+)",
     ),
 )
 
@@ -688,11 +708,13 @@ class MusicScraper(QThread):
         self.loose_match = bool(loose_match)
         self.cookies_file = os.path.expanduser(cookies_file) if cookies_file else None
         self._cookies_text = None
+        self._js_runtime = None
         if self.cookies_file:
             # read once here, on the caller's thread: loading redirects stderr
             try:
                 self._cookies_text = _cookies_text(self.cookies_file)
-                log.info("youtube cookies: on")
+                self._js_runtime = find_js_runtime()
+                log.info("youtube cookies: on, js runtime: %s", self._js_runtime)
             except Exception as exc:
                 log.error("youtube cookies unreadable, running without them: %s", exc)
                 self.cookies_file = None
@@ -730,8 +752,8 @@ class MusicScraper(QThread):
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(self._cookies_text)
-            deno = find_deno()
-            runtimes = {"deno": {"path": deno}} if deno else {"deno": {}}
+            name, path = self._js_runtime or ("deno", None)
+            runtimes = {name: {"path": path}} if path else {name: {}}
             with YoutubeDL({**opts, "cookiefile": copy, "js_runtimes": runtimes}) as ydl:
                 yield ydl
         finally:

@@ -2922,7 +2922,7 @@ class TestYoutubeCookies:
         user_file.write_text(GOOD_COOKIES, encoding="utf-8")
         before = user_file.read_bytes()
         deno = str(tmp_path / "deno")
-        with patch("Spotify_Downloader.find_deno", return_value=deno):
+        with patch("Spotify_Downloader.find_js_runtime", return_value=("deno", deno)):
             seen = self._capture_ydl(MusicScraper(cookies_file=str(user_file)))
         copy = seen["params"]["cookiefile"]
         assert os.path.abspath(copy) != os.path.abspath(str(user_file))
@@ -2936,7 +2936,7 @@ class TestYoutubeCookies:
 
         user_file = tmp_path / "cookies.txt"
         user_file.write_text(GOOD_COOKIES + "broken line SECRET\n", encoding="utf-8")
-        with patch("Spotify_Downloader.find_deno", return_value="deno"):
+        with patch("Spotify_Downloader.find_js_runtime", return_value=("deno", "deno")):
             assert cookies_problem(str(user_file)) is None
             scraper = MusicScraper(cookies_file=str(user_file))
         assert "SECRET" not in scraper._cookies_text
@@ -2950,35 +2950,36 @@ class TestYoutubeCookies:
         assert MusicScraper(cookies_file=str(bad)).cookies_file is None
 
     @pytest.mark.parametrize(
-        ("content", "deno", "expected"),
+        ("content", "runtime", "expected"),
         [
-            (None, "deno", "cookies_unusable"),
-            ("not a cookie file\n", "deno", "cookies_unusable"),
+            (None, ("deno", "deno"), "cookies_unusable"),
+            ("not a cookie file\n", ("deno", "deno"), "cookies_unusable"),
             (
                 "# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tTRUE\t2147483647\tx\ty\n",
-                "deno",
+                ("deno", "deno"),
                 "cookies_unusable",
             ),
             (
                 "# Netscape HTTP Cookie File\n.notyoutube.com\tTRUE\t/\tTRUE\t2147483647\tx\ty\n",
-                "deno",
+                ("deno", "deno"),
                 "cookies_unusable",
             ),
             (GOOD_COOKIES, None, "deno_missing"),
-            (GOOD_COOKIES, "deno", None),
+            (GOOD_COOKIES, ("deno", "deno"), None),
+            (GOOD_COOKIES, ("node", "node"), None),
         ],
     )
-    def test_cookies_problem(self, tmp_path, content, deno, expected):
+    def test_cookies_problem(self, tmp_path, content, runtime, expected):
         from Spotify_Downloader import cookies_problem
 
         path = tmp_path / "cookies.txt"
         if content is not None:
             path.write_text(content, encoding="utf-8")
-        with patch("Spotify_Downloader.find_deno", return_value=deno):
+        with patch("Spotify_Downloader.find_js_runtime", return_value=runtime):
             problem = cookies_problem(str(path))
         assert (problem[0] if problem else None) == expected
 
-    def test_find_deno_falls_back_to_the_default_install_spot(self, tmp_path):
+    def test_deno_default_install_spot_is_a_candidate(self, tmp_path):
         import Spotify_Downloader as sd
 
         name = "deno.exe" if sys.platform == "win32" else "deno"
@@ -2989,7 +2990,41 @@ class TestYoutubeCookies:
             patch("Spotify_Downloader.shutil.which", return_value=None),
             patch("Spotify_Downloader.os.path.expanduser", return_value=str(tmp_path)),
         ):
-            assert sd.find_deno() == str(target)
+            assert sd._js_runtime_candidates("deno") == [str(target)]
+
+    def test_ytdlp_runtime_registry_still_has_deno_and_node(self):
+        """find_js_runtime defers version rules to this registry; a yt-dlp bump
+        that moves it must fail here, not silently turn cookies off."""
+        from yt_dlp.globals import supported_js_runtimes
+
+        assert {"deno", "node"} <= set(supported_js_runtimes.value)
+
+    @pytest.mark.parametrize(
+        ("supported", "expected"),
+        [
+            ({"deno": True, "node": True}, "deno"),
+            ({"deno": False, "node": True}, "node"),
+            ({"deno": False, "node": False}, None),
+        ],
+    )
+    def test_find_js_runtime_takes_the_first_supported(self, supported, expected):
+        import Spotify_Downloader as sd
+
+        class Fake:
+            def __init__(self, name):
+                self.name = name
+
+            def __call__(self, path=None):
+                info = MagicMock(supported=supported[self.name], path=path)
+                return MagicMock(info=info)
+
+        registry = MagicMock(value={"deno": Fake("deno"), "node": Fake("node")})
+        with (
+            patch("yt_dlp.globals.supported_js_runtimes", registry),
+            patch("Spotify_Downloader._js_runtime_candidates", lambda n: [f"/bin/{n}"]),
+        ):
+            found = sd.find_js_runtime()
+        assert (found[0] if found else None) == expected
 
     def test_gate_notice_with_cookies_points_at_stale_cookies(self, tmp_path):
         from Spotify_Downloader import MusicScraper
