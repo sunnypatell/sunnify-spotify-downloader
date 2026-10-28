@@ -22,8 +22,10 @@
 # -----------------------------------------------------------------------------
 # Bumping the bundled FFmpeg (one of these every few months)
 # -----------------------------------------------------------------------------
-# Windows + Linux use BtbN/FFmpeg-Builds (released to GitHub). macOS uses
-# evermeet.cx (their stable versioned release). To bump:
+# Windows + Linux use BtbN/FFmpeg-Builds (released to GitHub). macOS Intel
+# uses evermeet.cx, which only builds x86_64; macOS arm64 uses the native
+# static builds from ffmpeg.martin-riedl.de, because Rosetta stops running
+# Intel-only code on Apple silicon after macOS 27. To bump:
 #   1. Pick a fresh MONTH-END BtbN autobuild from
 #      https://github.com/BtbN/FFmpeg-Builds/releases (intermediates get
 #      pruned after ~2 weeks; month-end builds are permanent).
@@ -31,7 +33,10 @@
 #   2. Pick the matching stable FFmpeg release from
 #      https://evermeet.cx/ffmpeg/
 #      Update FFMPEG_MAC_VERSION below.
-#   3. Compute SHA256s locally and update the four FFMPEG_*_SHA256 env vars:
+#   3. Pick the current arm64 release build from https://ffmpeg.martin-riedl.de/
+#      (the <timestamp>_<version> folder in its download links) and update
+#      FFMPEG_MAC_ARM_BUILD below; each zip has a published .sha256 beside it.
+#   4. Compute SHA256s locally and update the FFMPEG_*_SHA256 env vars:
 #        curl -fsL "<url>" | shasum -a 256
 # If a SHA mismatches at download time the build aborts before extraction, so
 # a CDN swap or a typo can never silently ship the wrong binary.
@@ -51,7 +56,7 @@ on:
         required: true
         type: string
       runner:
-        description: "runs-on label (windows-latest / ubuntu-latest / macos-14 / macos-15-intel)"
+        description: "runs-on label (windows-latest / ubuntu-24.04 / macos-15 / macos-15-intel)"
         required: true
         type: string
       artifact_name:
@@ -76,6 +81,10 @@ env:
   FFMPEG_MAC_VERSION: "8.1.1"
   FFMPEG_MAC_FFMPEG_SHA256: "4610988e2f54c243c50da73a09e4e2c36d9bb77546f9aa6c84cb328dcb1a98c1"
   FFMPEG_MAC_FFPROBE_SHA256: "aeade29dee3c3844e9bcc974f4ae4b29cc4f87994177d77003a8589fa531009e"
+  # ffmpeg.martin-riedl.de (macOS arm64): pinned to FFmpeg release 9.0.2
+  FFMPEG_MAC_ARM_BUILD: "1789931890_9.0.2"
+  FFMPEG_MAC_ARM_FFMPEG_SHA256: "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924"
+  FFMPEG_MAC_ARM_FFPROBE_SHA256: "fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6"
 
 # least-privilege default; the build job widens to id-token/attestations as needed
 permissions:
@@ -128,7 +137,7 @@ jobs:
           # in the key changes - so a version bump auto-busts the cache.
           # Unused caches are evicted after 7 days, so releases usually
           # download fresh; the curl retries ride out host rate limits (429).
-          key: ffmpeg-${{ runner.os }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ env.FFMPEG_BTBN_BUILD }}-${{ env.FFMPEG_MAC_VERSION }}-${{ env.FFMPEG_MAC_ARM_BUILD }}
 
       - name: Download and verify FFmpeg (Windows)
         if: inputs.platform == 'windows'
@@ -202,15 +211,24 @@ jobs:
         if: inputs.platform == 'macos'
         run: |
           set -euo pipefail
-          VERSION="${FFMPEG_MAC_VERSION}"
-          EXP_FF="${FFMPEG_MAC_FFMPEG_SHA256}"
-          EXP_FP="${FFMPEG_MAC_FFPROBE_SHA256}"
+          if [ "$(uname -m)" = "arm64" ]; then
+            BASE="https://ffmpeg.martin-riedl.de/download/macos/arm64/${FFMPEG_MAC_ARM_BUILD}"
+            FF_URL="${BASE}/ffmpeg.zip"
+            FP_URL="${BASE}/ffprobe.zip"
+            EXP_FF="${FFMPEG_MAC_ARM_FFMPEG_SHA256}"
+            EXP_FP="${FFMPEG_MAC_ARM_FFPROBE_SHA256}"
+          else
+            FF_URL="https://evermeet.cx/ffmpeg/ffmpeg-${FFMPEG_MAC_VERSION}.zip"
+            FP_URL="https://evermeet.cx/ffmpeg/ffprobe-${FFMPEG_MAC_VERSION}.zip"
+            EXP_FF="${FFMPEG_MAC_FFMPEG_SHA256}"
+            EXP_FP="${FFMPEG_MAC_FFPROBE_SHA256}"
+          fi
           mkdir -p ffmpeg-cache
           if [ ! -f "ffmpeg-cache/ffmpeg.zip" ]; then
-            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffmpeg.zip "https://evermeet.cx/ffmpeg/ffmpeg-${VERSION}.zip"
+            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffmpeg.zip "$FF_URL"
           fi
           if [ ! -f "ffmpeg-cache/ffprobe.zip" ]; then
-            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffprobe.zip "https://evermeet.cx/ffmpeg/ffprobe-${VERSION}.zip"
+            curl -fL --retry 5 --retry-delay 20 -o ffmpeg-cache/ffprobe.zip "$FP_URL"
           fi
           shasum -a 256 -c <(echo "${EXP_FF}  ffmpeg-cache/ffmpeg.zip")
           shasum -a 256 -c <(echo "${EXP_FP}  ffmpeg-cache/ffprobe.zip")
@@ -333,6 +351,15 @@ jobs:
             echo "Sunnify.app does not contain bundled FFmpeg"
             exit 1
           }
+          # FFmpeg must run natively on the arch we ship: Rosetta is not a
+          # dependency we can keep after macOS 27.
+          for tool in ffmpeg ffprobe; do
+            BIN_PATH="$(find dist/Sunnify.app -name "$tool" -type f | head -1)"
+            lipo -archs "$BIN_PATH" | grep -qw "$(uname -m)" || {
+              echo "bundled $tool is $(lipo -archs "$BIN_PATH"), not $(uname -m)"
+              exit 1
+            }
+          done
           codesign --force --deep --sign - dist/Sunnify.app
           codesign --verify --deep --strict --verbose=2 dist/Sunnify.app
           # Boot smoke: the app must start and hold a Qt event loop on the
