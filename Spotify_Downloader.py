@@ -2062,13 +2062,13 @@ class SettingsDialog(QDialog):
                 "Audio format:",
                 self._format_cb,
                 "mp3 plays everywhere. m4a is smaller at the same quality. "
-                "flac and wav are lossless (much larger files).",
+                "flac and wav keep the source audio with nothing further lost (much larger files).",
             ),
             (
                 "Audio quality:",
                 self._quality_cb,
-                "Applies to lossy formats only (mp3, m4a, opus). "
-                "320 kbps is the highest quality these formats support.",
+                "Applies to mp3, m4a and opus. The source is YouTube's ~128 kbps audio, "
+                "so higher settings lose less of it but can't add to it.",
             ),
             (
                 "Track number in filename:",
