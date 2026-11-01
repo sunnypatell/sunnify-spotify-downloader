@@ -122,7 +122,7 @@ jobs:
       attestations: write   # write SBOM + source attestations
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
@@ -136,7 +136,7 @@ jobs:
           persist-credentials: false
 
       - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: ./artifacts
 
@@ -196,7 +196,7 @@ jobs:
         # shallow, but it is bound by digest to the binaries via the
         # attest-sbom step below, so a tampered or unrelated SBOM cannot pass
         # `gh attestation verify`.
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: "./artifacts"
           format: cyclonedx-json
@@ -212,7 +212,7 @@ jobs:
         # The action subpath is required because the repo root action.yml
         # is metadata-only; the runnable Docker action lives in the subdir.
         # ref: https://google.github.io/osv-scanner/
-        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
             scan
@@ -443,7 +443,7 @@ jobs:
       contents: write
     steps:
       - name: Harden runner (egress audit)
-        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
 
