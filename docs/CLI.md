@@ -72,7 +72,13 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
 - Defaults come from your saved settings; flags override per run. `--help`
   always shows the current effective defaults.
 - Tracks already on disk are skipped, so re-running a playlist **resumes** it.
-- A per-folder pid lock stops two runs from racing the same destination.
+- Each playlist or album folder is locked while it downloads, across the
+  desktop app and every terminal, so two runs never write the same folder;
+  different playlists can download side by side. A lock left by a crashed run
+  is reclaimed automatically.
+- To queue several links, run them one after another:
+  `for u in "$A" "$B"; do sunnify download "$u"; done` (PowerShell:
+  `foreach ($u in $A, $B) { sunnify download $u }`).
 - First `Ctrl+C` finishes in-flight tracks and exits cleanly; a second one
   force-quits.
 - `--cookies FILE` is only for networks YouTube gates; see
@@ -89,8 +95,10 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
 
 ## Machine-readable output (`--json`)
 
-`download --json` emits NDJSON: one event per line, always ending with
-`run_summary`:
+`download --json` emits NDJSON: one event per line. Once `run_started` is
+out, the stream always ends with `run_summary`, even when the run fails
+(`exit_code` 3); an error before that (bad URL, missing FFmpeg) is a single
+error envelope:
 
 ```json
 {"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false, "cookies": false}
@@ -162,9 +170,12 @@ This CLI is designed to be driven autonomously (per the
   privileges, and the installers follow the same rule.
 - `--json` output is a stable contract; `run_summary` is the stream
   terminator.
-- Long playlist? Run it in the background; `sunnify status <folder>` reports
-  progress from another shell (files land incrementally, the lock pid tells
-  you it's still running).
+- Long playlist? Run it in the background; `sunnify status <playlist folder>`
+  reports progress from another shell (files land incrementally, the lock pid
+  tells you it's still running).
+- Parallel runs are fine for different playlists. Each one makes its own
+  requests from your IP, which is what YouTube's bot check watches, so a
+  queue (one after another) is the gentler default.
 - Something failing? `sunnify doctor --json` says which dependency or
   upstream is broken, with hints.
 
@@ -175,4 +186,4 @@ This CLI is designed to be driven autonomously (per the
 | Settings | One shared `config.json`: `sunnify config --set` and the GUI's settings panel read and write the same file, so a choice made in either face applies to both. Flags override it per run. |
 | Logs | Same rotating session log as the app (`sunnify doctor` shows the dir; "Open logs folder" in the GUI) |
 | Resume manifest | `.sunnify-manifest.jsonl` inside each playlist folder |
-| Run lock | `.sunnify-cli.lock` inside the destination folder |
+| Run lock | `.sunnify.lock` inside each playlist folder while it downloads, shared by the desktop app and the CLI |

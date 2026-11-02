@@ -33,7 +33,6 @@ EXIT_PARTIAL = 1
 EXIT_USAGE = 2  # argparse's own code for bad usage
 EXIT_FATAL = 3
 
-_LOCK_NAME = ".sunnify-cli.lock"
 _COOKIES_DOC = "https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/docs/CLI.md#youtube-cookies"
 
 
@@ -125,57 +124,6 @@ def _resolve_out_dir(out_arg: str | None, cfg: dict) -> str:
         or os.path.join(os.path.expanduser("~"), "Music", "Sunnify")
     )
     return os.path.abspath(os.path.expanduser(out))
-
-
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if sys.platform == "win32":
-        import ctypes
-
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def _read_lock_pid(folder: str) -> int | None:
-    with contextlib.suppress(OSError, ValueError):
-        with open(os.path.join(folder, _LOCK_NAME), encoding="utf-8") as fh:
-            pid = int(fh.read().strip())
-        if _pid_alive(pid):
-            return pid
-    return None
-
-
-class _FolderLock:
-    """Pid lockfile so two CLI runs can't race the same folder; stale locks
-    (dead pid) are claimed silently."""
-
-    def __init__(self, folder: str):
-        self.path = os.path.join(folder, _LOCK_NAME)
-        self.folder = folder
-
-    def acquire(self) -> str | None:
-        """Return an error message, or None once the lock is held."""
-        pid = _read_lock_pid(self.folder)
-        if pid is not None and pid != os.getpid():
-            return f"another sunnify download (pid {pid}) is writing to this folder"
-        with contextlib.suppress(OSError), open(self.path, "w", encoding="utf-8") as fh:
-            fh.write(str(os.getpid()))
-        return None
-
-    def release(self) -> None:
-        with contextlib.suppress(OSError):
-            os.remove(self.path)
 
 
 class _RunState:
@@ -314,16 +262,6 @@ def cmd_download(args) -> int:
         )
         return EXIT_FATAL
 
-    lock = _FolderLock(out_dir)
-    lock_err = lock.acquire()
-    if lock_err:
-        emitter.error(
-            lock_err,
-            code="folder_locked",
-            hint="wait for the other run to finish, or pass a different --out",
-        )
-        return EXIT_FATAL
-
     cancel_event = threading.Event()
     scraper = _build_scraper(args, cfg, cancel_event)
     state = _RunState(emitter)
@@ -340,8 +278,7 @@ def cmd_download(args) -> int:
     # graceful ^C: first stops after in-flight tracks, second is immediate
     def _sigint(_sig, _frame):
         if cancel_event.is_set():
-            lock.release()
-            os._exit(130)
+            os._exit(130)  # the folder lock is left behind, and the next run claims it
         cancel_event.set()
         emitter.error("stopping after in-flight tracks finish (^C again to force quit)")
 
@@ -363,20 +300,28 @@ def cmd_download(args) -> int:
         cookies=bool(scraper.cookies_file),
     )
     t0 = time.monotonic()
+    code = None
     try:
         if url_type == "track":
             scraper.scrape_track(args.url, out_dir)
         else:
             scraper.scrape_playlist(args.url, out_dir)
+    except app.FolderLockedError as exc:
+        emitter.error(
+            str(exc),
+            code="folder_locked",
+            hint="wait for the other run to finish; a different playlist can run alongside it",
+        )
+        code = EXIT_FATAL
     except Exception as exc:
         emitter.error(f"download run failed: {exc}", code="run_failed", hint="run `sunnify doctor`")
-        return EXIT_FATAL
-    finally:
-        lock.release()
+        code = EXIT_FATAL
 
     failed = list(scraper._failed_tracks)
     stopped = cancel_event.is_set()
-    code = EXIT_PARTIAL if (failed or stopped) else EXIT_OK
+    if code is None:
+        code = EXIT_PARTIAL if (failed or stopped) else EXIT_OK
+    # once run_started is out, run_summary always ends the stream
     emitter.event(
         "run_summary",
         landed=len(state.landed),
@@ -476,7 +421,7 @@ def cmd_status(args) -> int:
     audio_files: list[str] = []
     with contextlib.suppress(OSError):
         audio_files = sorted(n for n in os.listdir(folder) if n.lower().endswith(exts))
-    active_pid = _read_lock_pid(folder)
+    active_pid = app.read_lock_pid(folder)
     payload = {
         "folder": folder,
         "audio_files": len(audio_files),

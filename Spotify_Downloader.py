@@ -20,6 +20,7 @@ from __future__ import annotations
 __version__ = "2.5.1"
 
 import atexit
+import collections
 import concurrent.futures
 import contextlib
 import faulthandler
@@ -33,6 +34,7 @@ import signal
 import sys
 import tempfile
 import threading
+import time
 import webbrowser
 from logging.handlers import RotatingFileHandler
 
@@ -419,6 +421,86 @@ def scraper_kwargs_from(settings: dict) -> dict:
 # Resume manifest: JSON-lines file per playlist folder recording landed tracks,
 # so a rate-limited playlist finishes across sessions instead of restarting (#40).
 MANIFEST_FILENAME = ".sunnify-manifest.jsonl"
+
+# One writer per playlist folder, across every desktop window and terminal.
+LOCK_FILENAME = ".sunnify.lock"
+
+
+class FolderLockedError(RuntimeError):
+    """Another live sunnify process is writing to this folder."""
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _lock_file_pid(path: str) -> int | None:
+    with contextlib.suppress(OSError, ValueError), open(path, encoding="utf-8") as fh:
+        return int(fh.read().strip())
+    return None
+
+
+def read_lock_pid(folder: str) -> int | None:
+    """Pid of the live process holding folder's lock, or None."""
+    pid = _lock_file_pid(os.path.join(folder, LOCK_FILENAME))
+    return pid if pid is not None and _pid_alive(pid) else None
+
+
+# a lock with no pid yet is a process mid-claim, not a stale lock, until it's this old
+_LOCK_CLAIM_GRACE_S = 5
+
+
+@contextlib.contextmanager
+def folder_lock(folder: str):
+    """Hold folder for this process; a lock left by a dead process is claimed."""
+    path = os.path.join(folder, LOCK_FILENAME)
+    for _ in range(2):
+        try:
+            # O_EXCL makes the claim atomic, so two processes starting together can't both win
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            holder = _lock_file_pid(path)
+            if holder is not None and holder != os.getpid() and _pid_alive(holder):
+                raise FolderLockedError(
+                    f"another Sunnify download (pid {holder}) is already writing to {folder}; "
+                    f"if none is running, delete {LOCK_FILENAME} there"
+                ) from None
+            if holder is None:
+                with contextlib.suppress(OSError):
+                    if time.time() - os.path.getmtime(path) < _LOCK_CLAIM_GRACE_S:
+                        raise FolderLockedError(
+                            f"another Sunnify download is already writing to {folder}"
+                        ) from None
+            with contextlib.suppress(OSError):
+                os.remove(path)
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+        break
+    else:
+        raise FolderLockedError(f"another Sunnify download is already writing to {folder}")
+    try:
+        yield
+    finally:
+        if read_lock_pid(folder) == os.getpid():
+            with contextlib.suppress(OSError):
+                os.remove(path)
 
 
 def _config_dir() -> str:
@@ -1535,127 +1617,129 @@ class MusicScraper(QThread):
         self.song_Album.emit(playlist_display_name)
 
         playlist_folder_path = self.prepare_playlist_folder(music_folder, playlist_display_name)
-
-        # Resume support: skip tracks already downloaded in a previous run of
-        # this folder before fetching their (rate-limited) metadata, so a huge
-        # playlist can be finished across multiple sessions (closes #40).
-        already_done = self._load_manifest(playlist_folder_path)
-        if already_done:
-            self.resume_skipped.emit(len(already_done))
-            self.error_signal.emit(
-                f"Resuming: skipping {len(already_done)} already-downloaded track(s)"
-            )
-
-        # Materialize the generator (not thread-safe; count also picks the
-        # worker pool size). Cancel is checked between yields so huge
-        # playlists abort mid-fetch instead of after the full window.
-        expected_total = metadata.track_count or 0
-        tracks: list = []
-        for track in spotify_api.iter_playlist_tracks(
-            playlist_id, content_type=content_type, skip_ids=already_done
-        ):
-            if self.is_cancelled():
-                break
-            tracks.append(track)
-            if expected_total and len(tracks) % 10 == 0:
+        with folder_lock(playlist_folder_path):
+            # Resume support: skip tracks already downloaded in a previous run of
+            # this folder before fetching their (rate-limited) metadata, so a huge
+            # playlist can be finished across multiple sessions (closes #40).
+            already_done = self._load_manifest(playlist_folder_path)
+            if already_done:
+                self.resume_skipped.emit(len(already_done))
                 self.error_signal.emit(
-                    f"Fetching track metadata ({len(tracks)} of {expected_total})..."
+                    f"Resuming: skipping {len(already_done)} already-downloaded track(s)"
                 )
-        self._total_tracks = len(tracks)
 
-        if self.is_cancelled():
-            self.PlaylistCompleted.emit("Download cancelled")
-            return
-
-        self.Resetprogress_signal.emit(0)
-
-        # Small playlists don't benefit from parallelism. Keep 1 worker for
-        # playlists under 3 tracks to preserve the single-track UI feel.
-        worker_count = 1 if len(tracks) < 3 else min(self.MAX_WORKERS, len(tracks))
-        self._parallel_mode = worker_count > 1
-
-        log.info(
-            "%s scrape: name=%r id=%s tracks=%d (resume-skipped %d) mode=%s workers=%d fmt=%s/%s naming=%s",
-            content_type,
-            playlist_display_name,
-            playlist_id,
-            len(tracks),
-            len(already_done),
-            "parallel" if self._parallel_mode else "sequential",
-            worker_count,
-            self.audio_format,
-            self.audio_quality,
-            "title-only"
-            if self.title_only
-            else ("artist-first" if self.artist_first else "default"),
-        )
-
-        # Canonical playlist position over enumerate order: spclient yields
-        # in http-completion order on >100-track playlists (#51). Enumerate
-        # only for albums/small playlists, which arrive already ordered.
-        def _track_num_for(track, idx):
-            return track.position if getattr(track, "position", None) else idx
-
-        if worker_count == 1:
-            for idx, track in enumerate(tracks, start=1):
+            # Materialize the generator (not thread-safe; count also picks the
+            # worker pool size). Cancel is checked between yields so huge
+            # playlists abort mid-fetch instead of after the full window.
+            expected_total = metadata.track_count or 0
+            tracks: list = []
+            for track in spotify_api.iter_playlist_tracks(
+                playlist_id, content_type=content_type, skip_ids=already_done
+            ):
                 if self.is_cancelled():
                     break
-                # Reset the per-track progress bar at the top of each iteration
-                # so the single-track UI behaves the way it always has.
-                self.Resetprogress_signal.emit(0)
-                self._download_one_track(
-                    track,
-                    playlist_folder_path,
-                    metadata.cover_url,
-                    track_num=_track_num_for(track, idx),
-                )
-        else:
-            try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
-                    futures = [
-                        executor.submit(
-                            self._download_one_track,
-                            track,
-                            playlist_folder_path,
-                            metadata.cover_url,
-                            _track_num_for(track, idx),
-                        )
-                        for idx, track in enumerate(tracks, start=1)
-                    ]
-                    for future in concurrent.futures.as_completed(futures):
-                        if self.is_cancelled():
-                            # Cancel remaining futures that haven't started
-                            # yet. In-flight downloads check is_cancelled at
-                            # their own top and return early.
-                            for f in futures:
-                                f.cancel()
-                            break
-                        try:
-                            future.result()
-                        except Exception as exc:
-                            # _download_one_track handles its own errors; this is
-                            # only framework-level fallout (a worker crashed hard).
-                            log.error("unexpected worker error", exc_info=exc)
-                            self.error_signal.emit(f"Unexpected worker error: {exc}")
-            finally:
-                # Reset only after executor shutdown: in-flight workers that
-                # observed False mid-run would emit single-track UI signals.
-                self._parallel_mode = False
+                tracks.append(track)
+                if expected_total and len(tracks) % 10 == 0:
+                    self.error_signal.emit(
+                        f"Fetching track metadata ({len(tracks)} of {expected_total})..."
+                    )
+            self._total_tracks = len(tracks)
 
-        if self.is_cancelled():
-            log.info("scrape cancelled by user (%d done before cancel)", self.counter)
-            self.PlaylistCompleted.emit("Download cancelled")
-            return
+            if self.is_cancelled():
+                self.PlaylistCompleted.emit("Download cancelled")
+                return
 
-        # Report completion with failed track count
-        ok = max(self._total_tracks - len(self._failed_tracks), 0)
-        if self._failed_tracks:
-            log.info("scrape done: %d ok, %d failed", ok, len(self._failed_tracks))
-            log.info("failed tracks: %s", " | ".join(self._failed_tracks))
-            self.PlaylistCompleted.emit(f"Done! {len(self._failed_tracks)} track(s) failed")
-        else:
-            log.info("scrape done: %d ok, 0 failed", self._total_tracks)
-            self.PlaylistCompleted.emit("Download Complete!")
+            self.Resetprogress_signal.emit(0)
+
+            # Small playlists don't benefit from parallelism. Keep 1 worker for
+            # playlists under 3 tracks to preserve the single-track UI feel.
+            worker_count = 1 if len(tracks) < 3 else min(self.MAX_WORKERS, len(tracks))
+            self._parallel_mode = worker_count > 1
+
+            log.info(
+                "%s scrape: name=%r id=%s tracks=%d (resume-skipped %d) mode=%s workers=%d fmt=%s/%s naming=%s",
+                content_type,
+                playlist_display_name,
+                playlist_id,
+                len(tracks),
+                len(already_done),
+                "parallel" if self._parallel_mode else "sequential",
+                worker_count,
+                self.audio_format,
+                self.audio_quality,
+                "title-only"
+                if self.title_only
+                else ("artist-first" if self.artist_first else "default"),
+            )
+
+            # Canonical playlist position over enumerate order: spclient yields
+            # in http-completion order on >100-track playlists (#51). Enumerate
+            # only for albums/small playlists, which arrive already ordered.
+            def _track_num_for(track, idx):
+                return track.position if getattr(track, "position", None) else idx
+
+            if worker_count == 1:
+                for idx, track in enumerate(tracks, start=1):
+                    if self.is_cancelled():
+                        break
+                    # Reset the per-track progress bar at the top of each iteration
+                    # so the single-track UI behaves the way it always has.
+                    self.Resetprogress_signal.emit(0)
+                    self._download_one_track(
+                        track,
+                        playlist_folder_path,
+                        metadata.cover_url,
+                        track_num=_track_num_for(track, idx),
+                    )
+            else:
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(
+                        max_workers=worker_count
+                    ) as executor:
+                        futures = [
+                            executor.submit(
+                                self._download_one_track,
+                                track,
+                                playlist_folder_path,
+                                metadata.cover_url,
+                                _track_num_for(track, idx),
+                            )
+                            for idx, track in enumerate(tracks, start=1)
+                        ]
+                        for future in concurrent.futures.as_completed(futures):
+                            if self.is_cancelled():
+                                # Cancel remaining futures that haven't started
+                                # yet. In-flight downloads check is_cancelled at
+                                # their own top and return early.
+                                for f in futures:
+                                    f.cancel()
+                                break
+                            try:
+                                future.result()
+                            except Exception as exc:
+                                # _download_one_track handles its own errors; this is
+                                # only framework-level fallout (a worker crashed hard).
+                                log.error("unexpected worker error", exc_info=exc)
+                                self.error_signal.emit(f"Unexpected worker error: {exc}")
+                finally:
+                    # Reset only after executor shutdown: in-flight workers that
+                    # observed False mid-run would emit single-track UI signals.
+                    self._parallel_mode = False
+
+            if self.is_cancelled():
+                log.info("scrape cancelled by user (%d done before cancel)", self.counter)
+                self.PlaylistCompleted.emit("Download cancelled")
+                return
+
+            # Report completion with failed track count
+            ok = max(self._total_tracks - len(self._failed_tracks), 0)
+            if self._failed_tracks:
+                log.info("scrape done: %d ok, %d failed", ok, len(self._failed_tracks))
+                log.info("failed tracks: %s", " | ".join(self._failed_tracks))
+                self.PlaylistCompleted.emit(f"Done! {len(self._failed_tracks)} track(s) failed")
+            else:
+                log.info("scrape done: %d ok, 0 failed", self._total_tracks)
+                self.PlaylistCompleted.emit("Download Complete!")
 
     def returnSPOT_ID(self, link):
         """Extract playlist ID from Spotify URL."""
@@ -2561,12 +2645,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._download_path_set = bool(self._config.get("download_path"))
         self._active_threads = []  # Keep references to running threads to prevent GC crashes
         self._is_downloading = False  # Track download state for stop button
+        self._queue: collections.deque[str] = collections.deque()
+        self._current_link = ""
+        self._idle_placeholder = self.PlaylistLink.placeholderText()
         self._cancel_event = threading.Event()  # Event for cooperative thread cancellation
 
         self.SONGINFORMATION.setGraphicsEffect(
             QGraphicsDropShadowEffect(blurRadius=25, xOffset=2, yOffset=2)
         )
-        self.PlaylistLink.returnPressed.connect(self.on_returnButton)
+        self.PlaylistLink.returnPressed.connect(self._on_link_entered)
         self.DownloadBtn.clicked.connect(self.on_returnButton)
 
         self.showPreviewCheck.stateChanged.connect(self.show_preview)
@@ -2700,8 +2787,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._stop_download()
             return
 
-        spotify_url = self.PlaylistLink.text().strip()
-        if not spotify_url:
+        links = self.PlaylistLink.text().split()
+        if not links:
             self.statusMsg.setText("Please enter a Spotify URL")
             return
 
@@ -2756,6 +2843,60 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if not self._prompt_download_location():
                 return
 
+        bad = self._invalid_links(links)
+        if bad:
+            self.statusMsg.setText(f"Not a Spotify playlist, album or track link: {bad[0]}")
+            return
+        self._queue.extend(u for u in dict.fromkeys(links) if u != links[0])
+        self._start_download(links[0])
+
+    @staticmethod
+    def _invalid_links(links: list[str]) -> list[str]:
+        bad = []
+        for link in links:
+            try:
+                url_type, item_id = detect_spotify_url_type(link)
+            except ValueError:
+                url_type, item_id = "unknown", None
+            if url_type == "unknown" or not item_id:
+                bad.append(link)
+        return bad
+
+    def _on_link_entered(self):
+        """Enter starts a download, or queues the link while one is running."""
+        if not self._is_downloading:
+            self.on_returnButton()
+            return
+        links = self.PlaylistLink.text().split()
+        if not links:
+            return
+        if self._cancel_event.is_set():
+            self.statusMsg.setText("Stopping - add links again once it finishes")
+            return
+        bad = self._invalid_links(links)
+        if bad:
+            self.statusMsg.setText(f"Not a Spotify playlist, album or track link: {bad[0]}")
+            return
+        new = [u for u in dict.fromkeys(links) if u != self._current_link and u not in self._queue]
+        self._queue.extend(new)
+        self.PlaylistLink.clear()
+        self.statusMsg.setText(
+            f"Queued {len(new)} link(s), {len(self._queue)} waiting"
+            if new
+            else "That link is already downloading or queued"
+        )
+        self._update_queue_hint()
+
+    def _update_queue_hint(self):
+        if not self._is_downloading:
+            hint = self._idle_placeholder
+        elif self._queue:
+            hint = f"{len(self._queue)} queued - paste another link and press Enter"
+        else:
+            hint = "Paste another link and press Enter to queue it"
+        self.PlaylistLink.setPlaceholderText(hint)
+
+    def _start_download(self, spotify_url: str):
         try:
             # Validate URL type
             url_type, _ = detect_spotify_url_type(spotify_url)
@@ -2763,6 +2904,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             # Reset cancel event and set downloading state
             self._cancel_event = threading.Event()
+            self._current_link = spotify_url
+            self.PlaylistLink.clear()
             self._is_downloading = True
             self.DownloadBtn.setText("Stop")
 
@@ -2790,6 +2933,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.scraper_thread.scraper.count_updated.connect(self._maybe_show_star_prompt)
 
             self.scraper_thread.start()
+            self._update_queue_hint()
 
         except ValueError as e:
             self.statusMsg.setText(str(e))
@@ -2798,7 +2942,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _stop_download(self):
         """Stop the current download gracefully using cooperative cancellation."""
-        self.statusMsg.setText("Stopping download...")
+        dropped = len(self._queue)
+        self._queue.clear()
+        self.statusMsg.setText(
+            f"Stopping download ({dropped} queued link(s) cleared)..."
+            if dropped
+            else "Stopping download..."
+        )
         self.DownloadBtn.setEnabled(False)
 
         # Signal cancellation via event (thread checks this periodically)
@@ -2811,10 +2961,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def thread_finished(self):
         """Reset UI state when download thread finishes."""
         self._is_downloading = False
+        self._current_link = ""
         self.DownloadBtn.setText("Download")
         self.DownloadBtn.setEnabled(True)
         if hasattr(self, "scraper_thread"):
             self.scraper_thread.deleteLater()  # Clean up the thread properly
+        if self._queue and not self._cancel_event.is_set():
+            self._start_download(self._queue.popleft())
+        self._update_queue_hint()
 
     def update_progress(self, message):
         self.statusMsg.setText(message)

@@ -6,6 +6,7 @@ import contextlib
 import os
 import sys
 import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -3035,6 +3036,248 @@ class TestYoutubeCookies:
         s.error_signal = MagicMock()
         s._note_if_network_blocked("Sign in to confirm you're not a bot")
         assert "expired" in s.error_signal.emit.call_args[0][0]
+
+
+class TestFolderLock:
+    """One writer per playlist folder across every app window and terminal."""
+
+    def test_held_while_inside_and_removed_after(self, tmp_path):
+        import Spotify_Downloader as sd
+
+        with sd.folder_lock(str(tmp_path)):
+            assert sd.read_lock_pid(str(tmp_path)) == os.getpid()
+        assert not (tmp_path / sd.LOCK_FILENAME).exists()
+
+    def test_live_holder_refuses_a_second_writer(self, tmp_path):
+        import Spotify_Downloader as sd
+
+        (tmp_path / sd.LOCK_FILENAME).write_text(str(os.getppid()), encoding="utf-8")
+        with (
+            pytest.raises(sd.FolderLockedError, match=str(os.getppid())),
+            sd.folder_lock(str(tmp_path)),
+        ):
+            pass
+        assert (tmp_path / sd.LOCK_FILENAME).read_text(encoding="utf-8") == str(os.getppid())
+
+    @pytest.mark.parametrize("stale", ["999999999", "not a pid", ""])
+    def test_lock_left_by_a_dead_process_is_claimed(self, tmp_path, stale):
+        import Spotify_Downloader as sd
+
+        lock = tmp_path / sd.LOCK_FILENAME
+        lock.write_text(stale, encoding="utf-8")
+        old = time.time() - 60
+        os.utime(lock, (old, old))
+        with sd.folder_lock(str(tmp_path)):
+            assert sd.read_lock_pid(str(tmp_path)) == os.getpid()
+        assert not lock.exists()
+
+    def test_a_dead_pid_is_claimed_even_when_the_lock_is_new(self, tmp_path):
+        import Spotify_Downloader as sd
+
+        (tmp_path / sd.LOCK_FILENAME).write_text("999999999", encoding="utf-8")
+        with sd.folder_lock(str(tmp_path)):
+            assert sd.read_lock_pid(str(tmp_path)) == os.getpid()
+
+    @pytest.mark.parametrize("content", ["", "partial"])
+    def test_a_new_lock_without_a_pid_is_another_process_mid_claim(self, tmp_path, content):
+        import Spotify_Downloader as sd
+
+        (tmp_path / sd.LOCK_FILENAME).write_text(content, encoding="utf-8")
+        with pytest.raises(sd.FolderLockedError), sd.folder_lock(str(tmp_path)):
+            pass
+        assert (tmp_path / sd.LOCK_FILENAME).exists()
+
+    def test_does_not_remove_a_lock_another_process_took_over(self, tmp_path):
+        import Spotify_Downloader as sd
+
+        with sd.folder_lock(str(tmp_path)):
+            (tmp_path / sd.LOCK_FILENAME).write_text(str(os.getppid()), encoding="utf-8")
+        assert (tmp_path / sd.LOCK_FILENAME).exists()
+
+    def _scraper(self):
+        from Spotify_Downloader import MusicScraper
+
+        scraper = MusicScraper()
+        for sig in (
+            "song_meta",
+            "add_song_meta",
+            "dlprogress_signal",
+            "Resetprogress_signal",
+            "PlaylistID",
+            "song_Album",
+            "PlaylistCompleted",
+            "error_signal",
+            "count_updated",
+            "resume_skipped",
+        ):
+            setattr(scraper, sig, MagicMock())
+        meta = MagicMock()
+        meta.name, meta.owner, meta.cover_url, meta.track_count = "T", "O", None, 1
+        api = MagicMock()
+        api.get_playlist_metadata.return_value = meta
+        from spotifydown_api import TrackInfo
+
+        api.iter_playlist_tracks.return_value = iter(
+            [TrackInfo("id1", "Song", "Artist", None, None, None, None, None, {})]
+        )
+        scraper.ensure_spotifydown_api = MagicMock(return_value=api)
+        scraper.format_playlist_name = lambda _m: "T"
+        return scraper
+
+    def test_playlist_run_holds_the_playlist_folder_not_the_root(self, tmp_path):
+        import Spotify_Downloader as sd
+
+        scraper = self._scraper()
+        seen = {}
+
+        def fake_download(query, dest, **_kw):
+            seen["playlist"] = sd.read_lock_pid(os.path.dirname(dest))
+            seen["root"] = sd.read_lock_pid(str(tmp_path))
+            open(dest, "wb").close()
+            return dest
+
+        scraper.download_track_audio = fake_download
+        scraper.scrape_playlist("https://open.spotify.com/playlist/abc123", str(tmp_path))
+        assert seen == {"playlist": os.getpid(), "root": None}
+        assert not (tmp_path / "T" / sd.LOCK_FILENAME).exists()
+
+    def test_playlist_run_refuses_a_folder_another_process_holds(self, tmp_path):
+        import Spotify_Downloader as sd
+
+        (tmp_path / "T").mkdir()
+        (tmp_path / "T" / sd.LOCK_FILENAME).write_text(str(os.getppid()), encoding="utf-8")
+        scraper = self._scraper()
+        scraper.download_track_audio = MagicMock()
+        with pytest.raises(sd.FolderLockedError):
+            scraper.scrape_playlist("https://open.spotify.com/playlist/abc123", str(tmp_path))
+        scraper.download_track_audio.assert_not_called()
+
+
+class TestDownloadQueue:
+    """Enter queues a link while a download runs; the button still stops (#118)."""
+
+    @pytest.fixture(autouse=True)
+    def _no_update_thread(self, monkeypatch):
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
+
+    A = "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+    B = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+    C = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"
+
+    def _window(self, monkeypatch, tmp_path):
+        import Spotify_Downloader as sd
+
+        started = []
+
+        class FakeThread:
+            def __init__(self, url, folder, cancel_event=None, **_opts):
+                self.url, self.cancel = url, cancel_event
+                self.progress_update = MagicMock()
+                self.finished = MagicMock()
+                self.scraper = MagicMock()
+
+            def start(self):
+                started.append(self.url)
+
+            def isRunning(self):
+                return True
+
+            def request_cancel(self):
+                self.cancel.set()
+
+            def deleteLater(self):
+                pass
+
+        monkeypatch.setattr(sd, "ScraperThread", FakeThread)
+        monkeypatch.setattr(sd, "get_ffmpeg_path", lambda: str(tmp_path))
+        win = sd.MainWindow()
+        win._download_path_set = True
+        win.download_path = str(tmp_path)
+        return win, started
+
+    def test_enter_queues_while_downloading_and_runs_in_order(self, qapp, monkeypatch, tmp_path):
+        win, started = self._window(monkeypatch, tmp_path)
+        win.PlaylistLink.setText(self.A)
+        win.PlaylistLink.returnPressed.emit()
+        assert started == [self.A] and win._is_downloading
+
+        win.PlaylistLink.setText(f"{self.B}\n{self.C}")
+        win.PlaylistLink.returnPressed.emit()
+        assert started == [self.A]
+        assert list(win._queue) == [self.B, self.C]
+        assert win.PlaylistLink.text() == ""
+        assert "2 queued" in win.PlaylistLink.placeholderText()
+
+        win.thread_finished()
+        assert started == [self.A, self.B]
+        win.thread_finished()
+        win.thread_finished()
+        assert started == [self.A, self.B, self.C]
+        assert not win._is_downloading
+        assert win.PlaylistLink.placeholderText() == win._idle_placeholder
+
+    def test_several_links_pasted_at_once_start_the_first_and_queue_the_rest(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        win, started = self._window(monkeypatch, tmp_path)
+        win.PlaylistLink.setText(f"{self.A} {self.B}\r\n{self.A}")
+        win.on_returnButton()
+        assert started == [self.A]
+        assert list(win._queue) == [self.B]
+
+    def test_duplicates_and_invalid_links_are_not_queued(self, qapp, monkeypatch, tmp_path):
+        win, started = self._window(monkeypatch, tmp_path)
+        win.PlaylistLink.setText(self.A)
+        win.PlaylistLink.returnPressed.emit()
+        win.PlaylistLink.setText(self.A)
+        win.PlaylistLink.returnPressed.emit()
+        assert not win._queue
+        assert "already" in win.statusMsg.text()
+        win.PlaylistLink.setText("https://example.com/not-spotify")
+        win.PlaylistLink.returnPressed.emit()
+        assert not win._queue
+        assert "Not a Spotify" in win.statusMsg.text()
+        assert win.PlaylistLink.text() == "https://example.com/not-spotify"
+
+    def test_enter_on_an_empty_box_never_stops_a_download(self, qapp, monkeypatch, tmp_path):
+        win, started = self._window(monkeypatch, tmp_path)
+        win.PlaylistLink.setText(self.A)
+        win.PlaylistLink.returnPressed.emit()
+        win.PlaylistLink.returnPressed.emit()
+        assert win._is_downloading and not win._cancel_event.is_set()
+
+    def test_stop_clears_the_queue_and_nothing_else_starts(self, qapp, monkeypatch, tmp_path):
+        win, started = self._window(monkeypatch, tmp_path)
+        win.PlaylistLink.setText(f"{self.A} {self.B} {self.C}")
+        win.on_returnButton()
+        win.on_returnButton()  # the button while downloading is Stop
+        assert win._cancel_event.is_set()
+        assert not win._queue
+        assert "2 queued" in win.statusMsg.text()
+        win.thread_finished()
+        assert started == [self.A]
+        assert not win._is_downloading
+
+    def test_links_entered_while_stopping_are_not_queued(self, qapp, monkeypatch, tmp_path):
+        win, started = self._window(monkeypatch, tmp_path)
+        win.PlaylistLink.setText(self.A)
+        win.PlaylistLink.returnPressed.emit()
+        win.on_returnButton()  # Stop
+        win.PlaylistLink.setText(self.B)
+        win.PlaylistLink.returnPressed.emit()
+        assert not win._queue
+        assert "Stopping" in win.statusMsg.text()
+        win.thread_finished()
+        assert started == [self.A]
+
+    def test_invalid_link_blocks_the_whole_batch(self, qapp, monkeypatch, tmp_path):
+        win, started = self._window(monkeypatch, tmp_path)
+        win.PlaylistLink.setText(f"{self.A} nope")
+        win.on_returnButton()
+        assert started == []
+        assert "Not a Spotify" in win.statusMsg.text()
 
 
 class TestSettingsDialog:

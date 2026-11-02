@@ -15,8 +15,6 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import pytest
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import Spotify_Downloader as sd
@@ -129,12 +127,30 @@ class TestDownloadGuards:
         assert rc == cli.EXIT_FATAL
         assert json.loads(capsys.readouterr().out)["code"] == "ffmpeg_missing"
 
-    def test_locked_folder_is_fatal_with_code(self, tmp_path, capsys):
-        # pid 1 is alive and is not us on any posix system; windows CI skips
-        if sys.platform == "win32":
-            pytest.skip("posix pid semantics")
-        (tmp_path / cli._LOCK_NAME).write_text("1")
-        with patch.object(sd, "get_ffmpeg_path", return_value="/usr/bin/true"):
+    def test_locked_folder_is_fatal_and_still_ends_with_run_summary(self, tmp_path, capsys):
+        locked = sd.FolderLockedError("another Sunnify download (pid 42) is already writing")
+        with (
+            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
+            patch.object(sd.MusicScraper, "scrape_playlist", side_effect=locked),
+        ):
+            rc = cli.cmd_download(
+                _args(
+                    url="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+                    out=str(tmp_path),
+                    json=True,
+                )
+            )
+        events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert rc == cli.EXIT_FATAL
+        assert [e["event"] for e in events] == ["run_started", "error", "run_summary"]
+        assert events[1]["code"] == "folder_locked"
+        assert events[-1]["exit_code"] == cli.EXIT_FATAL
+
+    def test_run_failure_after_start_still_ends_with_run_summary(self, tmp_path, capsys):
+        with (
+            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
+            patch.object(sd.MusicScraper, "scrape_track", side_effect=RuntimeError("boom")),
+        ):
             rc = cli.cmd_download(
                 _args(
                     url="https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
@@ -142,8 +158,10 @@ class TestDownloadGuards:
                     json=True,
                 )
             )
+        events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
         assert rc == cli.EXIT_FATAL
-        assert json.loads(capsys.readouterr().out)["code"] == "folder_locked"
+        assert events[1]["code"] == "run_failed"
+        assert events[-1]["event"] == "run_summary"
 
     def test_unusable_cookies_file_is_fatal_with_code(self, tmp_path, capsys):
         with patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)):
@@ -185,14 +203,13 @@ class TestDownloadGuards:
         assert not cli._resolve_settings(_args(cookies=""), cfg)["cookies_file"]
 
 
-class TestFolderLock:
-    def test_stale_lock_is_claimed(self, tmp_path):
-        (tmp_path / cli._LOCK_NAME).write_text("999999999")
-        lock = cli._FolderLock(str(tmp_path))
-        assert lock.acquire() is None
-        assert (tmp_path / cli._LOCK_NAME).read_text() == str(os.getpid())
-        lock.release()
-        assert not (tmp_path / cli._LOCK_NAME).exists()
+class TestStatusLock:
+    def test_status_reports_the_engine_lock_holder(self, tmp_path, capsys):
+        (tmp_path / sd.LOCK_FILENAME).write_text(str(os.getppid()), encoding="utf-8")
+        assert cli.cmd_status(SimpleNamespace(folder=str(tmp_path), json=True)) == cli.EXIT_OK
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["download_in_progress"] is True
+        assert payload["active_pid"] == os.getppid()
 
 
 class TestConfigCommand:

@@ -130,6 +130,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 2. **Paste it** into Sunnify.
 3. **Pick a format and quality** in Settings, and choose where files should go (defaults to your Music folder).
 4. **Download.** Watch per-track progress; press Stop anytime.
+5. **Queue more.** While a download runs, paste another link and press Enter to queue it; several links pasted at once queue together, and Stop clears the queue.
 
 Your downloads land in a folder named after the playlist or album, tagged and ready for any music library.
 
