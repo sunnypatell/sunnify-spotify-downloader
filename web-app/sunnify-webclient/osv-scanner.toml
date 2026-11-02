@@ -1,0 +1,12 @@
+# scoped, expiring ignores for advisories that cannot reach the app.
+# an entry past its ignoreUntil is reported again, so nothing here goes stale.
+
+[[IgnoredVulns]]
+id = "GHSA-3g3m-2fjr-6pw4"
+ignoreUntil = 2027-01-05
+reason = "glob is fixed only in 14.x; sucrase (via tailwind) pins ^10. It runs at build time over repo-authored globs and never takes an AbortSignal, which is the only path the advisory affects."
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-01-05
+reason = "minimatch is fixed only in 11.x; eslint 8, typescript-eslint and glob 10 pin 3.x, 9.x and 10.x. Every pattern it sees is repo-authored lint or build config, never request data."
