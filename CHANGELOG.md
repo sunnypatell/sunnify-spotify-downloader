@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-11-01
+
+### Added
+- **queue links while a download runs (closes #118).** paste another link and press Enter during a download and it waits its turn; several links pasted at once queue together. duplicates and non-Spotify links are refused, Stop clears the queue, and the link box shows how many are waiting. there's nothing to turn on, since it stays out of the way until used. the CLI stays non-interactive, and [docs/CLI.md](docs/CLI.md#download) shows the same thing as a shell loop in bash and PowerShell.
+
+### Fixed
+- **Enter no longer stops a download.** the link box's Enter key shared the Download button's handler, so pressing it mid-run cancelled the run. it now queues, and only the button stops.
+- **two Sunnify windows, or the app and a terminal, can no longer download the same playlist at once.** only the CLI took a lock, so the desktop app could write the same folder in parallel and download every track twice (17 tracks produced 34 manifest entries). the lock now lives in the engine both of them share.
+- **different playlists download side by side in separate terminals.** the CLI locked the whole output folder, so a second terminal was refused even for a different playlist. the lock now covers only the playlist folder being written.
+- **two runs started at the same instant can't both take the lock.** the old check-then-write lock let both through in 97 of 100 simultaneous starts. the claim is now atomic, and a lock still being written counts as held. a lock left by a crashed run is still reclaimed automatically.
+- **`download --json` always ends with `run_summary` once `run_started` is out**, as docs/CLI.md promised. a run that failed after starting used to end on its error envelope.
+
+### Changed
+- the run lock is `.sunnify.lock` inside each playlist folder (was `.sunnify-cli.lock` in the output folder), so `sunnify status <playlist folder>` names the active pid. `folder_locked` keeps its code and exit code 3, and now arrives after `run_started`, followed by `run_summary`.
+
+### Notes
+- deliberately not built: a cap on downloads across processes. it would need platform-specific locking with stale-slot recovery, and the queue removes the desktop app's reason to run several windows. parallel CLI runs stay an explicit choice, documented as heavier on YouTube's bot check.
+- requested by [@AnsahMohammad](https://github.com/AnsahMohammad) (#118).
+- verified before shipping: 354 tests green (19 new, with six of the guards proven by breaking them on purpose); a 40-round two-process race where exactly one process wins every round; real CLI runs with two terminals landing different tracks in one folder, a second run on the same album refused with `run_started`, `error` and `run_summary` and exit 3 while `sunnify status` from a third shell named the holder, and a Ctrl+C that left no lock behind; and the real desktop window, offscreen, downloading a link and then a queued one in order before going idle with no lock left. binaries built with yt-dlp 2026.8.19 and yt-dlp-ejs 0.8.0 on python 3.13.
+
 ## [2.5.1] - 2026-10-27
 
 ### Fixed
@@ -440,7 +460,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.3...v2.5.0
 [2.4.3]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.2...v2.4.3

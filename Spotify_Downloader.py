@@ -17,7 +17,7 @@ For the program to work, the playlist URL pattern must follow the format of
 
 from __future__ import annotations
 
-__version__ = "2.5.1"
+__version__ = "2.6.0"
 
 import atexit
 import collections
