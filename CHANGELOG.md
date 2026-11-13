@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-11-13
+
+### Added
+- **window size, for small screens and tired eyes (closes #122).** Settings has a "Window size" control from 75% to 200% that scales the whole window, text and buttons included, on top of the system's own display scaling, so a 4K monitor at 100% and a small laptop at 175% both get a card that fits and reads. it rides Qt's global scale factor, the same machinery as the #64 high-dpi fix, so nothing in the fixed-pixel card can overflow the way a font-only control would. sizes that would not fit the current screen are greyed out, a change applies on the next launch, and Sunnify offers to restart on the spot when nothing is downloading. `sunnify config --set ui_scale=100` is the way back from a terminal if a size ever leaves the window larger than the screen; the CLI itself never opens a window. the readme has a [troubleshooting entry](README.md#the-window-is-too-small-to-read-or-too-big-for-the-screen).
+
+### Notes
+- deliberately not built: dragging the frame to resize. the card is a fixed composition, so a bigger frame would only add empty space, and reflowing it would mean rebuilding the UI that is kept on purpose (#41, #49).
+- the restart of a packaged build starts a fresh PyInstaller instance (`PYINSTALLER_RESET_ENVIRONMENT=1`, library path restored): since PyInstaller 6.9 a onefile binary spawned from itself is otherwise a worker sharing the parent's unpacked files, which the parent deletes on exit.
+- requested by [@perspektif](https://github.com/perspektif) (#122).
+- verified before shipping: 375 tests green (21 new) on windows, linux and macOS across python 3.10 to 3.13, including a fresh process proving the saved size reaches the window's pixels at 2x on every OS and the relaunch proving it hands the next process the new size rather than the inherited one; the real entry point picking a saved 150% up from config on macOS and on ubuntu 24.04 under a real X server, with a live relaunch from a 150% process starting at 200% on both; the main window, settings, dropdown, restart prompt and update toast rendered at 75/100/150/200% on macOS's own renderer, and the window, settings and restart prompt at 100/150/200% under ubuntu's X server, all inspected. binaries built with yt-dlp 2026.8.19 and yt-dlp-ejs 0.8.0 on python 3.13.
+
 ## [2.6.0] - 2026-11-01
 
 ### Added
@@ -460,7 +471,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node 20+ for webclient
 - FFmpeg + yt-dlp for audio processing
 
-[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/sunnypatell/sunnify-spotify-downloader/compare/v2.4.3...v2.5.0
