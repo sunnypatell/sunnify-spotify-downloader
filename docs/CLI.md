@@ -183,7 +183,7 @@ This CLI is designed to be driven autonomously (per the
 
 | Thing | Location |
 | :--- | :--- |
-| Settings | One shared `config.json`: `sunnify config --set` and the GUI's settings panel read and write the same file, so a choice made in either face applies to both. Flags override it per run. |
+| Settings | One shared `config.json`: `sunnify config --set` and the GUI's settings panel read and write the same file, so a choice made in either face applies to both. Flags override it per run. `ui_scale` (75 to 200, percent) sizes the desktop window and nothing else, which makes `sunnify config --set ui_scale=100` the way back if a size left the window larger than the screen. |
 | Logs | Same rotating session log as the app (`sunnify doctor` shows the dir; "Open logs folder" in the GUI) |
 | Resume manifest | `.sunnify-manifest.jsonl` inside each playlist folder |
 | Run lock | `.sunnify.lock` inside each playlist folder while it downloads, shared by the desktop app and the CLI |

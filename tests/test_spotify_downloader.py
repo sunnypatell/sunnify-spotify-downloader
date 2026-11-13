@@ -4148,3 +4148,325 @@ class TestFfmpegPreflight:
             monkeypatch.setattr(sys, "platform", platform)
             with pytest.raises(RuntimeError, match=needle):
                 MusicScraper().download_track_audio("ytsearch1:x", "/tmp/none.mp3")
+
+
+class TestUiScale:
+    """A saved window size scales the whole window through Qt's own factor (#122).
+
+    Fonts and geometry scale together, so the fixed-pixel card never overflows
+    the way a font-only control would (#64). Qt reads the factor once, before
+    QApplication, so a change relaunches the app.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch):
+        import Spotify_Downloader as sd
+
+        monkeypatch.delenv("QT_SCALE_FACTOR", raising=False)
+        monkeypatch.setattr(sd, "_ui_scale_env_is_ours", False)
+        monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
+        yield
+        # delenv records nothing when the var was absent, so a value apply_ui_scale
+        # set during the test would otherwise leak into every later test
+        os.environ.pop("QT_SCALE_FACTOR", None)
+
+    def test_config_defaults_to_normal_and_rejects_unknown_sizes(self, tmp_path):
+        import json
+
+        import Spotify_Downloader as sd
+
+        cfg_file = tmp_path / "config.json"
+        with patch("Spotify_Downloader._config_path", return_value=str(cfg_file)):
+            assert sd.load_config()["ui_scale"] == "100"
+            cfg_file.write_text(json.dumps({"ui_scale": "150"}))
+            assert sd.load_config()["ui_scale"] == "150"
+            cfg_file.write_text(json.dumps({"ui_scale": "999"}))
+            assert sd.load_config()["ui_scale"] == "100"
+            cfg_file.write_text(json.dumps({"ui_scale": 150}))
+            assert sd.load_config()["ui_scale"] == "100"
+
+    def test_apply_sets_the_factor_only_off_the_default(self):
+        import Spotify_Downloader as sd
+
+        sd.apply_ui_scale("100")
+        assert "QT_SCALE_FACTOR" not in os.environ
+        sd.apply_ui_scale("150")
+        assert os.environ["QT_SCALE_FACTOR"] == "1.5"
+        assert sd._ui_scale_env_is_ours
+        assert sd._current_ui_factor() == 1.5
+
+    @pytest.mark.parametrize(
+        ("scale", "factor"), [("75", "0.75"), ("90", "0.9"), ("125", "1.25"), ("200", "2")]
+    )
+    def test_every_size_maps_to_a_clean_factor(self, scale, factor):
+        import Spotify_Downloader as sd
+
+        sd.apply_ui_scale(scale)
+        assert os.environ["QT_SCALE_FACTOR"] == factor
+
+    def test_a_factor_from_the_environment_wins(self, monkeypatch):
+        import Spotify_Downloader as sd
+
+        monkeypatch.setenv("QT_SCALE_FACTOR", "2")
+        sd.apply_ui_scale("150")
+        assert os.environ["QT_SCALE_FACTOR"] == "2"
+        assert not sd._ui_scale_env_is_ours
+
+    def test_relaunch_command_for_source_and_frozen(self, monkeypatch):
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sys, "argv", ["Spotify_Downloader.py"])
+        program, args = sd._relaunch_command()
+        assert program == sys.executable
+        assert args == [os.path.abspath("Spotify_Downloader.py")]
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        assert sd._relaunch_command() == (sys.executable, [])
+
+    def test_relaunch_drops_the_factor_this_process_set(self, monkeypatch):
+        """Otherwise the child inherits the old size and the new setting never applies."""
+        from PyQt6.QtCore import QProcess
+
+        import Spotify_Downloader as sd
+
+        seen = {}
+
+        def fake_start(proc):
+            seen["env_has_factor"] = proc.processEnvironment().contains("QT_SCALE_FACTOR")
+            seen["program"] = proc.program()
+            return True, 4242
+
+        monkeypatch.setattr(QProcess, "startDetached", fake_start)
+        sd.apply_ui_scale("150")
+        assert sd.relaunch_app() is True
+        assert seen == {"env_has_factor": False, "program": sys.executable}
+
+    def test_relaunch_keeps_a_factor_the_user_set(self, monkeypatch):
+        from PyQt6.QtCore import QProcess
+
+        import Spotify_Downloader as sd
+
+        monkeypatch.setenv("QT_SCALE_FACTOR", "2")
+        seen = {}
+        monkeypatch.setattr(
+            QProcess,
+            "startDetached",
+            lambda proc: (
+                seen.update(env_has_factor=proc.processEnvironment().contains("QT_SCALE_FACTOR"))
+                or (True, 1)
+            ),
+        )
+        sd.apply_ui_scale("150")
+        sd.relaunch_app()
+        assert seen["env_has_factor"] is True
+
+    def test_relaunch_of_a_frozen_build_starts_a_fresh_instance(self, monkeypatch):
+        """PyInstaller treats a onefile binary spawned from itself as a worker that
+        shares the parent's unpacked files, which the parent deletes on exit."""
+        from PyQt6.QtCore import QProcess
+
+        import Spotify_Downloader as sd
+
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEIabc:/opt/lib")
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/opt/lib")
+        seen = {}
+
+        def fake_start(proc):
+            env = proc.processEnvironment()
+            seen.update(
+                reset=env.value("PYINSTALLER_RESET_ENVIRONMENT"),
+                ld=env.value("LD_LIBRARY_PATH"),
+                libpath=env.contains("LIBPATH"),
+                args=proc.arguments(),
+            )
+            return True, 1
+
+        monkeypatch.setattr(QProcess, "startDetached", fake_start)
+        assert sd.relaunch_app() is True
+        assert seen == {"reset": "1", "ld": "/opt/lib", "libpath": False, "args": []}
+
+    def test_relaunch_from_source_leaves_the_environment_alone(self, monkeypatch):
+        from PyQt6.QtCore import QProcess
+
+        import Spotify_Downloader as sd
+
+        monkeypatch.delenv("PYINSTALLER_RESET_ENVIRONMENT", raising=False)
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/lib")
+        seen = {}
+        monkeypatch.setattr(
+            QProcess,
+            "startDetached",
+            lambda proc: (
+                seen.update(
+                    reset=proc.processEnvironment().contains("PYINSTALLER_RESET_ENVIRONMENT"),
+                    ld=proc.processEnvironment().value("LD_LIBRARY_PATH"),
+                )
+                or (True, 1)
+            ),
+        )
+        sd.relaunch_app()
+        assert seen == {"reset": False, "ld": "/opt/lib"}
+
+    def test_settings_dialog_round_trips_the_size(self, qapp):
+        from Spotify_Downloader import SettingsDialog
+
+        dlg = SettingsDialog(None, {})
+        assert dlg._ui_scale_cb.currentText() == "100%"
+        assert dlg.result_config()["ui_scale"] == "100"
+        dlg = SettingsDialog(None, {"ui_scale": "150"})
+        assert dlg._ui_scale_cb.currentText() == "150%"
+        dlg._ui_scale_cb.setCurrentText("75%")
+        assert dlg.result_config()["ui_scale"] == "75"
+        assert SettingsDialog(None, {"ui_scale": "bogus"})._ui_scale_cb.currentText() == "100%"
+
+    def test_settings_dialog_greys_out_sizes_that_would_not_fit_the_screen(self, qapp):
+        import Spotify_Downloader as sd
+        from Spotify_Downloader import SettingsDialog
+
+        dlg = SettingsDialog(None, {})
+        avail = dlg.screen().availableGeometry()
+        model = dlg._ui_scale_cb.model()
+        for i, value in enumerate(sd.SUPPORTED_UI_SCALES):
+            f = int(value) / 100
+            fits = sd.WINDOW_W * f <= avail.width() and sd.WINDOW_H * f <= avail.height()
+            assert model.item(i).isEnabled() is fits, f"{value}% on {avail}"
+        # the normal size always fits a screen the app already opened on
+        assert model.item(sd.SUPPORTED_UI_SCALES.index("100")).isEnabled()
+        # offscreen's 800x800 default screen cannot hold the 1500x1000 window
+        assert not model.item(sd.SUPPORTED_UI_SCALES.index("200")).isEnabled()
+
+    def test_greying_accounts_for_the_factor_already_in_effect(self, qapp, monkeypatch):
+        """Running at 150%, a screen reports a third less logical room; 150% itself still fits."""
+        import Spotify_Downloader as sd
+        from Spotify_Downloader import SettingsDialog
+
+        monkeypatch.setenv("QT_SCALE_FACTOR", "1.5")
+        dlg = SettingsDialog(None, {"ui_scale": "150"})
+        avail = dlg.screen().availableGeometry()
+        model = dlg._ui_scale_cb.model()
+        i = sd.SUPPORTED_UI_SCALES.index("150")
+        assert model.item(i).isEnabled() is (
+            avail.width() >= sd.WINDOW_W and avail.height() >= sd.WINDOW_H
+        )
+
+    def _window_after_settings(self, monkeypatch, new_scale, *, downloading, restart):
+        import Spotify_Downloader as sd
+
+        class FakeDialog:
+            def __init__(self, _parent, cfg):
+                self.cfg = dict(cfg)
+
+            def exec(self):
+                return sd.QDialog.DialogCode.Accepted
+
+            def result_config(self):
+                return {**self.cfg, "ui_scale": new_scale}
+
+        calls = {"ask": 0, "relaunch": 0, "quit": 0}
+        monkeypatch.setattr(sd, "SettingsDialog", FakeDialog)
+        monkeypatch.setattr(sd, "save_config", lambda _cfg: None)
+        monkeypatch.setattr(
+            sd, "relaunch_app", lambda: calls.__setitem__("relaunch", calls["relaunch"] + 1) or True
+        )
+        monkeypatch.setattr(
+            sd.QApplication, "quit", lambda *_: calls.__setitem__("quit", calls["quit"] + 1)
+        )
+        win = sd.MainWindow()
+        win._config["ui_scale"] = "100"
+        win._is_downloading = downloading
+        monkeypatch.setattr(
+            win, "_ask_restart", lambda: calls.__setitem__("ask", calls["ask"] + 1) or restart
+        )
+        win.open_settings()
+        return win, calls
+
+    def test_unchanged_size_never_asks(self, qapp, monkeypatch):
+        win, calls = self._window_after_settings(
+            monkeypatch, "100", downloading=False, restart=True
+        )
+        assert calls == {"ask": 0, "relaunch": 0, "quit": 0}
+        assert win.statusMsg.text() == "Settings saved"
+
+    def test_new_size_restarts_when_idle_and_agreed(self, qapp, monkeypatch):
+        win, calls = self._window_after_settings(
+            monkeypatch, "150", downloading=False, restart=True
+        )
+        assert calls == {"ask": 1, "relaunch": 1, "quit": 1}
+        assert win._config["ui_scale"] == "150"
+
+    def test_new_size_waits_when_declined(self, qapp, monkeypatch):
+        win, calls = self._window_after_settings(
+            monkeypatch, "150", downloading=False, restart=False
+        )
+        assert calls == {"ask": 1, "relaunch": 0, "quit": 0}
+        assert "next opens" in win.statusMsg.text()
+
+    def test_new_size_never_interrupts_a_download(self, qapp, monkeypatch):
+        win, calls = self._window_after_settings(monkeypatch, "150", downloading=True, restart=True)
+        assert calls == {"ask": 0, "relaunch": 0, "quit": 0}
+        assert "next opens" in win.statusMsg.text()
+
+    def test_failed_relaunch_keeps_the_app_open(self, qapp, monkeypatch):
+        import Spotify_Downloader as sd
+
+        win, calls = self._window_after_settings(
+            monkeypatch, "150", downloading=False, restart=True
+        )
+        monkeypatch.setattr(sd, "relaunch_app", lambda: False)
+        win._apply_new_ui_scale()
+        assert calls["quit"] == 1  # only the earlier successful path quit
+        assert "Couldn't restart" in win.statusMsg.text()
+
+    def test_the_factor_sizes_the_real_window(self, tmp_path):
+        """The load-bearing claim, in a fresh process: the saved size reaches
+        the frameless window's pixels, and the config/log dirs stay out of the
+        developer's home."""
+        import json
+        import subprocess
+
+        script = (
+            "import os, sys\n"
+            "import Spotify_Downloader as sd\n"
+            "sd.UpdateCheckThread.start = lambda self: None\n"
+            "sd.apply_ui_scale(sd.load_config()['ui_scale'])\n"
+            "from PyQt6.QtCore import Qt\n"
+            "from PyQt6.QtWidgets import QApplication\n"
+            "app = QApplication([])\n"
+            "win = sd.MainWindow()\n"
+            "win.setFixedSize(sd.WINDOW_W, sd.WINDOW_H)\n"
+            "win.show()\n"
+            "app.processEvents()\n"
+            "pix = win.grab()\n"
+            "print(pix.width(), pix.height(), win.devicePixelRatioF(),"
+            " app.primaryScreen().availableGeometry().width())\n"
+        )
+        home = tmp_path / "home"
+        cfg_dir = {
+            "win32": home / "Sunnify",
+            "darwin": home / "Library" / "Application Support" / "Sunnify",
+        }.get(sys.platform, home / "cfg" / "Sunnify")
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "config.json").write_text(json.dumps({"ui_scale": "200"}))
+        env = {
+            **os.environ,
+            "QT_QPA_PLATFORM": "offscreen",
+            "HOME": str(home),
+            "APPDATA": str(home),
+            "LOCALAPPDATA": str(home),
+            "XDG_CONFIG_HOME": str(home / "cfg"),
+            "XDG_STATE_HOME": str(home / "state"),
+        }
+        env.pop("QT_SCALE_FACTOR", None)
+        out = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert out.returncode == 0, out.stderr
+        width, height, dpr, screen_w = out.stdout.split()[-4:]
+        assert (int(width), int(height)) == (2 * 750, 2 * 500)
+        assert float(dpr) == 2.0
+        assert int(screen_w) == 400  # offscreen's 800 px screen, in the new logical units

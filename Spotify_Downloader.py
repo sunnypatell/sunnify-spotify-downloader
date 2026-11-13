@@ -313,6 +313,10 @@ SUPPORTED_FORMATS = {
 SUPPORTED_QUALITIES = ("128", "192", "256", "320")
 # "auto" keeps whatever rate the source stream has (YouTube audio is 48 kHz).
 SUPPORTED_SAMPLE_RATES = ("auto", "44100", "48000")
+# whole-window scale in percent, on top of the system's own display scaling
+SUPPORTED_UI_SCALES = ("75", "90", "100", "125", "150", "175", "200")
+# the frameless card is a fixed composition; this is its size in logical pixels
+WINDOW_W, WINDOW_H = 750, 500
 
 
 class _Setting:
@@ -409,6 +413,13 @@ SETTINGS = (
         scraper_kwarg="cookies_file",
         cli_flag="--cookies",
         help="youtube cookies.txt for networks youtube gates (needs deno or node 22+)",
+    ),
+    _Setting(
+        "ui_scale",
+        "100",
+        "choice",
+        SUPPORTED_UI_SCALES,
+        help="window and text size in percent, on top of the system's display scaling",
     ),
 )
 
@@ -636,6 +647,75 @@ def save_config(config: dict) -> None:
             json.dump(config, f, indent=2)
     except OSError as exc:
         log.warning("could not save config: %s", exc)
+
+
+_UI_SCALE_ENV = "QT_SCALE_FACTOR"
+_ui_scale_env_is_ours = False
+
+
+def apply_ui_scale(scale: str) -> None:
+    """Size the whole window, fonts included, from the saved setting.
+
+    Qt reads QT_SCALE_FACTOR once, before QApplication exists, and multiplies
+    it onto the system's scaling, so a change needs a relaunch. A value already
+    in the environment wins, which is Qt's own convention.
+    ref: https://doc.qt.io/qt-6/highdpi.html#environment-variable-reference
+    """
+    global _ui_scale_env_is_ours
+    if os.environ.get(_UI_SCALE_ENV):
+        log.info("ui scale: %s=%s from the environment", _UI_SCALE_ENV, os.environ[_UI_SCALE_ENV])
+        return
+    if scale not in SUPPORTED_UI_SCALES or scale == "100":
+        return
+    os.environ[_UI_SCALE_ENV] = f"{int(scale) / 100:g}"
+    _ui_scale_env_is_ours = True
+    log.info("ui scale: %s%%", scale)
+
+
+def _current_ui_factor() -> float:
+    """The factor this process runs at, 1 when none is set."""
+    try:
+        return float(os.environ.get(_UI_SCALE_ENV) or 1) or 1.0
+    except ValueError:
+        return 1.0
+
+
+def _relaunch_command() -> tuple[str, list[str]]:
+    """This same app, started again: the frozen binary, or python on the script."""
+    if getattr(sys, "frozen", False):
+        return sys.executable, []
+    return sys.executable, [os.path.abspath(sys.argv[0])]
+
+
+def relaunch_app() -> bool:
+    """Start a fresh, detached instance of the app; the caller quits this one."""
+    from PyQt6.QtCore import QProcess, QProcessEnvironment
+
+    program, args = _relaunch_command()
+    proc = QProcess()
+    proc.setProgram(program)
+    proc.setArguments(args)
+    proc.setWorkingDirectory(os.getcwd())
+    env = QProcessEnvironment.systemEnvironment()
+    # the factor this process set for itself must not pin the next one to it
+    if _ui_scale_env_is_ours:
+        env.remove(_UI_SCALE_ENV)
+    if getattr(sys, "frozen", False):
+        # a onefile build spawned from itself is a worker sharing the parent's unpacked
+        # files, which the parent deletes on exit; this makes it a fresh instance instead
+        # ref: https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html
+        env.insert("PYINSTALLER_RESET_ENVIRONMENT", "1")
+        # the bootloader put its unpack dir first on the library path; hand back the original
+        for key in ("LD_LIBRARY_PATH", "LIBPATH"):
+            if env.contains(f"{key}_ORIG"):
+                env.insert(key, env.value(f"{key}_ORIG"))
+            else:
+                env.remove(key)
+    proc.setProcessEnvironment(env)
+    ok, _pid = proc.startDetached()
+    if not ok:
+        log.warning("relaunch failed: %s %s", program, args)
+    return ok
 
 
 GITHUB_REPO = "sunnypatell/sunnify-spotify-downloader"
@@ -2147,6 +2227,16 @@ class SettingsDialog(QDialog):
         self._loose_match_cb = QCheckBox()
         self._loose_match_cb.setChecked(self._config.get("loose_match", False))
 
+        self._ui_scale_labels = {value: f"{value}%" for value in SUPPORTED_UI_SCALES}
+        self._ui_scale_cb = QComboBox()
+        for value in SUPPORTED_UI_SCALES:
+            self._ui_scale_cb.addItem(self._ui_scale_labels[value])
+        current_scale = self._config.get("ui_scale", "100")
+        if current_scale not in SUPPORTED_UI_SCALES:
+            current_scale = "100"
+        self._ui_scale_cb.setCurrentText(self._ui_scale_labels[current_scale])
+        self._disable_scales_larger_than_screen()
+
         # initial enable/disable sync needs every dependent combo to exist
         self._on_format_change(self._format_cb.currentText())
         self._update_filename_preview()
@@ -2163,6 +2253,13 @@ class SettingsDialog(QDialog):
                 "Download folder:",
                 folder_row,
                 "Each playlist or album becomes its own folder inside this directory.",
+            ),
+            (
+                "Window size:",
+                self._ui_scale_cb,
+                "Scales the whole window, text and buttons included, on top of your "
+                "system's display scaling. Sizes that would not fit this screen are "
+                "greyed out. Takes effect when Sunnify next opens.",
             ),
             (
                 "Audio format:",
@@ -2344,6 +2441,22 @@ class SettingsDialog(QDialog):
         self._quality_cb.setEnabled(is_lossy)
         self._sample_rate_cb.setEnabled(fmt in ("mp3", "flac", "wav"))
 
+    def _disable_scales_larger_than_screen(self) -> None:
+        """Grey out sizes at which the window would not fit this screen.
+
+        The window is WINDOW_W x WINDOW_H at the factor in effect now, so a
+        candidate size changes it in proportion to that factor."""
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        avail = screen.availableGeometry()
+        current = _current_ui_factor()
+        model = self._ui_scale_cb.model()
+        for i, value in enumerate(SUPPORTED_UI_SCALES):
+            factor = int(value) / 100 / current
+            fits = WINDOW_W * factor <= avail.width() and WINDOW_H * factor <= avail.height()
+            model.item(i).setEnabled(fits)
+
     def _update_filename_preview(self) -> None:
         style = self._filename_style_cb.currentText()
         stem = "Song" if style == "Song only" else style
@@ -2365,6 +2478,8 @@ class SettingsDialog(QDialog):
         label_to_value = {v: k for k, v in self._sample_rate_labels.items()}
         self._config["sample_rate"] = label_to_value.get(self._sample_rate_cb.currentText(), "auto")
         self._config["loose_match"] = self._loose_match_cb.isChecked()
+        scale_label_to_value = {v: k for k, v in self._ui_scale_labels.items()}
+        self._config["ui_scale"] = scale_label_to_value.get(self._ui_scale_cb.currentText(), "100")
         return self._config
 
 
@@ -2772,6 +2887,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         dialog = SettingsDialog(self, cfg_for_dialog)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new = dialog.result_config()
+            old_scale = self._config.get("ui_scale", "100")
             if new.get("download_path"):
                 self.download_path = new["download_path"]
                 self._download_path_set = True
@@ -2779,6 +2895,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._config["download_path"] = self.download_path
             save_config(self._config)
             self.statusMsg.setText("Settings saved")
+            if self._config.get("ui_scale") != old_scale:
+                self._apply_new_ui_scale()
+
+    def _apply_new_ui_scale(self):
+        """A new window size needs a fresh process; offer one when nothing would be cut short."""
+        if self._is_downloading or not self._ask_restart():
+            self.statusMsg.setText("Window size applies when Sunnify next opens")
+            return
+        if relaunch_app():
+            QApplication.quit()
+            return
+        self.statusMsg.setText("Couldn't restart; the window size applies when Sunnify next opens")
+
+    def _ask_restart(self) -> bool:
+        box = QMessageBox(self)
+        box.setWindowTitle("Window size")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText("Restart Sunnify now to apply the new window size?")
+        restart = box.addButton("Restart now", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(restart)
+        box.exec()
+        return box.clickedButton() is restart
 
     @pyqtSlot()
     def on_returnButton(self):
@@ -3145,6 +3284,9 @@ if __name__ == "__main__":
     with contextlib.suppress(Exception):
         signal.signal(signal.SIGINT, _fatal_signal)
         signal.signal(signal.SIGTERM, _fatal_signal)
+    # the saved window size rides qt's scale factor, which must be set before QApplication
+    with contextlib.suppress(Exception):
+        apply_ui_scale(load_config().get("ui_scale", "100"))
     # fixed-pixel ui overflows on fractional dpi without this (#64); PassThrough avoids
     # rounding 150%->100%. must precede QApplication. ref: doc.qt.io/qt-6/highdpi.html
     try:
@@ -3160,8 +3302,8 @@ if __name__ == "__main__":
     _signal_waker.start(200)
     _signal_waker.timeout.connect(lambda: None)
     Screen = MainWindow()
-    Screen.setFixedHeight(500)
-    Screen.setFixedWidth(750)
+    Screen.setFixedHeight(WINDOW_H)
+    Screen.setFixedWidth(WINDOW_W)
     Screen.setWindowFlags(Qt.WindowType.FramelessWindowHint)
     Screen.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     Screen.show()

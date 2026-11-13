@@ -117,6 +117,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 - **Bundled FFmpeg, no account.** Everything needed ships inside the app, and nothing asks you to log in.
 - **A way through YouTube's bot check.** If YouTube refuses your network, Sunnify says so plainly, and you can opt in to using cookies from your own YouTube session. Sunnify only reads the file, never changes it. See [YouTube cookies](docs/CLI.md#youtube-cookies).
 - **Headless CLI built in.** `sunnify download <url>` scripts every feature of the app: machine-readable output, meaningful exit codes, resume, and a `doctor` self-check. Made for terminals, cron jobs, and AI agents. See [docs/CLI.md](docs/CLI.md).
+- **Sized for your screen and your eyes.** A Window size setting from 75% to 200% scales the whole window, text and buttons included, on top of your system's display scaling. Sizes that would not fit the screen are greyed out.
 
 <div align="center">
 <img src="./readmeAssets/demonstration%202.jpg" alt="Sunnify settings showing audio format and quality options" width="680" />
@@ -205,6 +206,10 @@ A few engines flag executables built with PyInstaller by how they are packaged r
 ### A link says it's unavailable
 
 Spotify serves an error page for private, removed, and region-locked items, and for every link in countries where it doesn't operate. Sunnify reports that instead of failing with a parser error. See [#94](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/94).
+
+### The window is too small to read, or too big for the screen
+
+Settings has a **Window size** control from 75% to 200%. It scales the whole window, text and buttons included, on top of your system's display scaling, so a 4K monitor at 100% and a small laptop at 175% both get a card that fits and reads. Sizes that would not fit the current screen are greyed out, and a change applies the next time Sunnify opens (it offers to restart when nothing is downloading). If a size ever leaves the window larger than the screen, `sunnify config --set ui_scale=100` from a terminal puts it back. See [#64](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/64), [#122](https://github.com/sunnypatell/sunnify-spotify-downloader/issues/122).
 
 ### Artist or discography links
 
