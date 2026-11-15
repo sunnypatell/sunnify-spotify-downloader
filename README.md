@@ -147,6 +147,8 @@ cd sunnify-spotify-downloader
 pip install -r req.txt
 python Spotify_Downloader.py
 ```
+> [!IMPORTANT]
+> If it does any issues after this like- ffmpeg is not installed even when you have already installed it using for example: winget, Check by installing ffmpeg for yt-dlp using `winget install yt-dlp.FFmpeg` then rerun `python Spotify_Downloader.py`
 
 To produce a standalone app with [PyInstaller](https://pyinstaller.org/):
 
