@@ -43,6 +43,15 @@ def client(app):
     return app.test_client()
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit():
+    """Every test starts with an empty window; the limiter is process-wide."""
+    if FLASK_AVAILABLE:
+        from app import limiter
+
+        limiter.reset()
+
+
 class TestHealthEndpoint:
     """Tests for /api/health endpoint."""
 
@@ -214,3 +223,93 @@ class TestCORS:
         )
         # Should not error
         assert response.status_code in (200, 204)
+
+
+class TestHardening:
+    """The controls that keep a public, unauthenticated endpoint from being abused."""
+
+    PLAYLIST = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+
+    def test_cors_only_answers_the_web_client(self, client):
+        ok = client.options(
+            "/api/scrape-playlist",
+            headers={
+                "Origin": "https://sunnify-spotify-downloader.vercel.app",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        assert ok.headers.get("Access-Control-Allow-Origin") == (
+            "https://sunnify-spotify-downloader.vercel.app"
+        )
+        evil = client.options(
+            "/api/scrape-playlist",
+            headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
+        )
+        assert "Access-Control-Allow-Origin" not in evil.headers
+
+    def test_security_headers_on_every_response(self, client):
+        for response in (client.get("/api/health"), client.get("/nope")):
+            assert response.headers["X-Content-Type-Options"] == "nosniff"
+            assert response.headers["X-Frame-Options"] == "DENY"
+            assert response.headers["Referrer-Policy"] == "no-referrer"
+            assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+            assert response.headers["Cache-Control"] == "no-store"
+
+    def test_errors_use_the_json_envelope(self, client):
+        response = client.get("/nope")
+        assert response.status_code == 404
+        assert response.get_json()["event"] == "error"
+        assert client.get("/api/scrape-playlist").status_code == 405
+
+    def test_oversized_body_is_refused_before_parsing(self, client):
+        response = client.post(
+            "/api/scrape-playlist",
+            data=b'{"playlistUrl": "' + b"x" * 20_000 + b'"}',
+            content_type="application/json",
+        )
+        assert response.status_code == 413
+        assert response.get_json()["event"] == "error"
+
+    def test_rate_limit_per_client(self, client, monkeypatch):
+        import app as backend
+
+        monkeypatch.setattr(backend.limiter, "per_minute", 2)
+        for _ in range(2):
+            assert client.post("/api/scrape-playlist", json={}).status_code == 400
+        limited = client.post("/api/scrape-playlist", json={})
+        assert limited.status_code == 429
+        assert int(limited.headers["Retry-After"]) >= 1
+        other = client.post(
+            "/api/scrape-playlist", json={}, environ_base={"REMOTE_ADDR": "10.9.9.9"}
+        )
+        assert other.status_code == 400  # a different client still gets through
+
+    def test_forwarded_for_from_the_proxy_identifies_the_client(self, client, monkeypatch):
+        import app as backend
+
+        monkeypatch.setattr(backend.limiter, "per_minute", 1)
+        first = {"X-Forwarded-For": "203.0.113.7"}
+        assert client.post("/api/scrape-playlist", json={}, headers=first).status_code == 400
+        assert client.post("/api/scrape-playlist", json={}, headers=first).status_code == 429
+        second = {"X-Forwarded-For": "203.0.113.8"}
+        assert client.post("/api/scrape-playlist", json={}, headers=second).status_code == 400
+
+    @patch("app.get_playlist_client")
+    def test_huge_playlists_are_capped_and_flagged(self, mock_get_client, client, monkeypatch):
+        import app as backend
+
+        monkeypatch.setattr(backend, "MAX_TRACKS", 3)
+        mock_client = MagicMock()
+        mock_client.get_playlist_metadata.return_value = MagicMock(
+            name="m", owner="o", cover_url=""
+        )
+        mock_client.iter_playlist_tracks.return_value = (
+            MagicMock(
+                spotify_id=str(i), title="t", artists="a", album="", cover_url="", release_date=""
+            )
+            for i in range(10)
+        )
+        mock_get_client.return_value = mock_client
+        data = client.post("/api/scrape-playlist", json={"playlistUrl": self.PLAYLIST}).get_json()
+        assert len(data["data"]["tracks"]) == 3
+        assert data["data"]["truncated"] is True

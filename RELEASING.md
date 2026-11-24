@@ -14,12 +14,12 @@ Don't trust a fixed file list - grep for the current version first, because a
 location has been missed before:
 
 ```bash
-grep -rnE "2\.7\.0|2, 7, 0" --include="*.py" --include="*.toml" \
+grep -rnE "3\.0\.0|3, 0, 0" --include="*.py" --include="*.toml" \
   --include="*.spec" --include="*.txt" --include="*.md" .
 ```
 
 Known locations: `version.txt` (bare line), `pyproject.toml`,
-`Spotify_Downloader.py` `__version__`, `Template.py` UI label,
+`sunnify/__init__.py` `__version__` (the window's version chip reads it),
 `Sunnify.spec` (BOTH the `filevers`/`prodvers` numeric tuples AND the
 string fields - the tuples were historically left stale),
 `API_STATUS.md`, `web-app/sunnify-backend/app.py`, `SECURITY.md`

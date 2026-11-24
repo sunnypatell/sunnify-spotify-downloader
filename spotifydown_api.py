@@ -252,6 +252,8 @@ class SpotifyEmbedAPI:
                 self._token_expiry = expiry_ms / 1000 if expiry_ms else 0
                 break
 
+        if not isinstance(data, dict):
+            raise ExtractionError("__NEXT_DATA__ is not a JSON object")
         return data
 
     _ENTITY_PATHS = (
@@ -360,8 +362,8 @@ class SpotifyEmbedAPI:
                     if resp.status_code == 200:
                         spc_data = resp.json()
                         track_count = spc_data.get("length", track_count)
-            except Exception:
-                pass  # Fall back to embed count
+            except Exception as exc:  # any failure here just means the embed's count stands
+                log.debug("spclient track count unavailable, using the embed's: %s", exc)
 
         return PlaylistInfo(
             name=str(name),
@@ -507,11 +509,11 @@ class SpotifyEmbedAPI:
                 for future in _cf.as_completed(future_to_info):
                     track_id, uri = future_to_info[future]
                     try:
-                        info = future.result()
+                        fetched = future.result()
                     except Exception:
-                        info = None
-                    if info is None:
-                        info = TrackInfo(
+                        fetched = None
+                    if fetched is None:
+                        fetched = TrackInfo(
                             id=track_id,
                             title=f"Track {track_id}",
                             artists="Unknown Artist",
@@ -522,13 +524,13 @@ class SpotifyEmbedAPI:
                             preview_url=None,
                             raw={"uri": uri},
                         )
-                    info.position = position_map.get(track_id)
-                    yield info
+                    fetched.position = position_map.get(track_id)
+                    yield fetched
             finally:
                 pool.shutdown(wait=False, cancel_futures=True)
 
-        except Exception:
-            pass  # spclient fallback failed, just return what we have
+        except Exception as exc:  # the fallback is best-effort; keep what we have
+            log.warning("spclient fallback stopped early for %s: %s", playlist_id, exc)
 
     def _parse_track(self, track: dict, track_id: str) -> TrackInfo:
         """Parse a track dict from embed trackList."""

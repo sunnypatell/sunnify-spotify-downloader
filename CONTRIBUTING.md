@@ -37,6 +37,29 @@ python Spotify_Downloader.py           # GUI
 python Spotify_Downloader.py doctor    # headless CLI, same module
 ```
 
+The code lives in the `sunnify/` package; `Spotify_Downloader.py` is only the
+entry point (and keeps the old single-file names importable). The map, cheapest
+import first:
+
+| Module | Holds |
+| :--- | :--- |
+| `sunnify/config.py` | the settings registry: config, CLI flags and scraper options all derive from it |
+| `sunnify/logs.py`, `tools.py`, `locking.py` | session log, FFmpeg/JS runtime/cookies, the per-folder run lock |
+| `sunnify/history.py`, `i18n.py`, `lyrics.py` | download history, English/Bahasa Melayu strings, LRCLIB lookup |
+| `sunnify/tagging.py`, `updates.py`, `engine.py` | tag writers, the release check, `MusicScraper` |
+| `sunnify/gui/` | the desktop window, dialogs, theme and window scaling (the only place QtWidgets is imported) |
+
+Two rules the tests rely on:
+
+- **Patch a name where it is defined**: `sunnify.tools.get_ffmpeg_path`, not
+  `Spotify_Downloader.get_ffmpeg_path`. Callers look names up through their
+  module (`tools.get_ffmpeg_path()`), so one patch reaches every caller; the
+  old module refuses patches outright so a mistake fails instead of silently
+  testing nothing.
+- **Every string a user reads goes through `sunnify.i18n.t()`** with an
+  entry in both `EN` and `MS`; a test fails when a key or a `{field}` is missing
+  from either language.
+
 ### Backend (Flask)
 ```bash
 cd web-app/sunnify-backend

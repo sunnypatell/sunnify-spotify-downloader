@@ -5,8 +5,6 @@ import {
   Music2,
   Download,
   Loader2,
-  Github,
-  Linkedin,
   Globe,
   Apple,
   Monitor,
@@ -19,6 +17,8 @@ import {
   Heart,
   Coffee,
 } from "lucide-react"
+// lucide 1.x dropped brand marks; these come from Font Awesome via react-icons
+import { FaGithub, FaLinkedin } from "react-icons/fa6"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -34,6 +34,32 @@ interface Track {
   cover: string
   releaseDate: string
   downloadLink: string
+}
+
+const API_BASE = "https://sunnify-spotify-downloader.onrender.com"
+
+function textOr(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback
+}
+
+// the response is data from a network we don't control: keep only the fields we
+// render, as strings, and only https images (the page's CSP allows nothing else)
+function toTracks(raw: unknown): Track[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((t): t is Record<string, unknown> => typeof t === "object" && t !== null)
+    .map((t) => {
+      const cover = textOr(t.cover)
+      return {
+        id: textOr(t.id),
+        title: textOr(t.title, "Unknown"),
+        artists: textOr(t.artists),
+        album: textOr(t.album),
+        cover: cover.startsWith("https://") ? cover : "",
+        releaseDate: textOr(t.releaseDate),
+        downloadLink: "",
+      }
+    })
 }
 
 export default function SunnifyApp() {
@@ -74,28 +100,35 @@ export default function SunnifyApp() {
     setTracks([])
     setSelectedTrack(null)
 
+    // the free backend can take ~50s to wake; past 90s something else is wrong
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 90_000)
     try {
-      const response = await fetch(
-        "https://sunnify-spotify-downloader.onrender.com/api/scrape-playlist",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playlistUrl: playlistLink }),
-        }
-      )
+      const response = await fetch(`${API_BASE}/api/scrape-playlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playlistUrl: playlistLink }),
+        signal: controller.signal,
+      })
 
-      if (!response.ok) throw new Error("Failed to process playlist")
-
-      const result = await response.json()
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result) {
+        if (response.status === 429) throw new Error("Too many requests - try again in a minute")
+        throw new Error(result?.data?.message || "Failed to process playlist")
+      }
 
       if (result.event === "complete") {
-        setPlaylistName(result.data.playlistName || "Playlist")
-        const processedTracks: Track[] = result.data.tracks || []
+        setPlaylistName(textOr(result.data?.playlistName, "Playlist"))
+        const processedTracks = toTracks(result.data?.tracks)
         setTracks(processedTracks)
         setTotalSongs(processedTracks.length)
         setSongsDownloaded(processedTracks.length)
         setDownloadProgress(100)
-        setStatusMessage(`Found ${processedTracks.length} tracks`)
+        setStatusMessage(
+          result.data?.truncated
+            ? `Showing the first ${processedTracks.length} tracks`
+            : `Found ${processedTracks.length} tracks`
+        )
 
         if (processedTracks.length > 0) {
           setSelectedTrack(processedTracks[0])
@@ -107,9 +140,17 @@ export default function SunnifyApp() {
       }
     } catch (error) {
       console.error("Error:", error)
-      toast.error(error instanceof Error ? error.message : "Failed to process")
+      const aborted = error instanceof DOMException && error.name === "AbortError"
+      toast.error(
+        aborted
+          ? "The server took too long - try again"
+          : error instanceof Error
+            ? error.message
+            : "Failed to process"
+      )
       setStatusMessage("Error - try again")
     } finally {
+      clearTimeout(timer)
       setIsProcessing(false)
     }
   }
@@ -118,9 +159,9 @@ export default function SunnifyApp() {
     <div className="relative min-h-screen overflow-hidden bg-black text-white">
       {/* Animated background */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-1/4 -top-1/4 h-[800px] w-[800px] rounded-full bg-green-500/10 blur-[120px]" />
-        <div className="absolute -bottom-1/4 -right-1/4 h-[600px] w-[600px] rounded-full bg-emerald-500/10 blur-[100px]" />
-        <div className="absolute left-1/2 top-1/2 h-[400px] w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-green-600/5 blur-[80px]" />
+        <div className="absolute -top-1/4 -left-1/4 h-[800px] w-[800px] rounded-full bg-green-500/10 blur-[120px]" />
+        <div className="absolute -right-1/4 -bottom-1/4 h-[600px] w-[600px] rounded-full bg-emerald-500/10 blur-[100px]" />
+        <div className="absolute top-1/2 left-1/2 h-[400px] w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-green-600/5 blur-[80px]" />
       </div>
 
       <Toaster
@@ -132,10 +173,10 @@ export default function SunnifyApp() {
 
       {/* Cold Start Banner */}
       {showBanner && (
-        <div className="relative z-50 border-b border-amber-500/20 bg-amber-500/10 px-4 py-3 backdrop-blur-sm">
+        <div className="relative z-50 border-b border-amber-500/20 bg-amber-500/10 px-4 py-3 backdrop-blur-xs">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <Clock className="h-4 w-4 flex-shrink-0 text-amber-400" />
+              <Clock className="h-4 w-4 shrink-0 text-amber-400" />
               <p className="text-sm text-amber-200">
                 <span className="font-semibold">Heads up:</span> The backend runs on a free server
                 that spins down after inactivity. First request may take up to 50 seconds to wake
@@ -144,7 +185,7 @@ export default function SunnifyApp() {
             </div>
             <button
               onClick={() => setShowBanner(false)}
-              className="flex-shrink-0 rounded-lg p-1 text-amber-400 transition-colors hover:bg-amber-500/20"
+              className="shrink-0 rounded-lg p-1 text-amber-400 transition-colors hover:bg-amber-500/20"
             >
               <X className="h-4 w-4" />
             </button>
@@ -153,9 +194,9 @@ export default function SunnifyApp() {
       )}
 
       {/* Info Banner - Web Preview Only */}
-      <div className="relative z-40 border-b border-blue-500/20 bg-blue-500/10 px-4 py-3 backdrop-blur-sm">
+      <div className="relative z-40 border-b border-blue-500/20 bg-blue-500/10 px-4 py-3 backdrop-blur-xs">
         <div className="mx-auto flex max-w-7xl items-center justify-center gap-3">
-          <Download className="h-4 w-4 flex-shrink-0 text-blue-400" />
+          <Download className="h-4 w-4 shrink-0 text-blue-400" />
           <p className="text-sm text-blue-200">
             <span className="font-semibold">Preview mode:</span> This web app displays playlist
             metadata only. To download MP3s, use the{" "}
@@ -176,12 +217,12 @@ export default function SunnifyApp() {
           <div className="mb-4 inline-flex items-center gap-4">
             <div className="relative">
               <div className="absolute inset-0 animate-pulse rounded-2xl bg-green-500/20 blur-xl" />
-              <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-green-400 via-green-500 to-emerald-600 shadow-2xl shadow-green-500/25">
+              <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-linear-to-br from-green-400 via-green-500 to-emerald-600 shadow-2xl shadow-green-500/25">
                 <Disc3 className="h-9 w-9 text-white" />
               </div>
             </div>
             <div className="text-left">
-              <h1 className="bg-gradient-to-r from-green-400 via-emerald-400 to-green-500 bg-clip-text text-5xl font-black tracking-tight text-transparent">
+              <h1 className="bg-linear-to-r from-green-400 via-emerald-400 to-green-500 bg-clip-text text-5xl font-black tracking-tight text-transparent">
                 Sunnify
               </h1>
               <p className="text-sm font-medium text-gray-400">Spotify Playlist Downloader</p>
@@ -190,12 +231,12 @@ export default function SunnifyApp() {
         </header>
 
         {/* Main Content */}
-        <div className="grid flex-1 gap-8 lg:grid-cols-[1fr,380px]">
+        <div className="grid flex-1 gap-8 lg:grid-cols-[1fr_380px]">
           {/* Left Column */}
           <div className="space-y-6">
             {/* Search Card */}
             <div className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl transition-all hover:border-green-500/30 hover:bg-white/[0.07]">
-              <div className="absolute -right-20 -top-20 h-40 w-40 rounded-full bg-green-500/10 blur-3xl transition-all group-hover:bg-green-500/20" />
+              <div className="absolute -top-20 -right-20 h-40 w-40 rounded-full bg-green-500/10 blur-3xl transition-all group-hover:bg-green-500/20" />
 
               <div className="relative">
                 <div className="mb-6 flex items-center gap-3">
@@ -211,13 +252,13 @@ export default function SunnifyApp() {
                       value={playlistLink}
                       onChange={(e) => setPlaylistLink(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && !isProcessing && handleProcess()}
-                      className="h-14 rounded-xl border-white/10 bg-black/50 pl-5 pr-5 text-base text-white placeholder:text-gray-500 focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
+                      className="h-14 rounded-xl border-white/10 bg-black/50 pr-5 pl-5 text-base text-white placeholder:text-gray-500 focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
                     />
                   </div>
                   <Button
                     onClick={handleProcess}
                     disabled={isProcessing}
-                    className="h-14 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 px-8 text-base font-bold text-black shadow-lg shadow-green-500/25 transition-all hover:scale-105 hover:shadow-green-500/40 disabled:scale-100 disabled:opacity-50"
+                    className="h-14 rounded-xl bg-linear-to-r from-green-500 to-emerald-500 px-8 text-base font-bold text-black shadow-lg shadow-green-500/25 transition-all hover:scale-105 hover:shadow-green-500/40 disabled:scale-100 disabled:opacity-50"
                   >
                     {isProcessing ? (
                       <Loader2 className="h-6 w-6 animate-spin" />
@@ -242,7 +283,7 @@ export default function SunnifyApp() {
                   </div>
                   <Progress
                     value={downloadProgress}
-                    className="h-2 rounded-full bg-white/10 [&>div]:rounded-full [&>div]:bg-gradient-to-r [&>div]:from-green-400 [&>div]:to-emerald-500"
+                    className="h-2 rounded-full bg-white/10 [&>div]:rounded-full [&>div]:bg-linear-to-r [&>div]:from-green-400 [&>div]:to-emerald-500"
                   />
                   {playlistName && (
                     <p className="text-sm">
@@ -336,35 +377,35 @@ export default function SunnifyApp() {
                           unoptimized
                         />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
+                        <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-gray-800 to-gray-900">
                           <Music2 className="h-20 w-20 text-gray-700" />
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                      <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent" />
                     </div>
 
                     <div className="space-y-4">
                       <div>
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-green-400">
+                        <p className="mb-1 text-xs font-semibold tracking-widest text-green-400 uppercase">
                           Title
                         </p>
-                        <p className="text-lg font-bold leading-tight">{selectedTrack.title}</p>
+                        <p className="text-lg leading-tight font-bold">{selectedTrack.title}</p>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-gray-500">
+                          <p className="mb-1 text-xs font-semibold tracking-widest text-gray-500 uppercase">
                             Artist
                           </p>
                           <p className="text-sm text-gray-300">{selectedTrack.artists}</p>
                         </div>
                         <div>
-                          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-gray-500">
+                          <p className="mb-1 text-xs font-semibold tracking-widest text-gray-500 uppercase">
                             Album
                           </p>
                           <p className="text-sm text-gray-300">{selectedTrack.album || "—"}</p>
                         </div>
                         <div className="col-span-2">
-                          <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-gray-500">
+                          <p className="mb-1 text-xs font-semibold tracking-widest text-gray-500 uppercase">
                             Release Date
                           </p>
                           <p className="text-sm text-gray-300">
@@ -483,7 +524,7 @@ export default function SunnifyApp() {
                 rel="noopener noreferrer"
                 className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
               >
-                <Github className="h-5 w-5" />
+                <FaGithub className="h-5 w-5" />
               </a>
               <a
                 href="https://www.linkedin.com/in/sunny-patel-30b460204/"
@@ -491,7 +532,7 @@ export default function SunnifyApp() {
                 rel="noopener noreferrer"
                 className="rounded-xl p-3 text-gray-500 transition-all hover:bg-white/5 hover:text-white"
               >
-                <Linkedin className="h-5 w-5" />
+                <FaLinkedin className="h-5 w-5" />
               </a>
               <a
                 href="https://www.sunnypatel.net/"

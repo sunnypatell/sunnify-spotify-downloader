@@ -44,7 +44,6 @@ if str(ROOT) not in sys.path:
 # Import the real download selector so the YouTube check exercises the same
 # path the app does (ytsearch5 + title/artist/duration filter), not a stale
 # ytsearch1 top-hit. Bare instance avoids spinning up the QThread/Qt stack.
-from Spotify_Downloader import MusicScraper, _retry_player_clients  # noqa: E402
 from spotifydown_api import (  # noqa: E402
     ContentUnavailableError,
     PlaylistClient,
@@ -52,6 +51,7 @@ from spotifydown_api import (  # noqa: E402
     SpotifyEmbedAPI,
     TrackInfo,
 )
+from sunnify.engine import MusicScraper, _retry_player_clients  # noqa: E402
 
 
 @dataclass
@@ -402,7 +402,7 @@ def check_retry_clients_are_live() -> EndpointResult:
     Cheap and offline: names YouTube retires get dropped silently at
     runtime, which quietly shrinks the recovery path until it is empty.
     """
-    from Spotify_Downloader import _RETRY_CLIENTS
+    from sunnify.engine import _RETRY_CLIENTS
 
     live = _retry_player_clients()
     retired = [name for name in _RETRY_CLIENTS if name not in live]

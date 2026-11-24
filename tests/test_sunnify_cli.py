@@ -15,6 +15,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import Spotify_Downloader as sd
@@ -54,8 +56,19 @@ class TestRegistryParity:
 
     def test_load_config_keys_match_registry(self):
         cfg = sd.load_config()
-        expected = {s.key for s in sd.SETTINGS} | {"version", "star_prompt_shown"}
+        expected = {s.key for s in sd.SETTINGS} | {"version"} | set(sd.UI_STATE_DEFAULTS)
         assert set(cfg) == expected
+
+    def test_ui_state_never_reaches_the_cli(self, capsys):
+        """show_preview/write_tags are window state, not settings: no flag, no config row."""
+        help_text = (
+            cli.build_parser()._subparsers._group_actions[0].choices["download"].format_help()
+        )
+        cli.cmd_config(SimpleNamespace(set=None, json=True))
+        shown = json.loads(capsys.readouterr().out)
+        for key in sd.UI_STATE_DEFAULTS:
+            assert key not in shown
+            assert key.replace("_", "-") not in help_text
 
     def test_scraper_kwargs_from_covers_all_wired_settings(self):
         kwargs = sd.scraper_kwargs_from({s.key: s.default for s in sd.SETTINGS})
@@ -116,7 +129,7 @@ class TestDownloadGuards:
         assert json.loads(capsys.readouterr().out)["code"] == "invalid_url"
 
     def test_missing_ffmpeg_is_fatal_with_code(self, tmp_path, capsys):
-        with patch.object(sd, "get_ffmpeg_path", return_value=None):
+        with patch("sunnify.tools.get_ffmpeg_path", return_value=None):
             rc = cli.cmd_download(
                 _args(
                     url="https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
@@ -130,7 +143,7 @@ class TestDownloadGuards:
     def test_locked_folder_is_fatal_and_still_ends_with_run_summary(self, tmp_path, capsys):
         locked = sd.FolderLockedError("another Sunnify download (pid 42) is already writing")
         with (
-            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
+            patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)),
             patch.object(sd.MusicScraper, "scrape_playlist", side_effect=locked),
         ):
             rc = cli.cmd_download(
@@ -148,7 +161,7 @@ class TestDownloadGuards:
 
     def test_run_failure_after_start_still_ends_with_run_summary(self, tmp_path, capsys):
         with (
-            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
+            patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)),
             patch.object(sd.MusicScraper, "scrape_track", side_effect=RuntimeError("boom")),
         ):
             rc = cli.cmd_download(
@@ -164,7 +177,7 @@ class TestDownloadGuards:
         assert events[-1]["event"] == "run_summary"
 
     def test_unusable_cookies_file_is_fatal_with_code(self, tmp_path, capsys):
-        with patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)):
+        with patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)):
             rc = cli.cmd_download(
                 _args(
                     url="https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b",
@@ -183,8 +196,8 @@ class TestDownloadGuards:
             encoding="utf-8",
         )
         with (
-            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
-            patch.object(sd, "find_js_runtime", return_value=None),
+            patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)),
+            patch("sunnify.tools.find_js_runtime", return_value=None),
         ):
             rc = cli.cmd_download(
                 _args(
@@ -215,7 +228,7 @@ class TestStatusLock:
 class TestConfigCommand:
     def _run(self, tmp_path, *set_pairs, as_json=False):
         cfg_file = tmp_path / "config.json"
-        with patch.object(sd, "_config_path", return_value=str(cfg_file)):
+        with patch("sunnify.config._config_path", return_value=str(cfg_file)):
             args = SimpleNamespace(set=list(set_pairs) or None, json=as_json)
             rc = cli.cmd_config(args)
         return rc, cfg_file
@@ -236,7 +249,7 @@ class TestConfigCommand:
         assert rc == cli.EXIT_USAGE
 
     def test_internal_state_is_hidden_from_output(self, tmp_path, capsys):
-        rc, _ = self._run(tmp_path, as_json=True)
+        _rc, _ = self._run(tmp_path, as_json=True)
         shown = json.loads(capsys.readouterr().out)
         assert "star_prompt_shown" not in shown
         assert "version" not in shown
@@ -266,6 +279,7 @@ class TestBinaryDispatch:
     def _run(self, *argv):
         return subprocess.run(
             [sys.executable, os.path.join(REPO_ROOT, "Spotify_Downloader.py"), *argv],
+            check=False,
             capture_output=True,
             text=True,
             timeout=60,
@@ -322,3 +336,123 @@ class TestBinaryDispatch:
         result = self._run("help", "download")
         assert result.returncode == 0
         assert "usage: sunnify download" in result.stdout
+
+
+class TestHistoryCommand:
+    URL = "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+
+    def _run(self, capsys, **kw):
+        args = SimpleNamespace(**{"json": True, "limit": 20, "clear": False, **kw})
+        rc = cli.cmd_history(args)
+        return rc, capsys.readouterr().out
+
+    def test_lists_newest_first_and_respects_limit(self, capsys):
+        from sunnify import history
+
+        for name in ("old", "new"):
+            history.record(url=self.URL, name=name, landed=2)
+        rc, out = self._run(capsys, limit=1)
+        assert rc == cli.EXIT_OK
+        assert [e["name"] for e in json.loads(out)["entries"]] == ["new"]
+
+    def test_human_output_and_empty_state(self, capsys):
+        rc, out = self._run(capsys, json=False)
+        assert rc == cli.EXIT_OK and "no downloads recorded yet" in out
+
+    def test_clear(self, capsys):
+        from sunnify import history
+
+        history.record(url=self.URL)
+        _rc, out = self._run(capsys, clear=True)
+        assert json.loads(out) == {"cleared": True}
+        assert history.load() == []
+
+    def test_a_finished_download_is_recorded(self, tmp_path, capsys):
+        from sunnify import history
+
+        def fake_scrape(scraper, url, out_dir):
+            scraper.output_folder = os.path.join(out_dir, "After Hours - The Weeknd")
+            scraper.display_name = "After Hours - The Weeknd"
+            scraper._failed_tracks.append("one")
+
+        with (
+            patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)),
+            patch.object(sd.MusicScraper, "scrape_playlist", fake_scrape),
+        ):
+            rc = cli.cmd_download(_args(url=self.URL, out=str(tmp_path), json=True))
+        assert rc == cli.EXIT_PARTIAL
+        (entry,) = history.load()
+        assert entry["name"] == "After Hours - The Weeknd"
+        assert entry["kind"] == "album" and entry["status"] == "failed"
+        started = json.loads(capsys.readouterr().out.splitlines()[0])
+        assert started["lyrics"] is False
+
+    def test_a_run_refused_before_writing_is_not_history(self, tmp_path, capsys):
+        from sunnify import history
+
+        with (
+            patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)),
+            patch.object(sd.MusicScraper, "scrape_track", side_effect=RuntimeError("boom")),
+        ):
+            cli.cmd_download(
+                _args(
+                    url="https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b", out=str(tmp_path)
+                )
+            )
+        assert history.load() == []
+
+
+class TestPackageBoundaries:
+    def test_the_cli_never_loads_qt_widgets(self):
+        """A headless server may have QtCore but no GL/X libs for QtWidgets."""
+        code = (
+            "import sys, sunnify_cli; "
+            "print('PyQt6.QtWidgets' in sys.modules, 'PyQt6.QtGui' in sys.modules)"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code],
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            timeout=60,
+        )
+        assert out.returncode == 0, out.stderr
+        assert out.stdout.split() == ["False", "False"]
+
+    def test_facade_reexports_resolve_live(self, monkeypatch):
+        from sunnify.gui import scale
+
+        monkeypatch.setattr(scale, "_ui_scale_env_is_ours", True)
+        assert sd._ui_scale_env_is_ours is True
+        assert sd.MusicScraper is __import__("sunnify.engine").engine.MusicScraper
+        assert "MainWindow" in dir(sd)
+
+    def test_patching_the_facade_fails_loudly(self):
+        """A patch there would never reach the code that calls the function."""
+        with (
+            pytest.raises(AttributeError, match=r"sunnify\.tools\.get_ffmpeg_path"),
+            patch("Spotify_Downloader.get_ffmpeg_path", return_value=None),
+        ):
+            pass
+
+    def test_history_dispatches_through_the_binary(self, tmp_path):
+        env = {
+            **os.environ,
+            "APPDATA": str(tmp_path),
+            "LOCALAPPDATA": str(tmp_path),
+            "HOME": str(tmp_path),
+            "XDG_CONFIG_HOME": str(tmp_path),
+            "XDG_STATE_HOME": str(tmp_path),
+        }
+        out = subprocess.run(
+            [sys.executable, os.path.join(REPO_ROOT, "Spotify_Downloader.py"), "history", "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=REPO_ROOT,
+            env=env,
+        )
+        assert out.returncode == 0, out.stderr
+        assert json.loads(out.stdout) == {"entries": []}
