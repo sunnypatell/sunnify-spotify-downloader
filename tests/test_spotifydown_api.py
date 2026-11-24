@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from spotifydown_api import (
@@ -51,7 +53,7 @@ class TestExtractPlaylistId:
 
     def test_empty_url_raises_valueerror(self):
         """Empty URL should raise ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Invalid Spotify playlist URL"):
             extract_playlist_id("")
 
 
@@ -516,7 +518,7 @@ class TestUnavailableContentDetection:
     Shapes below are the real ones, captured from live embed pages.
     """
 
-    ERROR_PAGE = {
+    ERROR_PAGE: ClassVar[dict] = {
         "props": {
             "pageProps": {
                 "status": 404,

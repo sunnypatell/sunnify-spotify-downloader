@@ -2,7 +2,7 @@
 
 # Sunnify Web Client (Next.js)
 
-<em>Frontend for the Sunnify stack. Built with Next.js 15, Tailwind CSS, and shadcn/ui.</em>
+<em>Frontend for the Sunnify stack. Built with Next.js 16, React 19, Tailwind CSS 4, and shadcn/ui.</em>
 
 </div>
 
@@ -60,7 +60,7 @@ For local development, update `components/sunnify-app.tsx` or use environment va
 
 - **Cold starts**: The Render free tier spins down after inactivity. First request may take up to 50 seconds.
 - **CORS errors**: The Flask backend uses `flask-cors` which allows all origins by default.
-- **Build failures**: Ensure Node.js 22+ and run `npm install` first.
+- **Build failures**: Ensure Node.js 24+ (see `.nvmrc`) and run `npm install` first.
 
 ---
 

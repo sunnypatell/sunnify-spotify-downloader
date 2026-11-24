@@ -49,6 +49,7 @@ so agents can run them too.
 | `sunnify download <url>` | Download a playlist, album, or track |
 | `sunnify info <url>` | Fetch metadata only (no downloads, no FFmpeg needed) |
 | `sunnify status [folder]` | Audio files present, manifest state, active download pid |
+| `sunnify history [-n N] [--clear]` | Recent downloads, newest first, from the desktop app and the CLI alike |
 | `sunnify config [--set k=v]` | Show or persist settings (the same `config.json` the GUI uses) |
 | `sunnify doctor` | Self-check: FFmpeg, config, Spotify reachability, yt-dlp, YouTube cookies, and whether a newer release exists |
 | `sunnify --version` / `--help` | You know these (`sunnify help [command]` works too) |
@@ -65,6 +66,7 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
                        [--artist-first | --no-artist-first]
                        [--title-only | --no-title-only]
                        [--loose-match | --no-loose-match]
+                       [--lyrics | --no-lyrics]
                        [--cookies FILE]
                        [--json] [--quiet]
 ```
@@ -83,6 +85,31 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
   force-quits.
 - `--cookies FILE` is only for networks YouTube gates; see
   [YouTube cookies](#youtube-cookies).
+- `--lyrics` looks each song up on [LRCLIB](https://lrclib.net), a free and
+  open lyrics database, and embeds the words in mp3, m4a and flac files
+  (`USLT`, `©lyr` and `LYRICS` respectively). When the lyrics are
+  time-synced, a `.lrc` file with the same name lands next to the song as
+  well, for every format. A song LRCLIB doesn't know is simply tagged without
+  lyrics; lyrics never fail a download.
+- Every run that gets as far as writing a folder is added to the shared
+  [history](#history).
+
+### history
+
+```
+sunnify history [--limit N] [--clear] [--json]
+```
+
+Lists recent downloads, newest first: when, how it went (`done`, `partial`,
+`failed`, `stopped`), how many songs were saved, the link, and the folder.
+The desktop app's History button reads the same file, so a playlist
+downloaded from a terminal shows up there and can be re-run with one click.
+`--limit 0` shows everything kept (the newest 200); `--clear` forgets it all.
+With `--json`:
+
+```json
+{"entries": [{"url": "...", "kind": "album", "name": "After Hours - The Weeknd", "folder": "...", "started_at": 1795400000.0, "finished_at": 1795400094.2, "landed": 14, "failed": 0, "status": "done"}]}
+```
 
 ### Exit codes
 
@@ -101,7 +128,7 @@ out, the stream always ends with `run_summary`, even when the run fails
 error envelope:
 
 ```json
-{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false, "cookies": false}
+{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false, "lyrics": false, "cookies": false}
 {"event": "track_done", "title": "...", "artists": "...", "file": "/path/file.mp3", "bytes": 4823041}
 {"event": "track_skipped", "title": "...", "file": "/path/file.mp3"}
 {"event": "warning", "message": "..."}
@@ -120,8 +147,11 @@ Current codes: `invalid_url`, `conflicting_flags`, `out_dir_unusable`,
 (`conflicting_flags` fires on explicit `--title-only --artist-first`; a
 title-only filename has no order, so pass one or the other.)
 
-`info`, `status`, `config`, and `doctor` print a single JSON document with
-`--json`.
+`info`, `status`, `history`, `config`, and `doctor` print a single JSON
+document with `--json`.
+
+The CLI always speaks English, whatever language the desktop app is set to,
+so scripts that read its human output keep working on any locale.
 
 ## YouTube cookies
 
@@ -183,7 +213,8 @@ This CLI is designed to be driven autonomously (per the
 
 | Thing | Location |
 | :--- | :--- |
-| Settings | One shared `config.json`: `sunnify config --set` and the GUI's settings panel read and write the same file, so a choice made in either face applies to both. Flags override it per run. `ui_scale` (75 to 200, percent) sizes the desktop window and nothing else, which makes `sunnify config --set ui_scale=100` the way back if a size left the window larger than the screen. |
+| Settings | One shared `config.json`: `sunnify config --set` and the GUI's settings panel read and write the same file, so a choice made in either face applies to both. Flags override it per run. `ui_scale` (75 to 200, percent) sizes the desktop window and nothing else, which makes `sunnify config --set ui_scale=100` the way back if a size left the window larger than the screen. `language` (`auto`, `en`, `ms`), `theme` (`system`, `dark`, `light`) and `notify` only affect the desktop app. |
+| History | `history.json` next to `config.json`, the newest 200 runs from both faces |
 | Logs | Same rotating session log as the app (`sunnify doctor` shows the dir; "Open logs folder" in the GUI) |
 | Resume manifest | `.sunnify-manifest.jsonl` inside each playlist folder |
 | Run lock | `.sunnify.lock` inside each playlist folder while it downloads, shared by the desktop app and the CLI |

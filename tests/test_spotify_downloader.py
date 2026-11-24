@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from PyQt6 import QtWidgets
 
 
 class TestGetFfmpegPath:
@@ -19,7 +20,7 @@ class TestGetFfmpegPath:
     def test_bundled_ffmpeg_macos(self, tmp_path):
         """Test bundled FFmpeg detection on macOS."""
         # Import the function
-        from Spotify_Downloader import get_ffmpeg_path
+        from sunnify.tools import get_ffmpeg_path
 
         # Mock frozen attribute for PyInstaller
         with (
@@ -38,7 +39,7 @@ class TestGetFfmpegPath:
 
     def test_bundled_ffmpeg_windows(self, tmp_path):
         """Test bundled FFmpeg detection on Windows."""
-        from Spotify_Downloader import get_ffmpeg_path
+        from sunnify.tools import get_ffmpeg_path
 
         with (
             patch.object(sys, "frozen", True, create=True),
@@ -60,7 +61,7 @@ class TestGetFfmpegPath:
     )
     def test_homebrew_ffmpeg(self, tmp_path):
         """Test homebrew FFmpeg detection."""
-        from Spotify_Downloader import get_ffmpeg_path
+        from sunnify.tools import get_ffmpeg_path
 
         # Mock not frozen (running from source)
         with (
@@ -84,7 +85,7 @@ class TestGetFfmpegPath:
     )
     def test_system_ffmpeg_linux(self, tmp_path):
         """Test system FFmpeg detection on Linux."""
-        from Spotify_Downloader import get_ffmpeg_path
+        from sunnify.tools import get_ffmpeg_path
 
         with (
             patch.object(sys, "frozen", False, create=True),
@@ -102,7 +103,7 @@ class TestGetFfmpegPath:
 
     def test_ffmpeg_in_path(self):
         """Test FFmpeg detection via PATH."""
-        from Spotify_Downloader import get_ffmpeg_path
+        from sunnify.tools import get_ffmpeg_path
 
         with (
             patch.object(sys, "frozen", False, create=True),
@@ -114,7 +115,7 @@ class TestGetFfmpegPath:
 
     def test_ffmpeg_not_found(self):
         """Test when FFmpeg is not found anywhere."""
-        from Spotify_Downloader import get_ffmpeg_path
+        from sunnify.tools import get_ffmpeg_path
 
         with (
             patch.object(sys, "frozen", False, create=True),
@@ -130,7 +131,7 @@ class TestMusicScraper:
 
     def test_sanitize_text(self):
         """Test text sanitization for filenames."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         assert scraper.sanitize_text("Hello World") == "Hello World"
@@ -143,8 +144,8 @@ class TestMusicScraper:
 
     def test_format_playlist_name(self):
         """Test playlist name formatting."""
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import PlaylistInfo
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
 
@@ -170,7 +171,7 @@ class TestMusicScraper:
 
     def test_prepare_playlist_folder(self, tmp_path):
         """Test playlist folder creation."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         base = str(tmp_path)
@@ -181,7 +182,7 @@ class TestMusicScraper:
 
     def test_prepare_playlist_folder_sanitizes_name(self, tmp_path):
         """Test that folder names are sanitized."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         base = str(tmp_path)
@@ -192,8 +193,8 @@ class TestMusicScraper:
     def test_prepare_playlist_folder_escapes_reserved_device_name(self, tmp_path):
         """A playlist named like a Windows reserved device name must not produce
         an uncreatable folder on Windows (CON -> _CON)."""
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import _RESERVED_DEVICE_NAMES
+        from sunnify.engine import MusicScraper
 
         result = MusicScraper().prepare_playlist_folder(str(tmp_path), "CON")
         assert os.path.basename(result).split(".")[0].upper() not in _RESERVED_DEVICE_NAMES
@@ -202,7 +203,7 @@ class TestMusicScraper:
     def test_prepare_playlist_folder_keeps_unicode_and_punctuation(self, tmp_path):
         """Accented/non-Latin letters survive and punctuation is preserved now
         that folders use sanitize_filename (matches the track-file behavior)."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         result = MusicScraper().prepare_playlist_folder(str(tmp_path), "Café Mix - RØRY")
         assert os.path.basename(result) == "Café Mix - RØRY"
@@ -211,7 +212,7 @@ class TestMusicScraper:
     def test_prepare_playlist_folder_reuses_legacy_folder(self, tmp_path):
         """Backward-compat: reuse a folder from the older ascii-only naming so
         the per-folder resume manifest isn't orphaned by the sanitizer switch."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         base = str(tmp_path)
         legacy = os.path.join(base, "My Mix  Owner")  # old build dropped the hyphen
@@ -224,8 +225,8 @@ class TestMusicScraper:
     def test_prepare_playlist_folder_escapes_superscript_device_name(self, tmp_path):
         """Windows reserves the superscript COM/LPT variants too (COM(1-3));
         a playlist named that must not produce an uncreatable folder."""
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import _RESERVED_DEVICE_NAMES
+        from sunnify.engine import MusicScraper
 
         result = MusicScraper().prepare_playlist_folder(str(tmp_path), "COM¹")
         assert os.path.basename(result).split(".")[0].upper() not in _RESERVED_DEVICE_NAMES
@@ -234,17 +235,9 @@ class TestMusicScraper:
         assert "/" not in os.path.basename(result)
         assert ":" not in os.path.basename(result)
 
-    def test_returnSPOT_ID(self):
-        """Test playlist ID extraction."""
-        from Spotify_Downloader import MusicScraper
-
-        scraper = MusicScraper()
-        url = "https://open.spotify.com/playlist/abc123xyz"
-        assert scraper.returnSPOT_ID(url) == "abc123xyz"
-
     def test_increment_counter(self):
         """Test counter incrementing."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         assert scraper.counter == 0
@@ -262,7 +255,7 @@ class TestResumeManifest:
 
     @staticmethod
     def _scraper():
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         return MusicScraper()
 
@@ -306,12 +299,12 @@ class TestDownloadTrackAudioOpts:
 
     def test_ydl_opts_include_retries(self):
         """Verify yt-dlp retries option is set."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         with (
-            patch("Spotify_Downloader.get_ffmpeg_path", return_value="/usr/bin"),
-            patch("Spotify_Downloader.YoutubeDL") as mock_ydl,
+            patch("sunnify.tools.get_ffmpeg_path", return_value="/usr/bin"),
+            patch("sunnify.engine.YoutubeDL") as mock_ydl,
         ):
             mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
             mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
@@ -324,12 +317,12 @@ class TestDownloadTrackAudioOpts:
 
     def test_ydl_opts_include_socket_timeout(self):
         """Verify yt-dlp socket_timeout is set."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         with (
-            patch("Spotify_Downloader.get_ffmpeg_path", return_value="/usr/bin"),
-            patch("Spotify_Downloader.YoutubeDL") as mock_ydl,
+            patch("sunnify.tools.get_ffmpeg_path", return_value="/usr/bin"),
+            patch("sunnify.engine.YoutubeDL") as mock_ydl,
         ):
             mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
             mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
@@ -340,12 +333,12 @@ class TestDownloadTrackAudioOpts:
 
     def test_ydl_opts_include_concurrent_fragments(self):
         """Verify yt-dlp concurrent_fragment_downloads is set."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         with (
-            patch("Spotify_Downloader.get_ffmpeg_path", return_value="/usr/bin"),
-            patch("Spotify_Downloader.YoutubeDL") as mock_ydl,
+            patch("sunnify.tools.get_ffmpeg_path", return_value="/usr/bin"),
+            patch("sunnify.engine.YoutubeDL") as mock_ydl,
         ):
             mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
             mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
@@ -365,13 +358,13 @@ class TestYoutubeMatchSelection:
 
     @staticmethod
     def _scraper():
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         return MusicScraper()
 
     def _patched(self, entries):
         candidates = {"entries": entries}
-        ctx = patch("Spotify_Downloader.YoutubeDL")
+        ctx = patch("sunnify.engine.YoutubeDL")
         mock_ydl = ctx.start()
         mock_ydl.return_value.__enter__ = MagicMock(return_value=mock_ydl)
         mock_ydl.return_value.__exit__ = MagicMock(return_value=False)
@@ -596,14 +589,14 @@ class TestYoutubeMatchSelection:
     def test_normalize_strips_apostrophes_without_creating_word_breaks(self):
         """`I'm Yours` -> `im yours` (not `i m yours`) so it matches a YT
         upload titled `Jason Mraz - I'm Yours`."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         assert MusicScraper._normalize_title("I'm Yours") == "im yours"
         assert MusicScraper._normalize_title("Don't Stop Me Now") == "dont stop me now"
 
     def test_normalize_strips_diacritics(self):
         """Café -> cafe (NFKD); MONTAGEM BAILÃO -> montagem bailao."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         assert MusicScraper._normalize_title("Café") == "cafe"
         assert MusicScraper._normalize_title("MONTAGEM BAILÃO") == "montagem bailao"
@@ -613,7 +606,7 @@ class TestYoutubeMatchSelection:
         """The old [^a-z0-9] class erased Cyrillic/CJK/Greek titles to "" so
         no candidate could ever match (#77). Normalization must keep word
         characters from any script, lowercased where the script has case."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         assert MusicScraper._normalize_title("Группа крови") == "группа крови"
         assert MusicScraper._normalize_title("君の名は") == "君の名は"
@@ -691,7 +684,7 @@ class TestYoutubeMatchSelection:
         """Pin the exact normalized forms the #52 guardrail decisions rely on;
         the unicode-aware class must be byte-identical to the old ASCII one
         for Latin input (proven by 100k-case fuzz before shipping)."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         pins = {
             "Mi Gente (feat. J Balvin)": "mi gente",
@@ -713,21 +706,21 @@ class TestDetectImageMime:
     """
 
     def test_jpeg_magic(self):
-        from Spotify_Downloader import _detect_image_mime
+        from sunnify.tagging import _detect_image_mime
 
         # JPEG: every variant starts with FF D8 FF (JFIF / Exif / SOI markers)
         assert _detect_image_mime(b"\xff\xd8\xff\xe0\x00\x10JFIF") == "image/jpeg"
         assert _detect_image_mime(b"\xff\xd8\xff\xdb") == "image/jpeg"
 
     def test_png_magic(self):
-        from Spotify_Downloader import _detect_image_mime
+        from sunnify.tagging import _detect_image_mime
 
         # PNG: 8-byte signature per W3C spec section 5.2
         png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
         assert _detect_image_mime(png) == "image/png"
 
     def test_unknown_falls_back_to_jpeg(self):
-        from Spotify_Downloader import _detect_image_mime
+        from sunnify.tagging import _detect_image_mime
 
         # Anything we can't identify (a future webp/avif response, say) is
         # claimed as jpeg so we still hand the writer *something* coherent.
@@ -760,7 +753,7 @@ class TestMp3MetadataIsV23:
         empty.save(path)
 
     def test_writes_id3v23_header(self, tmp_path):
-        from Spotify_Downloader import _write_metadata_mp3
+        from sunnify.tagging import _write_metadata_mp3
 
         path = str(tmp_path / "v23.mp3")
         self._minimal_mp3(path)
@@ -780,7 +773,7 @@ class TestMp3MetadataIsV23:
     def test_apic_frame_v23_encoding(self, tmp_path):
         from mutagen.id3 import ID3
 
-        from Spotify_Downloader import _write_metadata_mp3
+        from sunnify.tagging import _write_metadata_mp3
 
         path = str(tmp_path / "apic.mp3")
         self._minimal_mp3(path)
@@ -816,7 +809,7 @@ class TestMp3MetadataIsV23:
         """Non-ASCII titles/artists must survive the v2.3 downgrade."""
         from mutagen.easyid3 import EasyID3
 
-        from Spotify_Downloader import _write_metadata_mp3
+        from sunnify.tagging import _write_metadata_mp3
 
         path = str(tmp_path / "unicode.mp3")
         self._minimal_mp3(path)
@@ -842,7 +835,7 @@ class TestMp3MetadataIsV23:
         """A PNG-magic cover must produce APIC mime=image/png, not jpeg."""
         from mutagen.id3 import ID3
 
-        from Spotify_Downloader import _write_metadata_mp3
+        from sunnify.tagging import _write_metadata_mp3
 
         path = str(tmp_path / "png.mp3")
         self._minimal_mp3(path)
@@ -891,7 +884,7 @@ class TestFlacMetadata:
     def test_single_write_embeds_one_cover_and_tags(self, tmp_path):
         from mutagen.flac import FLAC
 
-        from Spotify_Downloader import _write_metadata_flac
+        from sunnify.tagging import _write_metadata_flac
 
         path = str(tmp_path / "one.flac")
         self._minimal_flac(path)
@@ -919,7 +912,7 @@ class TestFlacMetadata:
     def test_retag_stays_at_one_cover(self, tmp_path):
         from mutagen.flac import FLAC
 
-        from Spotify_Downloader import _write_metadata_flac
+        from sunnify.tagging import _write_metadata_flac
 
         path = str(tmp_path / "twice.flac")
         self._minimal_flac(path)
@@ -939,7 +932,7 @@ class TestFlacMetadata:
     def test_no_cover_writes_tags_without_picture(self, tmp_path):
         from mutagen.flac import FLAC
 
-        from Spotify_Downloader import _write_metadata_flac
+        from sunnify.tagging import _write_metadata_flac
 
         path = str(tmp_path / "nocover.flac")
         self._minimal_flac(path)
@@ -955,7 +948,7 @@ class TestWritingMetaTagsThread:
 
     def test_meta_tags_written_to_file(self, tmp_path):
         """Verify ID3 tags are written correctly."""
-        from Spotify_Downloader import WritingMetaTagsThread
+        from sunnify.tagging import WritingMetaTagsThread
 
         # Create a minimal valid MP3 file for mutagen
         mp3_path = str(tmp_path / "test.mp3")
@@ -977,7 +970,7 @@ class TestWritingMetaTagsThread:
         # Mock the signal
         thread.tags_success = MagicMock()
 
-        with patch("Spotify_Downloader.EasyID3") as mock_easy:
+        with patch("sunnify.tagging.EasyID3") as mock_easy:
             mock_audio = MagicMock()
             mock_easy.return_value = mock_audio
             thread.run()
@@ -989,7 +982,7 @@ class TestWritingMetaTagsThread:
 
     def test_cover_art_fetched_synchronously(self):
         """Verify cover art is downloaded synchronously, not via nested QThread."""
-        from Spotify_Downloader import WritingMetaTagsThread
+        from sunnify.tagging import WritingMetaTagsThread
 
         tags = {
             "title": "Test",
@@ -1005,19 +998,24 @@ class TestWritingMetaTagsThread:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.content = b"\x89PNG\r\n\x1a\n"  # Fake image data
+        mock_response.headers = {"content-length": "8"}
+        mock_response.iter_content.return_value = [b"\x89PNG\r\n\x1a\n"]  # Fake image data
 
         with (
-            patch("Spotify_Downloader.EasyID3") as mock_easy,
-            patch("Spotify_Downloader.ID3") as mock_id3,
-            patch("Spotify_Downloader.requests.get", return_value=mock_response) as mock_get,
+            patch("sunnify.tagging.EasyID3") as mock_easy,
+            patch("sunnify.tagging.ID3") as mock_id3,
+            patch("requests.get", return_value=mock_response) as mock_get,
         ):
             mock_easy.return_value = MagicMock()
             mock_id3.return_value = MagicMock()
             thread.run()
 
-            # Verify synchronous requests.get was called (not DownloadCover QThread)
-            mock_get.assert_called_once_with("https://example.com/cover.jpg", timeout=15)
+            # Verify synchronous requests.get was called (not DownloadCover QThread),
+            # streamed so sunnify.net can cap the size before reading it all
+            mock_get.assert_called_once_with(
+                "https://example.com/cover.jpg", timeout=15, stream=True
+            )
+            mock_response.close.assert_called_once()
             # Verify APIC frame was added via id3.add(APIC(...)) and the tag
             # was saved as v2.3 for max player compatibility (closes #46)
             mock_id3.return_value.add.assert_called_once()
@@ -1026,7 +1024,7 @@ class TestWritingMetaTagsThread:
 
     def test_cover_art_failure_does_not_crash(self):
         """Verify cover art failure is handled gracefully."""
-        from Spotify_Downloader import WritingMetaTagsThread
+        from sunnify.tagging import WritingMetaTagsThread
 
         tags = {
             "title": "Test",
@@ -1041,9 +1039,9 @@ class TestWritingMetaTagsThread:
         thread.tags_success = MagicMock()
 
         with (
-            patch("Spotify_Downloader.EasyID3") as mock_easy,
+            patch("sunnify.tagging.EasyID3") as mock_easy,
             patch(
-                "Spotify_Downloader.requests.get",
+                "requests.get",
                 side_effect=requests.RequestException("timeout"),
             ),
         ):
@@ -1058,7 +1056,7 @@ class TestStopButtonCooperative:
 
     def test_cancel_event_stops_playlist_iteration(self):
         """Verify cancel event halts playlist download loop."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         cancel_event = threading.Event()
         scraper = MusicScraper(cancel_event=cancel_event)
@@ -1069,7 +1067,7 @@ class TestStopButtonCooperative:
 
     def test_scraper_thread_request_cancel(self):
         """Verify ScraperThread.request_cancel sets the event."""
-        from Spotify_Downloader import ScraperThread
+        from sunnify.engine import ScraperThread
 
         thread = ScraperThread("https://open.spotify.com/playlist/abc123")
         assert not thread._cancel_event.is_set()
@@ -1082,7 +1080,7 @@ class TestScraperThread:
 
     def test_init_defaults(self):
         """Test ScraperThread initialization."""
-        from Spotify_Downloader import ScraperThread
+        from sunnify.engine import ScraperThread
 
         thread = ScraperThread("https://open.spotify.com/playlist/abc123")
         assert thread.spotify_link == "https://open.spotify.com/playlist/abc123"
@@ -1090,7 +1088,7 @@ class TestScraperThread:
 
     def test_init_custom_folder(self, tmp_path):
         """Test ScraperThread with custom folder."""
-        from Spotify_Downloader import ScraperThread
+        from sunnify.engine import ScraperThread
 
         folder = str(tmp_path)
         thread = ScraperThread("https://open.spotify.com/playlist/abc123", folder)
@@ -1118,7 +1116,7 @@ class TestParallelDownloads:
 
     def test_max_workers_default_is_four(self):
         """Default parallel worker count matches measured sweet spot."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         assert MusicScraper.MAX_WORKERS == 4
 
@@ -1126,7 +1124,7 @@ class TestParallelDownloads:
         """Parallel increment_counter calls produce correct total with no races."""
         import concurrent.futures
 
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         # Stub the signal so we don't need a QApplication for this test
@@ -1142,7 +1140,7 @@ class TestParallelDownloads:
         """Parallel appends to _failed_tracks don't lose entries."""
         import concurrent.futures
 
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
 
@@ -1158,7 +1156,7 @@ class TestParallelDownloads:
 
     def test_small_playlist_stays_sequential(self, tmp_path):
         """Playlists under the parallel threshold (3 tracks) run on one thread."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1201,7 +1199,7 @@ class TestParallelDownloads:
 
     def test_parallel_playlist_uses_max_workers_threads(self, tmp_path):
         """Playlists >= threshold actually spawn MAX_WORKERS distinct threads."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1250,7 +1248,7 @@ class TestParallelDownloads:
 
     def test_exception_in_one_worker_does_not_abort_others(self, tmp_path):
         """A failure on one track must not prevent other tracks from finishing."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1294,7 +1292,7 @@ class TestParallelDownloads:
 
     def test_generator_is_materialized_before_threading(self, tmp_path):
         """Generator is fully consumed on the main thread before worker submission."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1336,7 +1334,7 @@ class TestParallelDownloads:
 
     def test_cancel_before_threading_exits_early(self, tmp_path):
         """Cancel set before worker pool starts prevents any downloads."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         cancel_event = threading.Event()
         scraper = MusicScraper(cancel_event=cancel_event)
@@ -1382,7 +1380,7 @@ class TestParallelDownloads:
 
     def test_existing_files_are_skipped_in_parallel_mode(self, tmp_path):
         """Already-downloaded tracks aren't re-downloaded when parallelism is on."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1436,7 +1434,7 @@ class TestParallelDownloads:
         Audit fix H3: repeated use of the same MusicScraper must not carry
         stale counter or failure state.
         """
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         # Pre-populate with junk state as if a prior run left residue
@@ -1481,7 +1479,7 @@ class TestParallelDownloads:
 
         Audit fix M1: parallel downloads can't TOCTOU-race into the same file.
         """
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1557,7 +1555,7 @@ class TestParallelDownloads:
         workers and shows whichever track most recently started, which is
         fine. add_song_meta still fires for ID3 tag writing.
         """
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1600,7 +1598,7 @@ class TestParallelDownloads:
         Audit fix H1: progress bar can't jitter because we emit counter/total
         once per completion instead of per-worker per-byte.
         """
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1680,8 +1678,8 @@ class TestMainWindowInteractions:
         win._config["cookies_file"] = str(tmp_path / "missing.txt")
         win.PlaylistLink.setText("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT")
         with (
-            patch.object(sd, "get_ffmpeg_path", return_value=str(tmp_path)),
-            patch.object(sd.QMessageBox, "warning") as warning,
+            patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)),
+            patch.object(QtWidgets.QMessageBox, "warning") as warning,
         ):
             win.on_returnButton()
         assert warning.call_count == 1
@@ -1692,7 +1690,7 @@ class TestMainWindowInteractions:
     def test_preview_open_close_animation(self, qapp):
         """OpenSongInformation drives a QPropertyAnimation with an easing curve;
         this is the exact path the qt6 QEasingCurve enum-scoping bug crashed on."""
-        from Spotify_Downloader import MainWindow
+        from sunnify.gui.window import MainWindow
 
         win = MainWindow()
         win.OpenSongInformation()
@@ -1702,7 +1700,7 @@ class TestMainWindowInteractions:
     def test_show_preview_slot_both_states(self, qapp):
         """The 'Show Preview' checkbox slot compares the emitted state to 2;
         pyqt6 still emits a plain int here, but drive both branches to be sure."""
-        from Spotify_Downloader import MainWindow
+        from sunnify.gui.window import MainWindow
 
         win = MainWindow()
         win.showPreviewCheck.setChecked(True)
@@ -1715,7 +1713,7 @@ class TestMainWindowInteractions:
         from PyQt6.QtCore import QEvent, QPointF, Qt
         from PyQt6.QtGui import QMouseEvent
 
-        from Spotify_Downloader import MainWindow
+        from sunnify.gui.window import MainWindow
 
         win = MainWindow()
         no_mod = Qt.KeyboardModifier.NoModifier
@@ -1756,7 +1754,7 @@ class TestMainWindowInteractions:
         import Spotify_Downloader as sd
 
         called = []
-        monkeypatch.setattr(sd.QApplication, "quit", lambda *_: called.append(True))
+        monkeypatch.setattr(QtWidgets.QApplication, "quit", lambda *_: called.append(True))
         win = sd.MainWindow()
         win.exitprogram()  # must not raise SystemExit
         assert called == [True]
@@ -1821,7 +1819,7 @@ class TestCoverEnrichment:
 
     def test_missing_cover_triggers_enrichment(self, tmp_path):
         """Track with cover_url=None causes a get_track call for the real cover."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
@@ -1833,7 +1831,7 @@ class TestCoverEnrichment:
         scraper.spotifydown_api = mock_api
 
         captured = []
-        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+        scraper.add_song_meta.emit.side_effect = captured.append
 
         scraper._download_one_track(
             self._track(cover=None), str(tmp_path), "fallback-playlist-cover"
@@ -1846,8 +1844,8 @@ class TestCoverEnrichment:
         """A track that already carries everything the tags need does not
         trigger a second network call. Cover alone is no longer enough: the
         playlist feeds also omit album, which is what #104 was."""
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import TrackInfo
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
@@ -1873,7 +1871,7 @@ class TestCoverEnrichment:
     def test_missing_album_triggers_enrichment(self, tmp_path):
         """#104: playlist feeds return album=None for every track, so a cover
         on its own must not short-circuit the fetch that carries the album."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
@@ -1886,7 +1884,7 @@ class TestCoverEnrichment:
         scraper.spotifydown_api = mock_api
 
         captured = []
-        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+        scraper.add_song_meta.emit.side_effect = captured.append
 
         scraper._download_one_track(
             self._track(cover="https://already/present.jpg"), str(tmp_path), "fallback"
@@ -1896,8 +1894,8 @@ class TestCoverEnrichment:
 
     def test_enrichment_failure_falls_back_to_playlist_cover(self, tmp_path):
         """If get_track raises, the worker silently falls back to default_cover_url."""
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import SpotifyDownAPIError
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
@@ -1908,7 +1906,7 @@ class TestCoverEnrichment:
         scraper.spotifydown_api = mock_api
 
         captured = []
-        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+        scraper.add_song_meta.emit.side_effect = captured.append
 
         scraper._download_one_track(
             self._track(cover=None), str(tmp_path), "playlist-cover-fallback"
@@ -1917,7 +1915,7 @@ class TestCoverEnrichment:
 
     def test_no_enrichment_when_cancelled(self, tmp_path):
         """Cancel set before worker runs skips enrichment + download entirely."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         cancel = threading.Event()
         scraper = MusicScraper(cancel_event=cancel)
@@ -1935,7 +1933,7 @@ class TestCoverEnrichment:
 
     def test_enrichment_preserves_existing_release_date(self, tmp_path):
         """If the track already has release_date, enrichment shouldn't clobber it."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         self._stub_scraper_signals(scraper)
@@ -1947,7 +1945,7 @@ class TestCoverEnrichment:
         scraper.spotifydown_api = mock_api
 
         captured = []
-        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+        scraper.add_song_meta.emit.side_effect = captured.append
 
         original = self._track(cover=None, release_date="2024-12-31")
         scraper._download_one_track(original, str(tmp_path), "fallback")
@@ -1974,7 +1972,7 @@ class TestTrackNumberMetadata:
 
     def test_track_num_in_song_meta(self, tmp_path):
         """_download_one_track threads track_num into the emitted song_meta."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -1992,20 +1990,20 @@ class TestTrackNumberMetadata:
         scraper.download_track_audio = lambda _q, d, **_kw: open(d, "wb").close() or d
 
         captured = []
-        scraper.add_song_meta.emit.side_effect = lambda meta: captured.append(meta)
+        scraper.add_song_meta.emit.side_effect = captured.append
 
         scraper._download_one_track(self._track(), str(tmp_path), "", track_num=7)
         assert captured[0]["trackNumber"] == 7
 
     def test_writingmetatagsthread_writes_tracknumber(self, tmp_path, mocker):
         """WritingMetaTagsThread writes trackNumber to ID3 when present."""
-        from Spotify_Downloader import WritingMetaTagsThread
+        from sunnify.tagging import WritingMetaTagsThread
 
         # Mock EasyID3/ID3 so we can inspect what was written without a real mp3
         mock_easy = mocker.MagicMock()
-        mocker.patch("Spotify_Downloader.EasyID3", return_value=mock_easy)
+        mocker.patch("sunnify.tagging.EasyID3", return_value=mock_easy)
         mocker.patch(
-            "Spotify_Downloader.requests.get",
+            "requests.get",
             return_value=mocker.MagicMock(status_code=200, content=b""),
         )
 
@@ -2024,12 +2022,12 @@ class TestTrackNumberMetadata:
 
     def test_writingmetatagsthread_skips_tracknumber_when_zero(self, tmp_path, mocker):
         """trackNumber=0 (unset) should not write a tag."""
-        from Spotify_Downloader import WritingMetaTagsThread
+        from sunnify.tagging import WritingMetaTagsThread
 
         mock_easy = mocker.MagicMock()
-        mocker.patch("Spotify_Downloader.EasyID3", return_value=mock_easy)
+        mocker.patch("sunnify.tagging.EasyID3", return_value=mock_easy)
         mocker.patch(
-            "Spotify_Downloader.requests.get",
+            "requests.get",
             return_value=mocker.MagicMock(status_code=200, content=b""),
         )
 
@@ -2089,7 +2087,7 @@ class TestTrackNumberInFilename:
 
     def test_default_off_keeps_legacy_filename(self, tmp_path):
         """Default is opt-out: `Title - Artist.mp3`, same as before this feature."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         assert scraper.include_track_number is False
@@ -2109,7 +2107,7 @@ class TestTrackNumberInFilename:
 
     def test_enabled_writes_padded_prefix(self, tmp_path):
         """When the user opts in, filenames get the zero-padded `NN. ` prefix."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(include_track_number=True)
         self._stub(scraper)
@@ -2134,8 +2132,8 @@ class TestTrackNumberInFilename:
         order, so a file named '113. ON FIRE.mp3' was actually playlist
         position 112.
         """
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import TrackInfo
+        from sunnify.engine import MusicScraper
 
         # Simulate a 4-track yield where positions don't match enumerate
         # idx: yield-1 has position 4, yield-2 has position 1, etc.
@@ -2206,8 +2204,8 @@ class TestTrackNumberInFilename:
         """If a track has no position (e.g. albums, very small playlists
         where TrackInfo wasn't stamped), the loop falls back to enumerate
         idx so we don't regress the existing behaviour for those cases."""
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import TrackInfo
+        from sunnify.engine import MusicScraper
 
         def trk(tid):
             return TrackInfo(
@@ -2261,7 +2259,7 @@ class TestTrackNumberInFilename:
         Without this, the same playlist mixes `03. Foo - Bar.mp3` with
         `3. Foo - Bar [id].mp3`, which sorts wrong and looks broken.
         """
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(include_track_number=True)
         self._stub(scraper)
@@ -2282,12 +2280,12 @@ class TestTrackNumberInFilename:
 
     def test_non_bool_config_falls_back_to_default(self):
         """Bool validation in load_config must reject non-bool values (defensive)."""
-        from Spotify_Downloader import load_config
+        from sunnify.config import load_config
 
         # We can't easily exercise the file path here, but the validation
         # branch itself is small enough to exercise via construction:
         scraper_cls_args = ["yes", "no", 1, 0, "true", None]
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         for v in scraper_cls_args:
             s = MusicScraper(include_track_number=v)
@@ -2349,7 +2347,7 @@ class TestArtistFirstInFilename:
         return captured
 
     def test_default_off_keeps_legacy_order(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         assert scraper.artist_first is False
@@ -2357,7 +2355,7 @@ class TestArtistFirstInFilename:
         assert captured[0].endswith("Title - Artist.mp3")
 
     def test_enabled_swaps_order(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         captured = self._run(MusicScraper(artist_first=True), tmp_path)
         assert captured[0].endswith("Artist - Title.mp3")
@@ -2365,7 +2363,7 @@ class TestArtistFirstInFilename:
     def test_composes_with_track_number(self, tmp_path):
         """Both toggles on: the padded prefix stays first, then the swapped
         pair - '03. Artist - Title.mp3'."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         captured = self._run(MusicScraper(artist_first=True, include_track_number=True), tmp_path)
         assert os.path.basename(captured[0]) == "03. Artist - Title.mp3"
@@ -2373,7 +2371,7 @@ class TestArtistFirstInFilename:
     def test_collision_suffix_keeps_swapped_order(self, tmp_path):
         """The collision-guard variant (same sanitized name in flight) must
         use the same order as the primary path."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(artist_first=True)
         self._stub(scraper)
@@ -2394,8 +2392,8 @@ class TestArtistFirstInFilename:
     def test_cyrillic_title_survives_both_orders(self, tmp_path):
         """i18n + order swap together: non-Latin characters pass through
         sanitize_filename untouched in either position (#77)."""
-        from Spotify_Downloader import MusicScraper
         from spotifydown_api import TrackInfo
+        from sunnify.engine import MusicScraper
 
         track = TrackInfo(
             id="k1",
@@ -2439,8 +2437,8 @@ class TestSampleRateOption:
 
         captured = []
         with (
-            patch("Spotify_Downloader.get_ffmpeg_path", return_value="/usr/bin/true"),
-            patch("Spotify_Downloader.YoutubeDL") as ydl,
+            patch("sunnify.tools.get_ffmpeg_path", return_value="/usr/bin/true"),
+            patch("sunnify.engine.YoutubeDL") as ydl,
         ):
             ydl.side_effect = lambda opts: (
                 captured.append(opts)
@@ -2455,7 +2453,7 @@ class TestSampleRateOption:
         return captured
 
     def test_default_auto_adds_no_postprocessor_args(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(audio_format="flac")
         assert scraper.sample_rate == "auto"
@@ -2463,7 +2461,7 @@ class TestSampleRateOption:
         assert opts and "postprocessor_args" not in opts[0]
 
     def test_forced_rate_rides_extractaudio_key(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         opts = self._captured_opts(MusicScraper(audio_format="flac", sample_rate="44100"))
         assert opts[0]["postprocessor_args"] == {"extractaudio": ["-ar", "44100"]}
@@ -2472,14 +2470,14 @@ class TestSampleRateOption:
         """opus: libopus is 48 kHz-only. m4a: yt-dlp stream-copies aac
         sources and ffmpeg drops -ar under copy, so the option would only
         sometimes work - it's excluded instead."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         for fmt in ("opus", "m4a"):
             opts = self._captured_opts(MusicScraper(audio_format=fmt, sample_rate="44100"))
             assert "postprocessor_args" not in opts[0], fmt
 
     def test_invalid_rate_coerces_to_auto(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         assert MusicScraper(sample_rate="22050").sample_rate == "auto"
         assert MusicScraper(sample_rate=None).sample_rate == "auto"
@@ -2535,13 +2533,13 @@ class TestTitleOnlyFilename:
         return captured
 
     def test_title_alone(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         captured = self._run(MusicScraper(title_only=True), tmp_path)
         assert os.path.basename(captured[0]) == "Title.mp3"
 
     def test_composes_with_track_number(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         captured = self._run(MusicScraper(title_only=True, include_track_number=True), tmp_path)
         assert os.path.basename(captured[0]) == "03. Title.mp3"
@@ -2549,33 +2547,33 @@ class TestTitleOnlyFilename:
     def test_overrides_artist_first(self, tmp_path):
         """Both on: title_only wins (the GUI greys artist_first out, but the
         config file can still hold both)."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         captured = self._run(MusicScraper(title_only=True, artist_first=True), tmp_path)
         assert os.path.basename(captured[0]) == "Title.mp3"
 
     def test_single_track_shape(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(title_only=True)
         assert scraper._compose_filename("Title", "Artist") == "Title.mp3"
 
     def test_empty_title_falls_back(self):
         """A title that sanitizes to nothing must not yield '.mp3'."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(title_only=True)
         assert scraper._compose_filename("", "Artist") == "Artist.mp3"
         assert scraper._compose_filename("", "") == "track.mp3"
 
     def test_unicode_title_survives(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(title_only=True)
         assert scraper._compose_filename("Группа крови", "Кино") == "Группа крови.mp3"
 
     def test_inflight_collision_suffixes(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(title_only=True)
         scraper._in_flight_files.add(os.path.join(str(tmp_path), "Title.mp3").casefold())
@@ -2585,7 +2583,7 @@ class TestTitleOnlyFilename:
     def test_inflight_collision_is_case_insensitive(self, tmp_path):
         """'Home' and 'home' are distinct strings but the same file on
         macOS/Windows filesystems; the claim must fold case."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(title_only=True)
         scraper._in_flight_files.add(os.path.join(str(tmp_path), "home.mp3").casefold())
@@ -2595,7 +2593,7 @@ class TestTitleOnlyFilename:
     def test_sequential_same_run_collision(self, tmp_path):
         """Track A finishes before same-titled track B starts (sequential, not
         parallel): B must suffix, not mistake A's file for its own resume hit."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(title_only=True)
         scraper._load_manifest(str(tmp_path))
@@ -2607,7 +2605,7 @@ class TestTitleOnlyFilename:
     def test_cross_run_collision_via_manifest(self, tmp_path):
         """A later run downloading a different same-titled track must suffix
         instead of skipping against the first track's file."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         run1 = MusicScraper(title_only=True)
         run1._load_manifest(str(tmp_path))
@@ -2621,7 +2619,7 @@ class TestTitleOnlyFilename:
 
     def test_cross_run_resume_hit_still_skips(self, tmp_path):
         """The same track re-downloaded is a resume hit, never a collision."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         run1 = MusicScraper(title_only=True)
         run1._load_manifest(str(tmp_path))
@@ -2636,7 +2634,7 @@ class TestTitleOnlyFilename:
     def test_crash_recovery_unmapped_file_still_skips(self, tmp_path):
         """File present but manifest lost (hard kill): stays a resume hit so
         recovery keeps skipping instead of re-downloading."""
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper(title_only=True)
         scraper._load_manifest(str(tmp_path))
@@ -2657,7 +2655,7 @@ class TestRetryPlayerClients:
     def test_every_retry_client_is_one_ytdlp_still_ships(self):
         from yt_dlp.extractor.youtube._base import INNERTUBE_CLIENTS
 
-        from Spotify_Downloader import _RETRY_CLIENTS, _retry_player_clients
+        from sunnify.engine import _RETRY_CLIENTS, _retry_player_clients
 
         live = _retry_player_clients()
         assert live, "retry set must not be empty"
@@ -2670,7 +2668,9 @@ class TestRetryPlayerClients:
         retired name must be filtered out rather than sent to yt-dlp."""
         import Spotify_Downloader as sd
 
-        monkeypatch.setattr(sd, "_RETRY_CLIENTS", ("android", "definitely_retired_client"))
+        monkeypatch.setattr(
+            "sunnify.engine._RETRY_CLIENTS", ("android", "definitely_retired_client")
+        )
         live = sd._retry_player_clients()
         assert live == ("android",)
 
@@ -2697,7 +2697,7 @@ class TestRetryPlayerClients:
         uses its own maintained defaults instead of erroring."""
         import Spotify_Downloader as sd
 
-        monkeypatch.setattr(sd, "_retry_player_clients", lambda: ())
+        monkeypatch.setattr("sunnify.engine._retry_player_clients", lambda: ())
         scraper = sd.MusicScraper()
         captured = []
 
@@ -2714,9 +2714,9 @@ class TestRetryPlayerClients:
             def extract_info(self, *a, **k):
                 return None
 
-        monkeypatch.setattr(sd, "YoutubeDL", FakeYDL)
+        monkeypatch.setattr("sunnify.engine.YoutubeDL", FakeYDL)
         monkeypatch.setattr(scraper, "_select_youtube_match", lambda *_a, **_k: "https://y/x")
-        monkeypatch.setattr(sd, "get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+        monkeypatch.setattr("sunnify.tools.get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
         with contextlib.suppress(Exception):
             scraper.download_track_audio("q", "/tmp/never-written.mp3")
         assert captured, "expected at least one yt-dlp invocation"
@@ -2741,9 +2741,9 @@ class TestRetryPlayerClients:
             def extract_info(self, *a, **k):
                 return None
 
-        monkeypatch.setattr(sd, "YoutubeDL", FakeYDL)
+        monkeypatch.setattr("sunnify.engine.YoutubeDL", FakeYDL)
         monkeypatch.setattr(scraper, "_select_youtube_match", lambda *_a, **_k: "https://y/x")
-        monkeypatch.setattr(sd, "get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
+        monkeypatch.setattr("sunnify.tools.get_ffmpeg_path", lambda: "/usr/bin/ffmpeg")
         with contextlib.suppress(Exception):
             scraper.download_track_audio("q", "/tmp/never-written.mp3")
         retry = [o for o in captured if "extractor_args" in o]
@@ -2763,7 +2763,7 @@ class TestSingleTrackFailureAccounting:
     """
 
     def _scraper(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         s = MusicScraper()
         for sig in (
@@ -2834,7 +2834,7 @@ class TestNetworkBlockNotice:
     in words, instead of N generic per-track failures (v2.4.1)."""
 
     def _scraper(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         s = MusicScraper()
         s.error_signal = MagicMock()
@@ -2842,7 +2842,7 @@ class TestNetworkBlockNotice:
 
     # verbatim from the log attached to issue #95
     BLOCKED = (
-        "ERROR: [youtube] k-OpYrXrfAY: Sign in to confirm you’re not a bot. "
+        "ERROR: [youtube] k-OpYrXrfAY: Sign in to confirm you\u2019re not a bot. "
         "Use --cookies-from-browser or --cookies for the authentication."
     )
 
@@ -2903,27 +2903,27 @@ class TestYoutubeCookies:
                 return False
 
         with (
-            patch("Spotify_Downloader.YoutubeDL", FakeYDL),
+            patch("sunnify.engine.YoutubeDL", FakeYDL),
             scraper._youtube(opts or {"quiet": True}),
         ):
             pass
         return seen
 
     def test_without_cookies_no_js_runtime_is_enabled(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         seen = self._capture_ydl(MusicScraper())
         assert seen["params"]["js_runtimes"] == {}
         assert "cookiefile" not in seen["params"]
 
     def test_cookies_go_through_a_private_copy_that_is_removed(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         user_file = tmp_path / "cookies.txt"
         user_file.write_text(GOOD_COOKIES, encoding="utf-8")
         before = user_file.read_bytes()
         deno = str(tmp_path / "deno")
-        with patch("Spotify_Downloader.find_js_runtime", return_value=("deno", deno)):
+        with patch("sunnify.tools.find_js_runtime", return_value=("deno", deno)):
             seen = self._capture_ydl(MusicScraper(cookies_file=str(user_file)))
         copy = seen["params"]["cookiefile"]
         assert os.path.abspath(copy) != os.path.abspath(str(user_file))
@@ -2933,18 +2933,19 @@ class TestYoutubeCookies:
         assert user_file.read_bytes() == before
 
     def test_malformed_lines_are_dropped_and_never_echoed(self, tmp_path, capfd):
-        from Spotify_Downloader import MusicScraper, cookies_problem
+        from sunnify.engine import MusicScraper
+        from sunnify.tools import cookies_problem
 
         user_file = tmp_path / "cookies.txt"
         user_file.write_text(GOOD_COOKIES + "broken line SECRET\n", encoding="utf-8")
-        with patch("Spotify_Downloader.find_js_runtime", return_value=("deno", "deno")):
+        with patch("sunnify.tools.find_js_runtime", return_value=("deno", "deno")):
             assert cookies_problem(str(user_file)) is None
             scraper = MusicScraper(cookies_file=str(user_file))
         assert "SECRET" not in scraper._cookies_text
         assert "SECRET" not in capfd.readouterr().err
 
     def test_unreadable_file_turns_cookies_off(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         bad = tmp_path / "cookies.txt"
         bad.write_text("not a cookie file\n", encoding="utf-8")
@@ -2971,12 +2972,12 @@ class TestYoutubeCookies:
         ],
     )
     def test_cookies_problem(self, tmp_path, content, runtime, expected):
-        from Spotify_Downloader import cookies_problem
+        from sunnify.tools import cookies_problem
 
         path = tmp_path / "cookies.txt"
         if content is not None:
             path.write_text(content, encoding="utf-8")
-        with patch("Spotify_Downloader.find_js_runtime", return_value=runtime):
+        with patch("sunnify.tools.find_js_runtime", return_value=runtime):
             problem = cookies_problem(str(path))
         assert (problem[0] if problem else None) == expected
 
@@ -2988,8 +2989,8 @@ class TestYoutubeCookies:
         target.parent.mkdir(parents=True)
         target.write_text("", encoding="utf-8")
         with (
-            patch("Spotify_Downloader.shutil.which", return_value=None),
-            patch("Spotify_Downloader.os.path.expanduser", return_value=str(tmp_path)),
+            patch("shutil.which", return_value=None),
+            patch("os.path.expanduser", return_value=str(tmp_path)),
         ):
             assert sd._js_runtime_candidates("deno") == [str(target)]
 
@@ -3022,13 +3023,13 @@ class TestYoutubeCookies:
         registry = MagicMock(value={"deno": Fake("deno"), "node": Fake("node")})
         with (
             patch("yt_dlp.globals.supported_js_runtimes", registry),
-            patch("Spotify_Downloader._js_runtime_candidates", lambda n: [f"/bin/{n}"]),
+            patch("sunnify.tools._js_runtime_candidates", lambda n: [f"/bin/{n}"]),
         ):
             found = sd.find_js_runtime()
         assert (found[0] if found else None) == expected
 
     def test_gate_notice_with_cookies_points_at_stale_cookies(self, tmp_path):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         user_file = tmp_path / "cookies.txt"
         user_file.write_text(GOOD_COOKIES, encoding="utf-8")
@@ -3095,7 +3096,7 @@ class TestFolderLock:
         assert (tmp_path / sd.LOCK_FILENAME).exists()
 
     def _scraper(self):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         scraper = MusicScraper()
         for sig in (
@@ -3190,8 +3191,8 @@ class TestDownloadQueue:
             def deleteLater(self):
                 pass
 
-        monkeypatch.setattr(sd, "ScraperThread", FakeThread)
-        monkeypatch.setattr(sd, "get_ffmpeg_path", lambda: str(tmp_path))
+        monkeypatch.setattr("sunnify.engine.ScraperThread", FakeThread)
+        monkeypatch.setattr("sunnify.tools.get_ffmpeg_path", lambda: str(tmp_path))
         win = sd.MainWindow()
         win._download_path_set = True
         win.download_path = str(tmp_path)
@@ -3228,7 +3229,7 @@ class TestDownloadQueue:
         assert list(win._queue) == [self.B]
 
     def test_duplicates_and_invalid_links_are_not_queued(self, qapp, monkeypatch, tmp_path):
-        win, started = self._window(monkeypatch, tmp_path)
+        win, _started = self._window(monkeypatch, tmp_path)
         win.PlaylistLink.setText(self.A)
         win.PlaylistLink.returnPressed.emit()
         win.PlaylistLink.setText(self.A)
@@ -3242,7 +3243,7 @@ class TestDownloadQueue:
         assert win.PlaylistLink.text() == "https://example.com/not-spotify"
 
     def test_enter_on_an_empty_box_never_stops_a_download(self, qapp, monkeypatch, tmp_path):
-        win, started = self._window(monkeypatch, tmp_path)
+        win, _started = self._window(monkeypatch, tmp_path)
         win.PlaylistLink.setText(self.A)
         win.PlaylistLink.returnPressed.emit()
         win.PlaylistLink.returnPressed.emit()
@@ -3291,7 +3292,7 @@ class TestSettingsDialog:
     """
 
     def test_opens_with_default_config(self, qapp):
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         # Same shape as load_config()'s defaults dict.
         cfg = {
@@ -3310,7 +3311,7 @@ class TestSettingsDialog:
         of the on/off track-number toggle x lossy/lossless format gets a
         slightly different rendering pass (the lossless branch disables
         the bitrate combo)."""
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         for cfg in (
             {
@@ -3344,7 +3345,7 @@ class TestSettingsDialog:
     def test_result_config_round_trips_every_key(self, qapp):
         """The dialog's result_config() must return every key load_config()
         produced, so saving doesn't drop the new include_track_number key."""
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         cfg = {
             "download_path": "/tmp/sunnify-music",
@@ -3365,7 +3366,7 @@ class TestSettingsDialog:
 
     def test_filename_style_loads_from_config_booleans(self, qapp):
         """The pick-one style control derives from the two stored booleans."""
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         assert SettingsDialog(None, {})._filename_style_cb.currentText() == "Song - Artist"
         assert (
@@ -3380,7 +3381,7 @@ class TestSettingsDialog:
         )
 
     def test_filename_style_maps_back_to_config_booleans(self, qapp):
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         dlg = SettingsDialog(None, {"artist_first": True, "title_only": False})
         dlg._filename_style_cb.setCurrentText("Song only")
@@ -3393,7 +3394,7 @@ class TestSettingsDialog:
         assert out["artist_first"] is False
 
     def test_filename_preview_tracks_style_and_number(self, qapp):
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         dlg = SettingsDialog(None, {"include_track_number": True})
         assert dlg._filename_preview.text() == "01. Song - Artist.mp3"
@@ -3407,7 +3408,7 @@ class TestSettingsDialog:
     def test_dialog_clamps_to_screen_and_scrolls_when_small(self, qapp):
         """Small laptops / dpi scaling: the dialog never opens taller than the
         screen, and shrinking it scrolls the settings instead of clipping."""
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         dlg = SettingsDialog(None, {})
         dlg.show()
@@ -3422,7 +3423,7 @@ class TestSettingsDialog:
         """opus and m4a can't honor a pinned rate (48 kHz-only codec /
         stream-copy remux) so the selector greys out for both, same
         pattern as bitrate-vs-lossless."""
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         dlg = SettingsDialog(None, {"format": "opus", "quality": "192"})
         assert not dlg._sample_rate_cb.isEnabled()
@@ -3436,7 +3437,7 @@ class TestLogging:
     """Tests for the per-user logging setup."""
 
     def test_log_dir_macos(self, tmp_path):
-        from Spotify_Downloader import _log_dir
+        from sunnify.logs import _log_dir
 
         with (
             patch("sys.platform", "darwin"),
@@ -3445,7 +3446,7 @@ class TestLogging:
             assert _log_dir() == os.path.join(str(tmp_path), "Library", "Logs", "Sunnify")
 
     def test_log_dir_windows(self, tmp_path):
-        from Spotify_Downloader import _log_dir
+        from sunnify.logs import _log_dir
 
         with (
             patch("sys.platform", "win32"),
@@ -3454,7 +3455,7 @@ class TestLogging:
             assert _log_dir() == os.path.join(str(tmp_path), "Sunnify", "logs")
 
     def test_log_dir_linux_xdg(self, tmp_path):
-        from Spotify_Downloader import _log_dir
+        from sunnify.logs import _log_dir
 
         with (
             patch("sys.platform", "linux"),
@@ -3466,7 +3467,7 @@ class TestLogging:
         import Spotify_Downloader as S
 
         log_path = str(tmp_path / "sunnify.log")
-        with patch.object(S, "log_file_path", return_value=log_path):
+        with patch("sunnify.logs.log_file_path", return_value=log_path):
             try:
                 p1 = S.setup_logging()
                 p2 = S.setup_logging()  # second call must not double-attach
@@ -3501,7 +3502,7 @@ class TestLogging:
         import Spotify_Downloader as S
 
         prev_hook, prev_thook = sys.excepthook, threading.excepthook
-        with patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")):
+        with patch("sunnify.logs.log_file_path", return_value=str(tmp_path / "sunnify.log")):
             try:
                 S.setup_logging()
                 assert sys.excepthook is S._log_excepthook
@@ -3515,7 +3516,7 @@ class TestLogging:
         import Spotify_Downloader as S
 
         prev_hook, prev_thook = sys.excepthook, threading.excepthook
-        with patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")):
+        with patch("sunnify.logs.log_file_path", return_value=str(tmp_path / "sunnify.log")):
             try:
                 S.setup_logging()
                 try:
@@ -3538,7 +3539,7 @@ class TestLogging:
 
         import Spotify_Downloader as S
 
-        with patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")):
+        with patch("sunnify.logs.log_file_path", return_value=str(tmp_path / "sunnify.log")):
             try:
                 S.setup_logging()
                 scraper = S.MusicScraper()
@@ -3592,12 +3593,12 @@ class TestLogging:
 
         scraper = S.MusicScraper()
         with (
-            patch.object(S, "log_file_path", return_value=str(tmp_path / "sunnify.log")),
-            patch.object(S, "get_ffmpeg_path", return_value=str(tmp_path)),
+            patch("sunnify.logs.log_file_path", return_value=str(tmp_path / "sunnify.log")),
+            patch("sunnify.tools.get_ffmpeg_path", return_value=str(tmp_path)),
         ):
             try:
                 S.setup_logging()
-                with patch.object(S, "YoutubeDL", FakeYDL), pytest.raises(RuntimeError):
+                with patch("sunnify.engine.YoutubeDL", FakeYDL), pytest.raises(RuntimeError):
                     scraper.download_track_audio(
                         "Song X Artist Y",
                         str(tmp_path / "out.mp3"),
@@ -3619,7 +3620,7 @@ class TestUpdateCheck:
     """Version comparison + the GitHub release check that drives the update toast."""
 
     def test_parse_version_variants(self):
-        from Spotify_Downloader import _parse_version
+        from sunnify.updates import _parse_version
 
         assert _parse_version("2.0.13") == (2, 0, 13)
         assert _parse_version("v2.0.13") == (2, 0, 13)
@@ -3628,7 +3629,7 @@ class TestUpdateCheck:
         assert _parse_version("") == ()
 
     @pytest.mark.parametrize(
-        "latest,current,expected",
+        ("latest", "current", "expected"),
         [
             ("2.0.13", "2.0.12", True),  # normal upgrade
             ("v2.0.13", "2.0.12", True),  # v-prefixed tag
@@ -3642,53 +3643,51 @@ class TestUpdateCheck:
         ],
     )
     def test_is_newer_version(self, latest, current, expected):
-        from Spotify_Downloader import _is_newer_version
+        from sunnify.updates import _is_newer_version
 
         assert _is_newer_version(latest, current) is expected
 
     def test_check_for_update_returns_tuple_when_newer(self):
-        from Spotify_Downloader import _check_for_update
+        from sunnify.updates import _check_for_update
 
         resp = MagicMock(status_code=200)
         resp.json.return_value = {
             "tag_name": "v2.0.13",
             "html_url": "https://github.com/x/releases/tag/v2.0.13",
         }
-        with patch("Spotify_Downloader.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             assert _check_for_update("2.0.12") == (
                 "2.0.13",
                 "https://github.com/x/releases/tag/v2.0.13",
             )
 
     def test_check_for_update_none_when_same(self):
-        from Spotify_Downloader import _check_for_update
+        from sunnify.updates import _check_for_update
 
         resp = MagicMock(status_code=200)
         resp.json.return_value = {"tag_name": "v2.0.12", "html_url": "u"}
-        with patch("Spotify_Downloader.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             assert _check_for_update("2.0.12") is None
 
     def test_check_for_update_none_on_non_200(self):
-        from Spotify_Downloader import _check_for_update
+        from sunnify.updates import _check_for_update
 
         resp = MagicMock(status_code=403)
-        with patch("Spotify_Downloader.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             assert _check_for_update("2.0.12") is None
 
     def test_check_for_update_fail_silent_on_exception(self):
-        from Spotify_Downloader import _check_for_update
+        from sunnify.updates import _check_for_update
 
-        with patch(
-            "Spotify_Downloader.requests.get", side_effect=requests.ConnectionError("offline")
-        ):
+        with patch("requests.get", side_effect=requests.ConnectionError("offline")):
             assert _check_for_update("2.0.12") is None  # no raise
 
     def test_check_for_update_falls_back_to_releases_page_url(self):
-        from Spotify_Downloader import _RELEASES_PAGE, _check_for_update
+        from sunnify.updates import _RELEASES_PAGE, _check_for_update
 
         resp = MagicMock(status_code=200)
         resp.json.return_value = {"tag_name": "v9.9.9"}  # no html_url
-        with patch("Spotify_Downloader.requests.get", return_value=resp):
+        with patch("requests.get", return_value=resp):
             result = _check_for_update("2.0.12")
         assert result == ("9.9.9", _RELEASES_PAGE)
 
@@ -3714,34 +3713,34 @@ class TestUpdateCheck:
             logger.setLevel(prev_level)
 
     def test_logs_when_on_latest(self):
-        from Spotify_Downloader import _check_for_update
+        from sunnify.updates import _check_for_update
 
         resp = MagicMock(status_code=200)
         resp.json.return_value = {"tag_name": "v2.0.12", "html_url": "u"}
         with (
             self._capture_sunnify_logs() as buf,
-            patch("Spotify_Downloader.requests.get", return_value=resp),
+            patch("requests.get", return_value=resp),
         ):
             _check_for_update("2.0.12")
         assert "on latest" in buf.getvalue()
 
     def test_logs_github_non_200(self):
-        from Spotify_Downloader import _check_for_update
+        from sunnify.updates import _check_for_update
 
         resp = MagicMock(status_code=403)
         with (
             self._capture_sunnify_logs() as buf,
-            patch("Spotify_Downloader.requests.get", return_value=resp),
+            patch("requests.get", return_value=resp),
         ):
             _check_for_update("2.0.12")
         assert "403" in buf.getvalue()
 
     def test_logs_skipped_on_network_error(self):
-        from Spotify_Downloader import _check_for_update
+        from sunnify.updates import _check_for_update
 
         with (
             self._capture_sunnify_logs() as buf,
-            patch("Spotify_Downloader.requests.get", side_effect=requests.ConnectionError("x")),
+            patch("requests.get", side_effect=requests.ConnectionError("x")),
         ):
             _check_for_update("2.0.12")
         assert "update check skipped" in buf.getvalue()
@@ -3761,7 +3760,7 @@ class TestStarPrompt:
         gating slot reads - same bare-instance trick check_api_status.py uses."""
         import threading
 
-        from Spotify_Downloader import MainWindow
+        from sunnify.gui.window import MainWindow
 
         win = MainWindow.__new__(MainWindow)
         win._config = {"star_prompt_shown": shown}
@@ -3781,8 +3780,8 @@ class TestStarPrompt:
                 return 0
 
         with (
-            patch.object(sd, "StarPromptNotifier", _Recorder),
-            patch.object(sd, "save_config", lambda _cfg: calls.append("saved")),
+            patch("sunnify.gui.dialogs.StarPromptNotifier", _Recorder),
+            patch("sunnify.config.save_config", lambda _cfg: calls.append("saved")),
         ):
             sd.MainWindow._maybe_show_star_prompt(win, count)
 
@@ -3826,11 +3825,10 @@ class TestStarPrompt:
     def test_deferral_retries_on_next_landed_song(self):
         """While the update notifier is up, the prompt defers WITHOUT burning
         its one shot - and the very next landed song shows it."""
-        import Spotify_Downloader as sd
 
         calls = []
         win = self._window()
-        with patch.object(sd.QApplication, "activeModalWidget", staticmethod(lambda: object())):
+        with patch.object(QtWidgets.QApplication, "activeModalWidget", staticmethod(object)):
             self._run_slot(win, calls, count=1)
         assert calls == []
         assert win._config["star_prompt_shown"] is False
@@ -3844,10 +3842,10 @@ class TestStarPrompt:
         permanently silencing the prompt."""
         import json
 
-        from Spotify_Downloader import load_config
+        from sunnify.config import load_config
 
         cfg_file = tmp_path / "config.json"
-        with patch("Spotify_Downloader._config_path", return_value=str(cfg_file)):
+        with patch("sunnify.config._config_path", return_value=str(cfg_file)):
             assert load_config()["star_prompt_shown"] is False
             cfg_file.write_text(json.dumps({"star_prompt_shown": "yes"}))
             assert load_config()["star_prompt_shown"] is False
@@ -3867,7 +3865,8 @@ class TestStarPrompt:
         """Headless construction is enough to catch layout assembly crashes
         (same rationale as TestSettingsDialog); the CTA must point at the
         repo page, not the releases page."""
-        from Spotify_Downloader import GITHUB_REPO, StarPromptNotifier
+        from sunnify.gui.dialogs import StarPromptNotifier
+        from sunnify.updates import GITHUB_REPO
 
         dlg = StarPromptNotifier(None)
         assert dlg.sizeHint().width() > 0
@@ -3881,7 +3880,7 @@ class TestStarPrompt:
         from PyQt6.QtTest import QTest
         from PyQt6.QtWidgets import QDialog, QPushButton
 
-        from Spotify_Downloader import StarPromptNotifier
+        from sunnify.gui.dialogs import StarPromptNotifier
 
         dlg = StarPromptNotifier(None)
         dlg.show()
@@ -3898,7 +3897,8 @@ class TestStarPrompt:
         from PyQt6.QtTest import QTest
         from PyQt6.QtWidgets import QDialog, QPushButton
 
-        from Spotify_Downloader import GITHUB_REPO, StarPromptNotifier
+        from sunnify.gui.dialogs import StarPromptNotifier
+        from sunnify.updates import GITHUB_REPO
 
         opened = []
 
@@ -3908,9 +3908,9 @@ class TestStarPrompt:
                 opened.append(url.toString())
                 return True
 
-        # _open_repo does `from PyQt6.QtGui import QDesktopServices` at call
-        # time, so swapping the module attribute intercepts it cleanly
-        monkeypatch.setattr(qtgui, "QDesktopServices", _FakeDesktopServices)
+        # the toasts open urls through the dialogs module's QDesktopServices
+        monkeypatch.setattr("sunnify.gui.dialogs.QDesktopServices", _FakeDesktopServices)
+        assert qtgui.QDesktopServices is not _FakeDesktopServices
 
         dlg = StarPromptNotifier(None)
         dlg.show()
@@ -3927,7 +3927,7 @@ class TestStarPrompt:
         from PyQt6.QtTest import QTest
         from PyQt6.QtWidgets import QDialog
 
-        from Spotify_Downloader import StarPromptNotifier
+        from sunnify.gui.dialogs import StarPromptNotifier
 
         dlg = StarPromptNotifier(None)
         dlg.show()
@@ -3953,7 +3953,7 @@ class TestDownloadReportingAccuracy:
         monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
 
     def _window_with(self, total, failed):
-        from Spotify_Downloader import MainWindow
+        from sunnify.gui.window import MainWindow
 
         win = MainWindow()
         thread = MagicMock()
@@ -3980,7 +3980,7 @@ class TestDownloadReportingAccuracy:
 
     def test_counter_survives_a_dead_scraper_thread(self, qapp):
         """Qt raises RuntimeError on a deleted object; the slot still fires."""
-        from Spotify_Downloader import MainWindow
+        from sunnify.gui.window import MainWindow
 
         win = MainWindow()
         thread = MagicMock()
@@ -3994,7 +3994,7 @@ class TestDownloadReportingAccuracy:
         win._config = {"star_prompt_shown": False}
         shown = []
         monkeypatch.setattr(
-            "Spotify_Downloader.StarPromptNotifier",
+            "sunnify.gui.dialogs.StarPromptNotifier",
             lambda *a, **_k: shown.append(a) or MagicMock(),
         )
         win._maybe_show_star_prompt(1)  # 1 finished, 1 failed -> 0 landed
@@ -4013,8 +4013,8 @@ class TestDownloadReportingAccuracy:
             def exec(self):
                 return None
 
-        monkeypatch.setattr("Spotify_Downloader.StarPromptNotifier", _Notifier)
-        monkeypatch.setattr("Spotify_Downloader.QApplication.activeModalWidget", lambda: None)
+        monkeypatch.setattr("sunnify.gui.dialogs.StarPromptNotifier", _Notifier)
+        monkeypatch.setattr("PyQt6.QtWidgets.QApplication.activeModalWidget", lambda: None)
         win._maybe_show_star_prompt(3)  # 3 finished, 1 failed -> 2 landed
         assert shown, "a run that saved tracks should still get the one-time ask"
 
@@ -4023,7 +4023,7 @@ class TestDownloadReportingAccuracy:
         had already reported the real outcome, onto the same label."""
         import inspect
 
-        from Spotify_Downloader import ScraperThread
+        from sunnify.engine import ScraperThread
 
         assert "Scraping completed." not in inspect.getsource(ScraperThread.run)
 
@@ -4039,7 +4039,7 @@ class TestAudioFormatExtension:
     """
 
     def _scraper(self, fmt, **kw):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
         s = MusicScraper(audio_format=fmt, **kw)
         for sig in (
@@ -4081,7 +4081,7 @@ class TestAudioFormatExtension:
 
     @pytest.mark.parametrize("fmt", ["mp3", "m4a", "opus", "flac", "wav"])
     def test_filename_uses_the_configured_extension(self, fmt):
-        from Spotify_Downloader import SUPPORTED_FORMATS
+        from sunnify.config import SUPPORTED_FORMATS
 
         name = self._scraper(fmt)._compose_filename("Song", "Artist")
         assert name.endswith("." + SUPPORTED_FORMATS[fmt]["ext"])
@@ -4124,15 +4124,15 @@ class TestFfmpegPreflight:
         monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
 
     def test_download_blocked_and_explained_without_ffmpeg(self, qapp, monkeypatch):
-        from Spotify_Downloader import MainWindow
+        from sunnify.gui.window import MainWindow
 
         win = MainWindow()
         win.PlaylistLink.setText("https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC")
         win._download_path_set = True
-        monkeypatch.setattr("Spotify_Downloader.get_ffmpeg_path", lambda: None)
+        monkeypatch.setattr("sunnify.tools.get_ffmpeg_path", lambda: None)
         shown = []
         monkeypatch.setattr(
-            "Spotify_Downloader.QMessageBox.critical", lambda *a, **_k: shown.append(a)
+            "PyQt6.QtWidgets.QMessageBox.critical", lambda *a, **_k: shown.append(a)
         )
         win.on_returnButton()
         assert win.statusMsg.text() == "FFmpeg not found"
@@ -4140,9 +4140,9 @@ class TestFfmpegPreflight:
         assert not win._is_downloading
 
     def test_engine_error_names_the_platform_installer(self, monkeypatch):
-        from Spotify_Downloader import MusicScraper
+        from sunnify.engine import MusicScraper
 
-        monkeypatch.setattr("Spotify_Downloader.get_ffmpeg_path", lambda: None)
+        monkeypatch.setattr("sunnify.tools.get_ffmpeg_path", lambda: None)
         expected = {"win32": "winget", "darwin": "brew", "linux": "apt"}
         for platform, needle in expected.items():
             monkeypatch.setattr(sys, "platform", platform)
@@ -4163,7 +4163,7 @@ class TestUiScale:
         import Spotify_Downloader as sd
 
         monkeypatch.delenv("QT_SCALE_FACTOR", raising=False)
-        monkeypatch.setattr(sd, "_ui_scale_env_is_ours", False)
+        monkeypatch.setattr("sunnify.gui.scale._ui_scale_env_is_ours", False)
         monkeypatch.setattr(sd.UpdateCheckThread, "start", lambda _self: None)
         yield
         # delenv records nothing when the var was absent, so a value apply_ui_scale
@@ -4176,7 +4176,7 @@ class TestUiScale:
         import Spotify_Downloader as sd
 
         cfg_file = tmp_path / "config.json"
-        with patch("Spotify_Downloader._config_path", return_value=str(cfg_file)):
+        with patch("sunnify.config._config_path", return_value=str(cfg_file)):
             assert sd.load_config()["ui_scale"] == "100"
             cfg_file.write_text(json.dumps({"ui_scale": "150"}))
             assert sd.load_config()["ui_scale"] == "150"
@@ -4308,7 +4308,7 @@ class TestUiScale:
         assert seen == {"reset": False, "ld": "/opt/lib"}
 
     def test_settings_dialog_round_trips_the_size(self, qapp):
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         dlg = SettingsDialog(None, {})
         assert dlg._ui_scale_cb.currentText() == "100%"
@@ -4321,7 +4321,7 @@ class TestUiScale:
 
     def test_settings_dialog_greys_out_sizes_that_would_not_fit_the_screen(self, qapp):
         import Spotify_Downloader as sd
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         dlg = SettingsDialog(None, {})
         avail = dlg.screen().availableGeometry()
@@ -4338,7 +4338,7 @@ class TestUiScale:
     def test_greying_accounts_for_the_factor_already_in_effect(self, qapp, monkeypatch):
         """Running at 150%, a screen reports a third less logical room; 150% itself still fits."""
         import Spotify_Downloader as sd
-        from Spotify_Downloader import SettingsDialog
+        from sunnify.gui.dialogs import SettingsDialog
 
         monkeypatch.setenv("QT_SCALE_FACTOR", "1.5")
         dlg = SettingsDialog(None, {"ui_scale": "150"})
@@ -4357,19 +4357,20 @@ class TestUiScale:
                 self.cfg = dict(cfg)
 
             def exec(self):
-                return sd.QDialog.DialogCode.Accepted
+                return QtWidgets.QDialog.DialogCode.Accepted
 
             def result_config(self):
                 return {**self.cfg, "ui_scale": new_scale}
 
         calls = {"ask": 0, "relaunch": 0, "quit": 0}
-        monkeypatch.setattr(sd, "SettingsDialog", FakeDialog)
-        monkeypatch.setattr(sd, "save_config", lambda _cfg: None)
+        monkeypatch.setattr("sunnify.gui.dialogs.SettingsDialog", FakeDialog)
+        monkeypatch.setattr("sunnify.config.save_config", lambda _cfg: None)
         monkeypatch.setattr(
-            sd, "relaunch_app", lambda: calls.__setitem__("relaunch", calls["relaunch"] + 1) or True
+            "sunnify.gui.scale.relaunch_app",
+            lambda: calls.__setitem__("relaunch", calls["relaunch"] + 1) or True,
         )
         monkeypatch.setattr(
-            sd.QApplication, "quit", lambda *_: calls.__setitem__("quit", calls["quit"] + 1)
+            QtWidgets.QApplication, "quit", lambda *_: calls.__setitem__("quit", calls["quit"] + 1)
         )
         win = sd.MainWindow()
         win._config["ui_scale"] = "100"
@@ -4407,12 +4408,11 @@ class TestUiScale:
         assert "next opens" in win.statusMsg.text()
 
     def test_failed_relaunch_keeps_the_app_open(self, qapp, monkeypatch):
-        import Spotify_Downloader as sd
 
         win, calls = self._window_after_settings(
             monkeypatch, "150", downloading=False, restart=True
         )
-        monkeypatch.setattr(sd, "relaunch_app", lambda: False)
+        monkeypatch.setattr("sunnify.gui.scale.relaunch_app", lambda: False)
         win._apply_new_ui_scale()
         assert calls["quit"] == 1  # only the earlier successful path quit
         assert "Couldn't restart" in win.statusMsg.text()
@@ -4459,6 +4459,7 @@ class TestUiScale:
         env.pop("QT_SCALE_FACTOR", None)
         out = subprocess.run(
             [sys.executable, "-c", script],
+            check=False,
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             env=env,
             capture_output=True,

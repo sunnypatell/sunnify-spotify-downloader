@@ -32,7 +32,7 @@ Free, open source, cross-platform. Point-and-click desktop app with a built-in h
 It is a desktop GUI built with Python and PyQt6, and every binary doubles as a headless [CLI](docs/CLI.md) for scripts, servers, and AI agents. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine.
 
 <div align="center">
-<img src="./readmeAssets/demonstration%201.jpg" alt="Sunnify desktop app downloading a Spotify playlist to local MP3s" width="760" />
+<img src="./readmeAssets/sunnify-3-window.png" alt="Sunnify desktop app in dark mode downloading a Spotify playlist, with the song information panel open" width="760" />
 </div>
 
 ---
@@ -118,9 +118,13 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 - **A way through YouTube's bot check.** If YouTube refuses your network, Sunnify says so plainly, and you can opt in to using cookies from your own YouTube session. Sunnify only reads the file, never changes it. See [YouTube cookies](docs/CLI.md#youtube-cookies).
 - **Headless CLI built in.** `sunnify download <url>` scripts every feature of the app: machine-readable output, meaningful exit codes, resume, and a `doctor` self-check. Made for terminals, cron jobs, and AI agents. See [docs/CLI.md](docs/CLI.md).
 - **Sized for your screen and your eyes.** A Window size setting from 75% to 200% scales the whole window, text and buttons included, on top of your system's display scaling. Sizes that would not fit the screen are greyed out.
+- **Dark and light, in English or Bahasa Melayu.** The window follows your system's light/dark setting (or pick one), and the whole app, settings and messages included, speaks English or Bahasa Melayu. Both switch instantly, no restart.
+- **Lyrics, when you want them.** Turn on Lyrics in Settings and each song is looked up on [LRCLIB](https://lrclib.net), a free lyrics database: the words are embedded in mp3, m4a and flac files, and time-synced lyrics also land as a `.lrc` file next to the song for players that scroll along.
+- **History of what you downloaded.** Every run, from the app or the CLI, is listed with its outcome and folder. Open the folder or download it again in one click (`sunnify history` in a terminal).
+- **Paste, drop, done.** A Paste button reads the link off your clipboard, or drag a link straight onto the window; Open folder jumps to what just landed, and the desktop tells you when a long playlist finishes in the background.
 
 <div align="center">
-<img src="./readmeAssets/demonstration%202.jpg" alt="Sunnify settings showing audio format and quality options" width="680" />
+<img src="./readmeAssets/sunnify-3-settings.png" alt="Sunnify settings showing the download folder, audio format, quality, sample rate and filename options" width="680" />
 </div>
 
 ---
@@ -128,10 +132,11 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 ## How to use
 
 1. **Copy a Spotify link** for a playlist, album, or track (the Share menu, or copy the URL from your browser).
-2. **Paste it** into Sunnify.
-3. **Pick a format and quality** in Settings, and choose where files should go (defaults to your Music folder).
-4. **Download.** Watch per-track progress; press Stop anytime.
+2. **Paste it** into Sunnify: the Paste button, Ctrl+V in the link box, or drag the link onto the window.
+3. **Pick a format and quality** in Settings (the gear, or Ctrl+,), and choose where files should go (defaults to your Music folder).
+4. **Download.** Watch per-track progress; press Stop anytime. Tick **Show preview** to see each song's cover and details.
 5. **Queue more.** While a download runs, paste another link and press Enter to queue it; several links pasted at once queue together, and Stop clears the queue.
+6. **Find it again.** Open folder shows what just landed; History (Ctrl+H) lists past downloads and can run any of them again.
 
 Your downloads land in a folder named after the playlist or album, tagged and ready for any music library.
 
@@ -147,6 +152,8 @@ cd sunnify-spotify-downloader
 pip install -r req.txt
 python Spotify_Downloader.py
 ```
+
+The code lives in the [`sunnify/`](sunnify/) package; `Spotify_Downloader.py` is the entry point for both the app and the CLI. [CONTRIBUTING.md](CONTRIBUTING.md#desktop-app--cli-python) has the module map.
 
 To produce a standalone app with [PyInstaller](https://pyinstaller.org/):
 

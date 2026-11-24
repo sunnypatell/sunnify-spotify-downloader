@@ -37,3 +37,51 @@ jobs:
 
       - name: Format check with ruff
         run: ruff format --check .
+
+  python-types:
+    name: Python Types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      # the app's own deps are installed so mypy reads PyQt6's, requests' and
+      # yt-dlp's real types instead of treating them as Any
+      - name: Install dependencies
+        run: pip install -r req.txt mypy types-requests
+
+      - name: Type-check with mypy
+        run: mypy
+
+  python-audit:
+    name: Python Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      # the hash-locked set the release binaries are built from, and the web backend
+      - name: Audit locked build dependencies
+        run: pip-audit -r requirements-build.txt --require-hashes --disable-pip
+
+      - name: Audit web backend dependencies
+        run: pip-audit -r web-app/sunnify-backend/requirements.txt

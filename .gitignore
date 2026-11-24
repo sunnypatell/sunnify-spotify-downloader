@@ -96,3 +96,6 @@ dist-electron/
 # ---------- Project Specific ----------
 web-app/node_modules/
 localprod/
+
+# FFmpeg binaries bundled into local PyInstaller builds (CI downloads its own)
+/ffmpeg/

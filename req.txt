@@ -1,12 +1,12 @@
 # core dependencies
-mutagen>=1.46.0
-PyQt6>=6.11
-requests>=2.32.2
-yt-dlp>=2024.8.6
+mutagen>=1.48.1
+PyQt6>=6.12
+requests>=2.34.2
+yt-dlp>=2026.10.26
 yt-dlp-ejs>=0.8.0
 
 # transitive (auto-installed but listed for reference)
-certifi>=2026.10.19
-charset-normalizer>=3.5.1
+certifi>=2026.11.20
+charset-normalizer>=3.5.3
 idna>=3.20
 urllib3>=2.8.0

@@ -5,7 +5,7 @@ app: the CLI constructs the GUI's own MusicScraper and drives it without a
 QApplication, so behavior can never drift between the two.
 
 Design contract (stable for scripts and AI agents):
-- subcommands: download, info, status, config, doctor
+- subcommands: download, info, status, history, config, doctor
 - `--json` emits NDJSON events on stdout for download, one JSON document for
   the others (schema in docs/CLI.md); human output otherwise
 - exit codes: 0 success, 1 some tracks failed/stopped, 2 usage error,
@@ -24,9 +24,12 @@ import signal
 import sys
 import threading
 import time
+from typing import Any
 
-import Spotify_Downloader as app
-from spotifydown_api import PlaylistClient, SpotifyEmbedAPI
+import requests
+
+from spotifydown_api import PlaylistClient, SpotifyEmbedAPI, detect_spotify_url_type
+from sunnify import __version__, config, engine, history, locking, logs, tagging, tools, updates
 
 EXIT_OK = 0
 EXIT_PARTIAL = 1
@@ -72,8 +75,10 @@ def _ensure_windows_console() -> None:
     # valid streams but possibly a legacy code page (cp1252): force utf-8 so the
     # unicode glyphs the CLI prints can never raise (real consoles use WriteConsoleW)
     for stream in (sys.stdout, sys.stderr):
-        with contextlib.suppress(Exception):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure = getattr(stream, "reconfigure", None)  # TextIOWrapper only
+        if reconfigure is not None:
+            with contextlib.suppress(Exception):
+                reconfigure(encoding="utf-8", errors="replace")
 
 
 class _Emitter:
@@ -160,7 +165,7 @@ class _RunState:
             self.emitter.event("track_skipped", title=meta.get("title", ""), file=path)
             return
         # same tag writer the GUI uses, run synchronously (no thread started)
-        app.WritingMetaTagsThread(meta, path).run()
+        tagging.WritingMetaTagsThread(meta, path).run()
         if os.path.exists(path):
             self.landed.append(path)
             self.emitter.event(
@@ -178,7 +183,7 @@ class _RunState:
 def _resolve_settings(args, cfg: dict) -> dict:
     """flags > saved config > defaults, driven entirely by the registry."""
     resolved = dict(cfg)
-    for s in app.SETTINGS:
+    for s in config.SETTINGS:
         if s.cli_flag is None:
             continue
         flag_value = getattr(args, s.cli_flag.lstrip("-").replace("-", "_"), None)
@@ -187,14 +192,14 @@ def _resolve_settings(args, cfg: dict) -> dict:
     return resolved
 
 
-def _build_scraper(args, cfg: dict, cancel_event: threading.Event) -> app.MusicScraper:
-    return app.MusicScraper(
-        cancel_event=cancel_event, **app.scraper_kwargs_from(_resolve_settings(args, cfg))
+def _build_scraper(args, cfg: dict, cancel_event: threading.Event) -> engine.MusicScraper:
+    return engine.MusicScraper(
+        cancel_event=cancel_event, **config.scraper_kwargs_from(_resolve_settings(args, cfg))
     )
 
 
 def cmd_download(args) -> int:
-    cfg = app.load_config()
+    cfg = config.load_config()
     out_dir = _resolve_out_dir(args.out, cfg)
     emitter = _Emitter(args.json, args.quiet)
 
@@ -209,7 +214,7 @@ def cmd_download(args) -> int:
         return EXIT_USAGE
 
     try:
-        url_type, item_id = app.detect_spotify_url_type(args.url)
+        url_type, item_id = detect_spotify_url_type(args.url)
     except ValueError:
         url_type, item_id = "unknown", None
     if url_type == "unknown" or not item_id:
@@ -235,7 +240,7 @@ def cmd_download(args) -> int:
             hint="pass a writable folder with --out",
         )
         return EXIT_FATAL
-    if app.get_ffmpeg_path() is None:
+    if tools.get_ffmpeg_path() is None:
         emitter.error(
             "ffmpeg not found",
             code="ffmpeg_missing",
@@ -246,16 +251,16 @@ def cmd_download(args) -> int:
         )
         return EXIT_FATAL
     cookies = _resolve_settings(args, cfg).get("cookies_file")
-    problem = app.cookies_problem(os.path.expanduser(cookies)) if cookies else None
+    problem = tools.cookies_problem(os.path.expanduser(cookies)) if cookies else None
     if problem:
-        code, message = problem
+        error_code, message = problem
         emitter.error(
             message,
-            code=code,
+            code=error_code,
             hint=(
                 "install deno (https://docs.deno.com/runtime/getting_started/installation/) "
                 "or node 22+ (https://nodejs.org/)"
-                if code == "deno_missing"
+                if error_code == "deno_missing"
                 else f"export youtube cookies as a netscape cookies.txt ({_COOKIES_DOC}), "
                 "or pass --cookies '' to run without them"
             ),
@@ -297,16 +302,18 @@ def cmd_download(args) -> int:
         title_only=scraper.title_only,
         track_numbers=scraper.include_track_number,
         loose_match=scraper.loose_match,
+        lyrics=scraper.lyrics,
         cookies=bool(scraper.cookies_file),
     )
+    started_at = time.time()
     t0 = time.monotonic()
-    code = None
+    code: int | None = None
     try:
         if url_type == "track":
             scraper.scrape_track(args.url, out_dir)
         else:
             scraper.scrape_playlist(args.url, out_dir)
-    except app.FolderLockedError as exc:
+    except locking.FolderLockedError as exc:
         emitter.error(
             str(exc),
             code="folder_locked",
@@ -321,6 +328,19 @@ def cmd_download(args) -> int:
     stopped = cancel_event.is_set()
     if code is None:
         code = EXIT_PARTIAL if (failed or stopped) else EXIT_OK
+    exit_code: int = code
+    # same history the desktop app keeps; a run refused before it wrote anything is not one
+    if isinstance(scraper.output_folder, str) and scraper.output_folder:
+        history.record(
+            url=args.url,
+            kind=url_type,
+            name=scraper.display_name or args.url,
+            folder=scraper.output_folder,
+            started_at=started_at,
+            landed=len(state.landed) + len(state.skipped),
+            failed=len(failed),
+            stopped=stopped,
+        )
     # once run_started is out, run_summary always ends the stream
     emitter.event(
         "run_summary",
@@ -331,18 +351,18 @@ def cmd_download(args) -> int:
         stopped=stopped,
         elapsed_s=round(time.monotonic() - t0, 1),
         folder=out_dir,
-        exit_code=code,
+        exit_code=exit_code,
     )
     if failed and not args.json:
         for title in failed:
             print(f"  failed: {title}", file=sys.stderr)
-    return code
+    return exit_code
 
 
 def cmd_info(args) -> int:
     emitter = _Emitter(args.json)
     try:
-        url_type, item_id = app.detect_spotify_url_type(args.url)
+        url_type, item_id = detect_spotify_url_type(args.url)
     except ValueError:
         url_type, item_id = "unknown", None
     if url_type == "unknown" or not item_id:
@@ -352,6 +372,7 @@ def cmd_info(args) -> int:
             hint="expected https://open.spotify.com/{playlist,album,track}/... or a spotify: uri",
         )
         return EXIT_FATAL
+    payload: dict[str, Any]
     try:
         if url_type == "track":
             track = SpotifyEmbedAPI().get_track(item_id)
@@ -404,24 +425,27 @@ def cmd_info(args) -> int:
 
 
 def cmd_status(args) -> int:
-    cfg = app.load_config()
+    cfg = config.load_config()
     folder = os.path.abspath(os.path.expanduser(args.folder or _resolve_out_dir(None, cfg)))
-    manifest = os.path.join(folder, app.MANIFEST_FILENAME)
+    manifest = os.path.join(folder, engine.MANIFEST_FILENAME)
     entries: list[dict] = []
     if os.path.exists(manifest):
         with contextlib.suppress(OSError), open(manifest, encoding="utf-8") as fh:
             for line in fh:
                 with contextlib.suppress(ValueError):
-                    entries.append(json.loads(line))
+                    record = json.loads(line)
+                    # a hand-edited or truncated manifest must not crash status
+                    if isinstance(record, dict) and isinstance(record.get("file"), str):
+                        entries.append(record)
     # manifest records store basenames relative to their folder; single-track
     # downloads never write a manifest, so count real audio files too
     on_disk = [e for e in entries if os.path.exists(os.path.join(folder, e.get("file", "")))]
     missing = [e for e in entries if e not in on_disk]
-    exts = tuple(f".{spec['ext']}" for spec in app.SUPPORTED_FORMATS.values())
+    exts = tuple(f".{spec['ext']}" for spec in config.SUPPORTED_FORMATS.values())
     audio_files: list[str] = []
     with contextlib.suppress(OSError):
         audio_files = sorted(n for n in os.listdir(folder) if n.lower().endswith(exts))
-    active_pid = app.read_lock_pid(folder)
+    active_pid = locking.read_lock_pid(folder)
     payload = {
         "folder": folder,
         "audio_files": len(audio_files),
@@ -441,8 +465,8 @@ def cmd_status(args) -> int:
 
 
 def cmd_config(args) -> int:
-    cfg = app.load_config()
-    registry = {s.key: s for s in app.SETTINGS}
+    cfg = config.load_config()
+    registry = {s.key: s for s in config.SETTINGS}
     if args.set:
         for pair in args.set:
             key, sep, value = pair.partition("=")
@@ -469,8 +493,9 @@ def cmd_config(args) -> int:
                 cfg[key] = value
             else:
                 cfg[key] = value
-        app.save_config(cfg)
-    visible = {k: v for k, v in cfg.items() if k not in ("version", "star_prompt_shown")}
+        config.save_config(cfg)
+    hidden = {"version", *config.UI_STATE_DEFAULTS}
+    visible = {k: v for k, v in cfg.items() if k not in hidden}
     if args.json:
         print(json.dumps(visible, ensure_ascii=False, indent=2))
     else:
@@ -479,11 +504,39 @@ def cmd_config(args) -> int:
     return EXIT_OK
 
 
+def cmd_history(args) -> int:
+    """Past downloads from the desktop app and the CLI, newest first."""
+    if args.clear:
+        history.clear()
+        if args.json:
+            print(json.dumps({"cleared": True}))
+        else:
+            print("history cleared")
+        return EXIT_OK
+    entries = history.load()
+    if args.limit > 0:
+        entries = entries[: args.limit]
+    if args.json:
+        print(json.dumps({"entries": entries}, ensure_ascii=False, indent=2))
+        return EXIT_OK
+    if not entries:
+        print("no downloads recorded yet")
+        return EXIT_OK
+    for e in entries:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(e["finished_at"] or e["started_at"]))
+        counts = f"{e['landed']} saved" + (f", {e['failed']} failed" if e["failed"] else "")
+        print(f"{when}  {e['status']:<8} {counts:<20} {e['name']}")
+        print(f"{'':18}{e['url']}")
+        if e["folder"]:
+            print(f"{'':18}{e['folder']}")
+    return EXIT_OK
+
+
 def cmd_doctor(args) -> int:
     """Environment self-check: the command to run when downloads misbehave."""
     checks: list[dict] = []
 
-    ffmpeg = app.get_ffmpeg_path()
+    ffmpeg = tools.get_ffmpeg_path()
     checks.append(
         {
             "check": "ffmpeg",
@@ -493,13 +546,13 @@ def cmd_doctor(args) -> int:
         }
     )
 
-    cfg_ok, cfg_detail = True, app._config_path()
+    cfg_ok, cfg_detail = True, config._config_path()
     try:
-        app.load_config()
+        config.load_config()
     except Exception as exc:  # load_config swallows almost everything; belt and braces
         cfg_ok, cfg_detail = False, str(exc)
     checks.append({"check": "config", "ok": cfg_ok, "detail": cfg_detail})
-    checks.append({"check": "logs", "ok": True, "detail": app._log_dir()})
+    checks.append({"check": "logs", "ok": True, "detail": logs._log_dir()})
 
     try:
         SpotifyEmbedAPI().get_track("4uLU6hMCjMI75M1A2tKUQC")  # never gonna give you up
@@ -518,15 +571,21 @@ def cmd_doctor(args) -> int:
     except Exception as exc:
         checks.append({"check": "yt_dlp", "ok": False, "detail": str(exc)})
 
-    cookies = app.load_config().get("cookies_file")
+    cookies = config.load_config().get("cookies_file")
     if cookies:
-        problem = app.cookies_problem(os.path.expanduser(cookies))
-        runtime = None if problem else app.find_js_runtime()
+        problem = tools.cookies_problem(os.path.expanduser(cookies))
+        runtime = None if problem else tools.find_js_runtime()
+        if problem:
+            detail = problem[1]
+        elif runtime:
+            detail = f"on, {runtime[0]} at {runtime[1]}"
+        else:  # the runtime vanished between the two checks
+            detail = "no supported javascript runtime"
         checks.append(
             {
                 "check": "youtube_cookies",
-                "ok": problem is None,
-                "detail": problem[1] if problem else f"on, {runtime[0]} at {runtime[1]}",
+                "ok": problem is None and runtime is not None,
+                "detail": detail,
             }
         )
     else:
@@ -540,21 +599,23 @@ def cmd_doctor(args) -> int:
 
     # ok stays True either way: being behind is a nudge, not an unhealthy env
     try:
-        r = app.requests.get(
-            app._LATEST_RELEASE_API, timeout=5, headers={"Accept": "application/vnd.github+json"}
+        r = requests.get(
+            updates._LATEST_RELEASE_API,
+            timeout=5,
+            headers={"Accept": "application/vnd.github+json"},
         )
         tag = (r.json().get("tag_name") or "").lstrip("vV") if r.status_code == 200 else ""
-        if tag and app._is_newer_version(tag, app.__version__):
-            detail = f"{app.__version__} installed, {tag} available: {app._RELEASES_PAGE}"
+        if tag and updates._is_newer_version(tag, __version__):
+            detail = f"{__version__} installed, {tag} available: {updates._RELEASES_PAGE}"
         elif tag:
-            detail = f"{app.__version__} is the latest release"
+            detail = f"{__version__} is the latest release"
         elif r.status_code in (403, 429):
             # unauthenticated github rest is 60 req/hour/ip; never worth failing over
-            detail = f"{app.__version__} (release check rate-limited by github, try later)"
+            detail = f"{__version__} (release check rate-limited by github, try later)"
         else:
-            detail = f"{app.__version__} (release check got http {r.status_code})"
+            detail = f"{__version__} (release check got http {r.status_code})"
     except Exception as exc:
-        detail = f"{app.__version__} (release check unreachable: {exc})"
+        detail = f"{__version__} (release check unreachable: {exc})"
     checks.append({"check": "version", "ok": True, "detail": detail})
 
     all_ok = all(c["ok"] for c in checks)
@@ -568,7 +629,7 @@ def cmd_doctor(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    cfg = app.load_config()
+    cfg = config.load_config()
     parser = argparse.ArgumentParser(
         prog="sunnify",
         description=(
@@ -582,13 +643,14 @@ def build_parser() -> argparse.ArgumentParser:
             '  sunnify download "<url>" --json           # NDJSON progress events for scripts/agents\n'
             '  sunnify info "<url>" --json               # metadata only, no download\n'
             "  sunnify status                            # what's landed in the download folder\n"
+            "  sunnify history                           # recent downloads, GUI and CLI alike\n"
             "  sunnify config --set format=m4a           # persist a setting (shared with the GUI)\n"
             "  sunnify doctor                            # self-check when downloads misbehave\n"
             "\nfull reference: https://github.com/sunnypatell/sunnify-spotify-downloader/blob/main/docs/CLI.md"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", "-V", action="version", version=f"sunnify {app.__version__}")
+    parser.add_argument("--version", "-V", action="version", version=f"sunnify {__version__}")
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
 
     dl = sub.add_parser(
@@ -609,7 +671,7 @@ def build_parser() -> argparse.ArgumentParser:
     # every scraper setting becomes a flag straight from the registry, so a
     # new app setting reaches the CLI with no changes here
     short = {"--format": "-f", "--quality": "-q"}
-    for s in app.SETTINGS:
+    for s in config.SETTINGS:
         if s.cli_flag is None:
             continue
         names = [s.cli_flag] + ([short[s.cli_flag]] if s.cli_flag in short else [])
@@ -666,19 +728,29 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true", help="emit one JSON document")
     status.set_defaults(func=cmd_status)
 
-    config = sub.add_parser(
+    hist = sub.add_parser(
+        "history",
+        help="list past downloads (shared with the GUI)",
+        description="Show recent downloads from the desktop app and the CLI, newest first.",
+    )
+    hist.add_argument("--limit", "-n", type=int, default=20, help="show at most N (0 = all)")
+    hist.add_argument("--clear", action="store_true", help="forget every recorded download")
+    hist.add_argument("--json", action="store_true", help="emit one JSON document")
+    hist.set_defaults(func=cmd_history)
+
+    config_cmd = sub.add_parser(
         "config",
         help="show or change saved settings (shared with the GUI)",
         description="Print the effective settings, or persist changes with --set.",
     )
-    config.add_argument(
+    config_cmd.add_argument(
         "--set",
         action="append",
         metavar="key=value",
         help="persist a setting (repeatable), e.g. --set format=flac --set artist_first=true",
     )
-    config.add_argument("--json", action="store_true", help="emit one JSON document")
-    config.set_defaults(func=cmd_config)
+    config_cmd.add_argument("--json", action="store_true", help="emit one JSON document")
+    config_cmd.set_defaults(func=cmd_config)
 
     doctor = sub.add_parser(
         "doctor",
@@ -696,7 +768,7 @@ def _forensic_sigterm(sig, _frame):
     import logging
 
     with contextlib.suppress(Exception):
-        app.log.info("terminated by signal %s (cli)", signal.Signals(sig).name)
+        logs.log.info("terminated by signal %s (cli)", signal.Signals(sig).name)
         logging.shutdown()
     signal.signal(sig, signal.SIG_DFL)
     os.kill(os.getpid(), sig)
@@ -706,8 +778,8 @@ def main(argv: list[str] | None = None) -> int:
     _ensure_windows_console()
     # same rotating session log as the GUI; never a reason to fail a run
     with contextlib.suppress(Exception):
-        app.setup_logging()
-        app.log.info("cli invoked: %s", " ".join(argv or sys.argv[1:]))
+        logs.setup_logging()
+        logs.log.info("cli invoked: %s", " ".join(argv or sys.argv[1:]))
     with contextlib.suppress(Exception):
         signal.signal(signal.SIGTERM, _forensic_sigterm)
     if argv is None:
@@ -717,12 +789,13 @@ def main(argv: list[str] | None = None) -> int:
         argv = [argv[1], "--help"] if len(argv) > 1 else ["--help"]
     parser = build_parser()
     args = parser.parse_args(argv)
+    rc: int
     try:
         rc = args.func(args)
     except KeyboardInterrupt:
         rc = 130
     with contextlib.suppress(Exception):
-        app.log.info("cli exit: code=%d", rc)
+        logs.log.info("cli exit: code=%d", rc)
     return rc
 
 

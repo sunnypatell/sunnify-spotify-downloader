@@ -12,8 +12,35 @@ from __future__ import annotations
 import os
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
+# offscreen on Windows has no font database of its own; without the system
+# fonts every glyph is a box and text-fit checks measure nonsense
+_win_fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+if os.name == "nt" and os.path.isdir(_win_fonts):
+    os.environ.setdefault("QT_QPA_FONTDIR", _win_fonts)
 
-import pytest  # noqa: F401, E402
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _isolated_config_dir(tmp_path_factory, monkeypatch):
+    """Every test gets its own config dir: config.json and history.json writes
+    (a settings save, a finished download) must never touch the developer's
+    real settings or history. Tests that patch _config_path still win."""
+    from sunnify import config
+
+    folder = str(tmp_path_factory.mktemp("sunnify-config"))
+    monkeypatch.setattr(config, "_config_dir", lambda: folder)
+    return folder
+
+
+@pytest.fixture(autouse=True)
+def _english_ui():
+    """Assertions read English; a test that switches language can't leak it."""
+    from sunnify import i18n
+
+    i18n.set_language("en")
+    yield
+    i18n.set_language("en")
 
 
 # Module-scoped QApplication so every Qt test in the session reuses one
@@ -29,7 +56,7 @@ def qapp():
     instance = QApplication.instance()
     if instance is None:
         instance = QApplication([])
-    yield instance
+    return instance
     # Don't quit() on teardown - Python is about to exit anyway and quitting
     # mid-test cleanup can race with widget destruction.
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sunnify-spotify-downloader"
-version = "2.7.0"
+version = "3.0.0"
 description = "Spotify playlist downloader with PyQt6 GUI, headless CLI, Flask backend, and Next.js web client"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,10 +13,10 @@ authors = [{ name = "Sunny Jayendra Patel", email = "sunnypatel124555@gmail.com"
 keywords = ["spotify", "downloader", "playlist", "music", "pyqt6", "cli"]
 # mirrors req.txt's core list; req.txt stays the manifest for the test matrix
 dependencies = [
-    "mutagen>=1.46.0",
-    "PyQt6>=6.11",
-    "requests>=2.32.2",
-    "yt-dlp>=2024.8.6",
+    "mutagen>=1.48.1",
+    "PyQt6>=6.12",
+    "requests>=2.34.2",
+    "yt-dlp>=2026.10.26",
     "yt-dlp-ejs>=0.8.0",
 ]
 
@@ -26,7 +26,11 @@ dependencies = [
 sunnify = "sunnify_cli:main"
 
 [tool.setuptools]
-py-modules = ["Spotify_Downloader", "spotifydown_api", "sunnify_cli", "Template"]
+py-modules = ["Spotify_Downloader", "spotifydown_api", "sunnify_cli"]
+packages = ["sunnify", "sunnify.gui"]
+
+[tool.setuptools.package-data]
+"sunnify.gui" = ["assets/*.svg"]
 
 [project.urls]
 homepage = "https://github.com/sunnypatell/sunnify-spotify-downloader"
@@ -38,8 +42,8 @@ issues = "https://github.com/sunnypatell/sunnify-spotify-downloader/issues"
 target-version = "py310"
 line-length = 100
 indent-width = 4
-exclude = [
-    "Template.py",  # generated-then-hand-edited qt ui module; never regenerate
+# extend, not replace: ruff's defaults already skip node_modules, .git, build dirs
+extend-exclude = [
     ".venv",
     "venv",
     "__pycache__",
@@ -58,16 +62,34 @@ select = [
     "UP",     # pyupgrade
     "ARG",    # flake8-unused-arguments
     "SIM",    # flake8-simplify
+    "S",      # flake8-bandit: security
+    "RUF",    # ruff's own correctness checks
+    "PIE",    # flake8-pie
+    "RET",    # flake8-return
+    "PERF",   # perflint
+    "PT",     # flake8-pytest-style
+    "PLE",    # pylint errors
+    "PLW",    # pylint warnings
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
     "ARG001", # unused function argument (common in qt signals)
     "ARG002", # unused method argument (common in qt overrides)
+    "PERF203",# try/except in a loop: the retry loops want exactly that
+    "PLW0603",# module-level state (log level, language, palette) is set by design
+    "PT018",  # one assert over a related pair reads better than two here
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# tests assert, write fixture files to tmp, run the app in a subprocess and
+# use fake tokens; none of that is a security finding
+"tests/**" = ["S101", "S105", "S106", "S108", "S603", "S607"]
+# the probe script runs yt-dlp against public test tracks by design
+"scripts/**" = ["S603", "S607"]
+
 [tool.ruff.lint.isort]
-known-first-party = ["spotifydown_api"]
+known-first-party = ["spotifydown_api", "sunnify", "sunnify_cli", "Spotify_Downloader"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -85,6 +107,10 @@ addopts = "-v --tb=short"
 # mypy configuration (optional static type checking)
 [tool.mypy]
 python_version = "3.10"
+files = ["sunnify", "sunnify_cli.py", "spotifydown_api.py", "Spotify_Downloader.py"]
+check_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true
+warn_redundant_casts = true
+strict_equality = true
 ignore_missing_imports = true

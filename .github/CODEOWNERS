@@ -3,8 +3,7 @@
 
 # desktop app
 /Spotify_Downloader.py @sunnypatell
-/Template.py @sunnypatell
-/Template.ui @sunnypatell
+/sunnify/ @sunnypatell
 
 # core providers
 /spotifydown_api.py @sunnypatell
