@@ -107,6 +107,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 
 - **Playlists, albums, and single tracks.** Paste a normal link, an `intl-xx` locale link, or a `spotify:` URI copied from the desktop app. Each playlist or album downloads into its own folder.
 - **Five audio formats.** MP3, M4A, Opus (lossy at 128 / 192 / 256 / 320 kbps) and FLAC / WAV (lossless conversion of the source, see [Audio quality](#audio-quality)). Your choice is remembered between sessions.
+- **Optional lyrics.** Turn on **Embed lyrics** in Settings (or pass `--lyrics` on the CLI) and each song's lyrics are looked up on [LRCLIB](https://lrclib.net) and written into the file (ID3 `USLT` for mp3, `©lyr` for m4a, `LYRICS` for flac). Off by default, because the artist and title are sent to that service. A song only gets lyrics when title and artist match closely, so a different song's text never lands in your file. Opus and wav files carry no lyrics.
 - **Real metadata, written correctly.** Title, artist(s), album, year, and track number are embedded for every format, with the front cover art baked in. MP3 tags are written for maximum player compatibility, so artwork and tags show up everywhere, including older car head-units, stock Android, and Windows Media Player.
 - **Per-track cover art.** Each song gets its own artwork, not one shared playlist cover.
 - **Parallel downloads.** Multiple songs download at once, so a playlist finishes much faster, with a cooperative Stop that takes effect immediately.

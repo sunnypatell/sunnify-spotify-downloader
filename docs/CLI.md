@@ -65,6 +65,7 @@ sunnify download <url> [--out DIR] [--format mp3|m4a|opus|flac|wav]
                        [--artist-first | --no-artist-first]
                        [--title-only | --no-title-only]
                        [--loose-match | --no-loose-match]
+                       [--lyrics | --no-lyrics]
                        [--cookies FILE]
                        [--json] [--quiet]
 ```
@@ -101,7 +102,7 @@ out, the stream always ends with `run_summary`, even when the run fails
 error envelope:
 
 ```json
-{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false, "cookies": false}
+{"event": "run_started", "url": "...", "type": "playlist", "folder": "...", "format": "mp3", "quality": "320", "sample_rate": "auto", "artist_first": false, "title_only": false, "track_numbers": true, "loose_match": false, "lyrics": false, "cookies": false}
 {"event": "track_done", "title": "...", "artists": "...", "file": "/path/file.mp3", "bytes": 4823041}
 {"event": "track_skipped", "title": "...", "file": "/path/file.mp3"}
 {"event": "warning", "message": "..."}

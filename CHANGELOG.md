@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **optional lyrics.** Settings has an "Embed lyrics" checkbox, and `sunnify download --lyrics` does the same from a terminal. each song is looked up on [LRCLIB](https://lrclib.net) (open, no key) and the plain-text lyrics are written into the file: ID3 `USLT` for mp3, `©lyr` for m4a, `LYRICS` for flac. off by default, since the artist and title are sent to that service. a lyrics text is only used when the title matches after ignoring case, accents, punctuation and trailing "(Live)" / "[Remastered 2011]" style brackets, and the artist matches or starts with the same words, so a different song's lyrics never end up in a file. a failed or empty lookup leaves the file with its normal tags. opus and wav carry no lyrics, same as they carry no cover art.
+
 ## [2.7.0] - 2026-11-13
 
 ### Added
