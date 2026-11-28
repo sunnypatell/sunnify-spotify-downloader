@@ -628,6 +628,17 @@ class TestYoutubeMatchSelection:
         assert MusicScraper._normalize_title("देवनागरी गीत") == "देवनागरी गीत"
         assert MusicScraper._normalize_title("เพลงไทย") == "เพลงไทย"
 
+    def test_normalize_arabic_variants_tatweel_and_eastern_digits(self):
+        """Arabic Spotify vs YouTube titles routinely differ in Alef/Hamza forms,
+        Alef Maksura vs Yeh, Teh Marbuta vs Heh, kashida/tatweel, tashkeel, and
+        Eastern-Arabic numerals."""
+        from Spotify_Downloader import MusicScraper
+
+        assert MusicScraper._normalize_title("أُغْنِيَةُ الحُبّ ـ ٢٠٢٦") == (
+            MusicScraper._normalize_title("اغنيه الحب 2026")
+        )
+        assert MusicScraper._normalize_title("فؤاد وموسى والرسائل") == "فواد وموسي والرسايل"
+
     def test_non_latin_artist_falls_back_to_title_only(self):
         """A native-script artist whose YouTube uploads are romanized must not
         arm the artist gate into rejecting everything. Pre-unicode these
