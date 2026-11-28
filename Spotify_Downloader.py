@@ -40,7 +40,7 @@ from logging.handlers import RotatingFileHandler
 
 import requests
 from mutagen.easyid3 import EasyID3
-from mutagen.id3 import APIC, ID3
+from mutagen.id3 import APIC, ID3, USLT
 from PyQt6.QtCore import (
     QEasingCurve,
     QPropertyAnimation,
@@ -68,6 +68,7 @@ from PyQt6.QtWidgets import (
 )
 from yt_dlp import YoutubeDL
 
+from lyrics import fetch_lyrics
 from spotifydown_api import (
     ContentUnavailableError,
     ExtractionError,
@@ -405,6 +406,14 @@ SETTINGS = (
         scraper_kwarg="loose_match",
         cli_flag="--loose-match",
         help="fall back to the closest result when strict matching finds nothing",
+    ),
+    _Setting(
+        "lyrics",
+        False,
+        "bool",
+        scraper_kwarg="fetch_lyrics",
+        cli_flag="--lyrics",
+        help="embed song lyrics from lrclib.net (sends artist and title to that service)",
     ),
     _Setting(
         "cookies_file",
@@ -848,6 +857,7 @@ class MusicScraper(QThread):
         title_only: bool = False,
         sample_rate: str = "auto",
         loose_match: bool = False,
+        fetch_lyrics: bool = False,
         cookies_file: str | None = None,
     ):
         super().__init__()
@@ -868,6 +878,8 @@ class MusicScraper(QThread):
         # duration-closest youtube result (recovers cross-script matches);
         # off by default so the wrong-audio safeguard (#52) stays the default.
         self.loose_match = bool(loose_match)
+        # opt-in: artist + title are sent to lrclib.net to embed the lyrics
+        self.fetch_lyrics = bool(fetch_lyrics)
         self.cookies_file = os.path.expanduser(cookies_file) if cookies_file else None
         self._cookies_text = None
         self._js_runtime = None
@@ -1528,6 +1540,7 @@ class MusicScraper(QThread):
             "cover": cover_url or "",
             "file": filepath,
             "trackNumber": track_num,
+            "wantLyrics": self.fetch_lyrics,
         }
 
         # Preview panel shows whichever track most recently started; the
@@ -1871,6 +1884,7 @@ class MusicScraper(QThread):
             "cover": cover_url or "",
             "file": filepath,
             "trackNumber": 1,
+            "wantLyrics": self.fetch_lyrics,
         }
 
         self.song_meta.emit(dict(song_meta))
@@ -2012,12 +2026,19 @@ def _write_metadata_mp3(filename: str, tags: dict, cover_bytes: bytes | None) ->
     # mutagen to downgrade text frames to a v2.3-allowed encoding (UTF-16
     # with BOM for non-ASCII, Latin-1 for ASCII) before writing.
     audio.save(v2_version=3)
-    if cover_bytes:
+    lyrics = tags.get("lyrics")
+    if cover_bytes or lyrics:
         id3 = ID3(filename)
-        mime = _detect_image_mime(cover_bytes)
-        # encoding=1 (UTF-16+BOM) is the only Unicode encoding v2.3 defines.
-        # type=3 is "Cover (front)" per the v2.3 APIC enum.
-        id3.add(APIC(encoding=1, mime=mime, type=3, desc="Cover", data=cover_bytes))
+        if cover_bytes:
+            mime = _detect_image_mime(cover_bytes)
+            # encoding=1 (UTF-16+BOM) is the only Unicode encoding v2.3 defines.
+            # type=3 is "Cover (front)" per the v2.3 APIC enum.
+            id3.add(APIC(encoding=1, mime=mime, type=3, desc="Cover", data=cover_bytes))
+        if lyrics:
+            # USLT is unique per (lang, desc); clear first so a re-tag replaces our text.
+            # ref: ID3v2.3 section 4.9 https://id3.org/id3v2.3.0
+            id3.delall("USLT")
+            id3.add(USLT(encoding=1, lang="XXX", desc="", text=lyrics))
         id3.update_to_v23()
         id3.save(v2_version=3)
 
@@ -2050,6 +2071,8 @@ def _write_metadata_m4a(filename: str, tags: dict, cover_bytes: bytes | None) ->
         mime = _detect_image_mime(cover_bytes)
         fmt = MP4Cover.FORMAT_PNG if mime == "image/png" else MP4Cover.FORMAT_JPEG
         audio["covr"] = [MP4Cover(cover_bytes, imageformat=fmt)]
+    if tags.get("lyrics"):
+        audio["\xa9lyr"] = tags["lyrics"]
     audio.save()
 
 
@@ -2084,6 +2107,8 @@ def _write_metadata_flac(filename: str, tags: dict, cover_bytes: bytes | None) -
         pic.desc = "Cover"
         pic.data = cover_bytes
         audio.add_picture(pic)
+    if tags.get("lyrics"):
+        audio["lyrics"] = tags["lyrics"]
     audio.save()
 
 
@@ -2119,7 +2144,12 @@ class WritingMetaTagsThread(QThread):
                 return
 
             cover_bytes = _fetch_cover_bytes(self.tags.get("cover", ""))
-            writer(self.filename, self.tags, cover_bytes)
+            tags = dict(self.tags)
+            if tags.get("wantLyrics"):
+                # opt-in lookup; None (not found / offline) just leaves the file without lyrics
+                tags["lyrics"] = fetch_lyrics(tags.get("title", ""), tags.get("artists", ""))
+                log.info("lyrics %s: %s", "found" if tags["lyrics"] else "not found", self.filename)
+            writer(self.filename, tags, cover_bytes)
             self.tags_success.emit("Tags added successfully")
         except Exception:
             log.error("tag write failed: %s", self.filename, exc_info=True)
@@ -2227,6 +2257,9 @@ class SettingsDialog(QDialog):
         self._loose_match_cb = QCheckBox()
         self._loose_match_cb.setChecked(self._config.get("loose_match", False))
 
+        self._lyrics_cb = QCheckBox()
+        self._lyrics_cb.setChecked(self._config.get("lyrics", False))
+
         self._ui_scale_labels = {value: f"{value}%" for value in SUPPORTED_UI_SCALES}
         self._ui_scale_cb = QComboBox()
         for value in SUPPORTED_UI_SCALES:
@@ -2307,6 +2340,14 @@ class SettingsDialog(QDialog):
                 "On: falls back to the closest result by length, which recovers "
                 "songs whose YouTube title is in another script (Greek, Cyrillic, "
                 "Korean) but may let an occasional cover or remix slip through.",
+            ),
+            (
+                "Embed lyrics:",
+                self._lyrics_cb,
+                "Off (default). On: looks up each song's lyrics on lrclib.net and "
+                "writes them into the file's tags. The artist and title are sent to "
+                "that service. Songs without a confident match stay without lyrics. "
+                "Needs 'Add Meta Tags' to be on; opus and wav files carry no lyrics.",
             ),
         ]
         _fm = QFontMetrics(self.font())
@@ -2478,6 +2519,7 @@ class SettingsDialog(QDialog):
         label_to_value = {v: k for k, v in self._sample_rate_labels.items()}
         self._config["sample_rate"] = label_to_value.get(self._sample_rate_cb.currentText(), "auto")
         self._config["loose_match"] = self._loose_match_cb.isChecked()
+        self._config["lyrics"] = self._lyrics_cb.isChecked()
         scale_label_to_value = {v: k for k, v in self._ui_scale_labels.items()}
         self._config["ui_scale"] = scale_label_to_value.get(self._ui_scale_cb.currentText(), "100")
         return self._config
