@@ -1084,6 +1084,10 @@ class MusicScraper(QThread):
             return ""
         import unicodedata
 
+        # Preserve Arabic base letters before NFKD strips Hamza Above (U+0654) from أ/ؤ/ئ
+        s = re.sub(r"[\u0622\u0623\u0625\u0671]", "ا", s)
+        s = s.replace("ؤ", "و").replace("ئ", "ي").replace("ى", "ي").replace("ة", "ه").replace("\u0640", "")
+        s = s.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
         # NFKD + drop combining marks: "Café" -> "Cafe"
         s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
         s = s.lower()
