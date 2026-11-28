@@ -26,7 +26,7 @@ dependencies = [
 sunnify = "sunnify_cli:main"
 
 [tool.setuptools]
-py-modules = ["Spotify_Downloader", "spotifydown_api", "sunnify_cli", "Template"]
+py-modules = ["Spotify_Downloader", "spotifydown_api", "sunnify_cli", "Template", "lyrics"]
 
 [project.urls]
 homepage = "https://github.com/sunnypatell/sunnify-spotify-downloader"
@@ -67,7 +67,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["spotifydown_api"]
+known-first-party = ["spotifydown_api", "lyrics"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -29,7 +29,7 @@ Free, open source, cross-platform. Point-and-click desktop app with a built-in h
 
 **Sunnify is a free, open-source Spotify playlist downloader for macOS, Windows, and Linux.** Paste any Spotify playlist, album, or track link and Sunnify saves it as local audio files (MP3, M4A, FLAC, Opus, or WAV) with the cover art, title, artist, album, year, and track number written straight into the file's tags. No Spotify account, no API keys, no separate FFmpeg install, and nothing that requires a terminal unless you want one.
 
-It is a desktop GUI built with Python and PyQt6, and every binary doubles as a headless [CLI](docs/CLI.md) for scripts, servers, and AI agents. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine.
+It is a desktop GUI built with Python and PyQt6, and every binary doubles as a headless [CLI](docs/CLI.md) for scripts, servers, and AI agents. Metadata is read from Spotify's public pages and audio is sourced and transcoded locally, so everything runs on your own machine. The one optional exception is lyrics (off by default), which are looked up on [LRCLIB](https://lrclib.net).
 
 <div align="center">
 <img src="./readmeAssets/demonstration%201.jpg" alt="Sunnify desktop app downloading a Spotify playlist to local MP3s" width="760" />
@@ -107,6 +107,7 @@ Or use Gatekeeper's flow: double-click once, then **System Settings → Privacy 
 
 - **Playlists, albums, and single tracks.** Paste a normal link, an `intl-xx` locale link, or a `spotify:` URI copied from the desktop app. Each playlist or album downloads into its own folder.
 - **Five audio formats.** MP3, M4A, Opus (lossy at 128 / 192 / 256 / 320 kbps) and FLAC / WAV (lossless conversion of the source, see [Audio quality](#audio-quality)). Your choice is remembered between sessions.
+- **Optional lyrics.** Turn on **Embed lyrics** in Settings (or pass `--lyrics` on the CLI) and each song's lyrics are looked up on [LRCLIB](https://lrclib.net) and written into the file (ID3 `USLT` for mp3, `©lyr` for m4a, `LYRICS` for flac). Off by default, because the artist and title are sent to that service. A song only gets lyrics when title and artist match closely, so a different song's text never lands in your file. Opus and wav files carry no lyrics. Lyrics are copyrighted text: Sunnify does not host or redistribute them, and what you embed is for your own use, under the same terms as the rest of the [disclaimer](DISCLAIMER.md).
 - **Real metadata, written correctly.** Title, artist(s), album, year, and track number are embedded for every format, with the front cover art baked in. MP3 tags are written for maximum player compatibility, so artwork and tags show up everywhere, including older car head-units, stock Android, and Windows Media Player.
 - **Per-track cover art.** Each song gets its own artwork, not one shared playlist cover.
 - **Parallel downloads.** Multiple songs download at once, so a playlist finishes much faster, with a cooperative Stop that takes effect immediately.
@@ -175,7 +176,7 @@ Full details and the threat model are in [SECURITY.md](SECURITY.md#release-integ
 
 ## How it works
 
-Sunnify reads track metadata from Spotify's public embed pages (no authentication), finds the matching audio via a YouTube search through [yt-dlp](https://github.com/yt-dlp/yt-dlp), transcodes it to your chosen format with the bundled FFmpeg, and writes the tags and cover art with [Mutagen](https://mutagen.readthedocs.io/). It is a pure-Python core wrapped in a PyQt6 interface, packaged per-platform with PyInstaller.
+Sunnify reads track metadata from Spotify's public embed pages (no authentication), finds the matching audio via a YouTube search through [yt-dlp](https://github.com/yt-dlp/yt-dlp), transcodes it to your chosen format with the bundled FFmpeg, and writes the tags and cover art with [Mutagen](https://mutagen.readthedocs.io/). If you turn on lyrics, it also looks each song up on [LRCLIB](https://lrclib.net). It is a pure-Python core wrapped in a PyQt6 interface, packaged per-platform with PyInstaller.
 
 ---
 
