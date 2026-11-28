@@ -2990,6 +2990,8 @@ class TestYoutubeCookies:
         with (
             patch("Spotify_Downloader.shutil.which", return_value=None),
             patch("Spotify_Downloader.os.path.expanduser", return_value=str(tmp_path)),
+            # the fixed /opt/homebrew and /usr/local spots must not see the host's real deno
+            patch("Spotify_Downloader.os.path.isfile", side_effect=lambda p: p == str(target)),
         ):
             assert sd._js_runtime_candidates("deno") == [str(target)]
 
